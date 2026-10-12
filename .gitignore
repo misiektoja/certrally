@@ -1,0 +1,69 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Code coverage profiles and other test artifacts
+*.out
+coverage.*
+*.coverprofile
+profile.cov
+
+# Go workspace file
+go.work
+go.work.sum
+
+# env file
+.env*
+
+# Editor/IDE
+.idea/
+.vscode/
+.cursor/
+.cursorignore
+.cursorindexingignore
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+
+# Tool binaries, build output and caches
+bin/
+dist/
+.cache/
+
+# Dependency directories
+vendor/
+
+# Local development and temporary files
+/local
+tmp/
+
+# Credentials, certificates, keys, captures and backups
+*.pem
+*.key
+*.crt
+*.p12
+*.jks
+*.der
+*.pcap
+*.pcapng
+*.token
+*.secret
+*.bak
+*.old
+*.orig
+
+# OS-specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
