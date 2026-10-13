@@ -27,7 +27,7 @@ The first version requests and revokes certificates over CMP, asks the CA for it
 
 * **`certrally ping`** checks that a server answers CMP without any credentials and reports the CA name, protection and round-trip time. `--count` repeats the check. With `--ca-cert` the answer must also be signed by that CA.
 * **`certrally keygen`** generates any supported key type without contacting a CA. `--pub-out` saves the public key and `--csr-out` a PKCS#10 request for `--subject` and `--san`. `--list` prints the key types.
-* **`certrally mock`** runs a CMP test CA on your machine for trying certrally and testing scripts. It prints an `enroll` command that works against it and logs one line per request. It listens on `127.0.0.1:8080` and generates a shared secret unless `--listen`, `--ref` and `--secret-file` say otherwise. `--ca-out` saves its CA certificate for `--ca-cert`. Its key and certificates live in memory. It does not sign composite ML-DSA keys.
+* **`certrally mock`** runs a CMP test CA on your machine for trying certrally and testing scripts. It prints an `enroll` command that works against it and logs one line per request. It listens on `127.0.0.1:8080` and generates a shared secret unless `--listen`, `--ref` and `--secret-file` say otherwise. `--ca-out` saves its CA certificate for `--ca-cert`. It issues certificates for every key type certrally generates, including composite ML-DSA keys. Its key and certificates live in memory.
 
 ### Profiles
 
@@ -37,7 +37,7 @@ The first version requests and revokes certificates over CMP, asks the CA for it
 
 * **`--json`** prints the outcome of `enroll`, `revoke`, `cacerts`, `cmp genm`, `ping`, `inspect`, `lint` and `keygen` as one JSON document on standard output. It holds the exit status, every message of the exchange, the result of the command and any error. [docs/json.md](docs/json.md) describes the fields.
 * **`--capture FILE`** appends every message of a run, with its bytes and timing, to a JSON Lines file. Several runs can share one file. New files get mode 0600, because the messages of a shared-secret exchange allow offline guessing of the secret.
-* **`certrally inspect`** decodes CMP messages from capture files and from DER, base64, hex or PEM files. It shows the header, protection, body and extra certificates of each message. It checks signatures and, with `--ca-cert`, whether the signer chains to that CA. It checks PBM and PBMAC1 MACs with the shared secret from `--secret-file` or `CERTRALLY_SECRET`. **`certrally lint`** checks recorded responses against the profile rules and against the transaction ID and nonces of their requests. It exits with status 6 when a response breaks a rule.
+* **`certrally inspect`** decodes CMP messages from capture files and from DER, base64, hex or PEM files. It shows the header, protection, body and extra certificates of each message. It checks signatures, also those of expired signer certificates, and, with `--ca-cert`, whether the signer chained to that CA when the capture recorded the message. It checks PBM and PBMAC1 MACs with the shared secret from `--secret-file` or `CERTRALLY_SECRET`. **`certrally lint`** checks recorded responses against the profile rules and against the transaction ID and nonces of their requests. It exits with status 6 when a response breaks a rule.
 
 ### Installation
 
