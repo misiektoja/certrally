@@ -34,10 +34,11 @@ certrally enroll --server https://ca.example.com/.well-known/cmp --ref device-42
 | `ok` | boolean | `true` when the exit status is 0 |
 | `exitStatus` | number | The exit status of the process |
 | `server` | string | The `--server` URL without any password. Absent when the command does not contact a server or stops before it does |
+| `profile` | string | The [response profile](profiles.md), `compatible` or `strict`. Absent when `server` is absent |
 | `exchange` | array | One [message record](#message-records) per request, response or failure, in order. Absent when nothing was sent |
 | `result` | object | The [result](#results) of the command. Present on success and with some failures |
 | `error` | object | The [error](#errors) when `ok` is `false` |
-| `warnings` | array of strings | Problems that did not fail the command, such as a CRL signature that does not verify |
+| `warnings` | array of strings | Problems that did not fail the command, such as a CRL signature that does not verify or a response that breaks a rule of the `compatible` profile |
 
 An enrollment produces a document like this, shortened:
 
@@ -47,6 +48,7 @@ An enrollment produces a document like this, shortened:
   "ok": true,
   "exitStatus": 0,
   "server": "https://ca.example.com/.well-known/cmp",
+  "profile": "compatible",
   "exchange": [
     {"kind": "request", "time": "2026-10-13T01:39:22.235769Z", "size": 486, "body": "ir", "protection": "PBMAC1", "sender": "CN=device-42", "transactionId": "95a9cb74b5c4c3cfd5a4040906e3756b", "senderKid": "6465766963652d3432"},
     {"kind": "response", "time": "2026-10-13T01:39:22.240007Z", "elapsedMs": 4.238, "httpStatus": 200, "contentType": "application/pkixcmp", "size": 1481, "body": "ip", "protection": "PBMAC1", "sender": "CN=Example CA", "status": "accepted", "extraCerts": 1},

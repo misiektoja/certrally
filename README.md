@@ -11,6 +11,7 @@ certrally is a command line client for certificate enrollment with the Certifica
 * ML-DSA and composite ML-DSA keys alongside RSA, ECDSA and Ed25519
 * No trust setup needed: certrally trusts the CA it talks to or the one you name with `--ca-cert`
 * A live diagram of every message in the exchange and plain explanations of failures
+* Warnings about responses that break RFC 9483 and a strict profile that rejects them
 * JSON output for scripts and capture files that record every message of a run
 * Exit statuses that tell scripts why a request failed
 
@@ -156,7 +157,7 @@ certrally ping --server https://ca.example.com/.well-known/cmp --count 3
   Note        An error is the expected answer, because the request carries no protection.
 ```
 
-With `--ca-cert` the answer must also be signed by that CA. `ping` exits with 0 when the server answers with CMP, 2 when it does not and 4 when the answer fails the `--ca-cert` check.
+With `--ca-cert` the answer must also be signed by that CA. `ping` exits with 0 when the server answers with CMP, 2 when it does not, 4 when the answer fails the `--ca-cert` check and 6 when it breaks `--profile strict`.
 
 ### Generate a key
 
@@ -168,6 +169,10 @@ certrally keygen --key-type ml-dsa-65 --out device.key \
 ```
 
 `--pub-out` also saves the public key. `--list` prints the key types. The key is saved like enroll keys, as unencrypted PKCS#8 PEM with mode 0600.
+
+### Check responses against RFC 9483
+
+certrally warns when a response breaks a rule of the Lightweight CMP Profile (RFC 9483) that some CAs do not follow, such as a missing chain for the new certificate. `--profile strict` rejects such responses instead and exits with status 6. [docs/profiles.md](docs/profiles.md) lists the rules.
 
 ### Use certrally in scripts
 
@@ -205,6 +210,7 @@ The colour depth comes from `TERM` and `COLORTERM`.
 | 3 | The CA rejected the request |
 | 4 | The response broke the protocol or failed verification |
 | 5 | The CA issued the certificate but the confirmation failed. certrally saves the certificate. Check with the CA before retrying, because a retry can issue a second certificate |
+| 6 | A response broke a rule of `--profile strict` |
 
 ## Contributing
 
