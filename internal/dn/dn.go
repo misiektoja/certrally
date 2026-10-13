@@ -1,4 +1,5 @@
-// Package dn parses distinguished names and subject alternative names given on the command line.
+// Package dn parses distinguished names and subject alternative names given on the command line and
+// formats distinguished names for display.
 package dn
 
 import (
@@ -30,12 +31,22 @@ var keywords = map[string]asn1.ObjectIdentifier{
 	"UID":          {0, 9, 2342, 19200300, 100, 1, 1},
 }
 
+// keywordNames maps the dotted OID of each keyword attribute type to its keyword.
+var keywordNames = func() map[string]string {
+	names := make(map[string]string, len(keywords))
+	for k, oid := range keywords {
+		names[oid.String()] = k
+	}
+	return names
+}()
+
 // ParseName parses an RFC 4514 string such as "CN=device-42,O=Example,C=PL" into a name whose
 // attributes are encoded in the order the string implies.
 //
 // RFC 4514 writes the most specific RDN first, so the encoded order is the reverse of the string.
-// Parsing the output of pkix.Name.String returns an equal name. Multi-valued RDNs and hex-encoded
-// values are rejected because pkix.Name cannot represent them faithfully.
+// Parsing the output of String returns a name with the same attributes in the same order.
+// Multi-valued RDNs and hex-encoded values are rejected because pkix.Name cannot represent them
+// faithfully.
 func ParseName(s string) (pkix.Name, error) {
 	var name pkix.Name
 	if strings.TrimSpace(s) == "" {
@@ -56,6 +67,70 @@ func ParseName(s string) (pkix.Name, error) {
 		name.ExtraNames = append(name.ExtraNames, atv)
 	}
 	return name, nil
+}
+
+// String returns the RFC 4514 form of a name, most specific RDN first. Unlike pkix.Name.String it
+// keeps the encoded order of the attributes and the grouping of multi-valued RDNs, so the result
+// shows the name as it was encoded. Attribute types that ParseName accepts by keyword are shown by
+// keyword and others as a dotted OID. A value that is not a string is shown as # and its DER in hex.
+func String(rdns pkix.RDNSequence) string {
+	var b strings.Builder
+	for i, rdn := range slices.Backward(rdns) {
+		if i < len(rdns)-1 {
+			b.WriteByte(',')
+		}
+		for j, atv := range rdn {
+			if j > 0 {
+				b.WriteByte('+')
+			}
+			writeAttribute(&b, atv)
+		}
+	}
+	return b.String()
+}
+
+// Format returns the RFC 4514 form of a DER-encoded name, such as the RawSubject of a certificate.
+// It returns "" when der is not a name.
+func Format(der []byte) string {
+	var rdns pkix.RDNSequence
+	if rest, err := asn1.Unmarshal(der, &rdns); err != nil || len(rest) > 0 {
+		return ""
+	}
+	return String(rdns)
+}
+
+// writeAttribute writes one "type=value" pair in RFC 4514 form.
+func writeAttribute(b *strings.Builder, atv pkix.AttributeTypeAndValue) {
+	oid := atv.Type.String()
+	if k, ok := keywordNames[oid]; ok {
+		b.WriteString(k)
+	} else {
+		b.WriteString(oid)
+	}
+	b.WriteByte('=')
+	if _, ok := atv.Value.(string); !ok {
+		if der, err := asn1.Marshal(atv.Value); err == nil {
+			b.WriteString("#" + strings.ToUpper(hex.EncodeToString(der)))
+			return
+		}
+	}
+	escapeValue(b, fmt.Sprint(atv.Value))
+}
+
+// escapeValue writes s with the escapes of RFC 4514 section 2.4. Control characters are written as
+// hex escapes, which ParseName decodes, so that they stay visible.
+func escapeValue(b *strings.Builder, s string) {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c < 0x20 || c == 0x7f:
+			_, _ = fmt.Fprintf(b, `\%02X`, c)
+			continue
+		case strings.IndexByte(`"+,;<>\`, c) >= 0, c == ' ' && (i == 0 || i == len(s)-1), c == '#' && i == 0:
+			b.WriteByte('\\')
+		}
+		b.WriteByte(c)
+	}
 }
 
 // parseAttribute parses one "type=value" pair.

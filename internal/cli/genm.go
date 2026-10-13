@@ -22,6 +22,7 @@ import (
 	"github.com/misiektoja/go-pki-cmp/pkicmp"
 	"github.com/spf13/cobra"
 
+	"github.com/misiektoja/certrally/internal/dn"
 	"github.com/misiektoja/certrally/internal/keys"
 	"github.com/misiektoja/certrally/internal/pemfile"
 	"github.com/misiektoja/certrally/internal/trace"
@@ -114,7 +115,7 @@ func runCACerts(ctx context.Context, o *genmOptions, p *printer, stdin io.Reader
 	title := "Received " + count(len(certs), "CA certificate", "CA certificates")
 	p.result(title, []ui.Field{{Name: fieldSaved, Value: strings.Join(saved, ", ")}}, result)
 	for _, cert := range certs {
-		p.section(ui.Sanitize(cert.Subject.String()), caCertFields(cert))
+		p.section(ui.Sanitize(dn.Format(cert.RawSubject)), caCertFields(cert))
 	}
 	return nil
 }
@@ -125,7 +126,7 @@ func caCertFields(cert *x509.Certificate) []ui.Field {
 	if pub, err := keys.CertificateKey(cert); err == nil {
 		keyDesc = keys.Describe(pub)
 	}
-	issuer := ui.Sanitize(cert.Issuer.String())
+	issuer := ui.Sanitize(dn.Format(cert.RawIssuer))
 	if bytes.Equal(cert.RawIssuer, cert.RawSubject) {
 		issuer = "self-signed"
 	}
@@ -271,7 +272,7 @@ func describeTemplate(tmpl *pkicmp.CertReqTemplate) (*templateContentJSON, []ui.
 	// pkix.Name drops attributes with empty values, which are the ones the requester fills in, so the
 	// subject is formatted from the RDN sequence.
 	rdns := tmpl.Template.Subject.DirectoryName
-	content := &templateContentJSON{Subject: rdns.String()}
+	content := &templateContentJSON{Subject: dn.String(rdns)}
 	note := ""
 	for _, rdn := range rdns {
 		for _, atv := range rdn {
@@ -482,7 +483,7 @@ func reportCRL(o *genmOptions, s *session, crl *x509.RevocationList, none string
 		result.Saved = savedPaths(o.out)
 	}
 	content := &crlContentJSON{
-		Issuer:     crl.Issuer.String(),
+		Issuer:     dn.Format(crl.RawIssuer),
 		ThisUpdate: crl.ThisUpdate.UTC(),
 		Revoked:    len(crl.RevokedCertificateEntries),
 		Signature:  "unchecked",
@@ -502,7 +503,7 @@ func reportCRL(o *genmOptions, s *session, crl *x509.RevocationList, none string
 		}
 		if err := compositex509.CheckRevocationListSignatureFrom(crl, cert); err != nil {
 			content.Signature, signature = "invalid", "invalid: "+err.Error()
-			p.warn("The CRL signature does not verify against " + ui.Sanitize(cert.Subject.String()) + ".")
+			p.warn("The CRL signature does not verify against " + ui.Sanitize(dn.Format(cert.RawSubject)) + ".")
 			continue
 		}
 		content.Signature, signature = "valid", "valid"

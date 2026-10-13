@@ -19,6 +19,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/misiektoja/certrally/internal/cmpfile"
+	"github.com/misiektoja/certrally/internal/dn"
 	"github.com/misiektoja/certrally/internal/keys"
 	"github.com/misiektoja/certrally/internal/pemfile"
 	"github.com/misiektoja/certrally/internal/trace"
@@ -275,9 +276,7 @@ func (r *messageReport) header(h *pkicmp.PKIHeader) {
 func generalName(g pkicmp.GeneralName) string {
 	switch {
 	case len(g.DirectoryName) > 0:
-		var name pkix.Name
-		name.FillFromRDNSequence(&g.DirectoryName)
-		return name.String()
+		return dn.String(g.DirectoryName)
 	case g.RFC822Name != "":
 		return g.RFC822Name
 	case len(g.Raw) > 0 && g.Raw[0] != 0xa4:
@@ -327,7 +326,7 @@ func (r *messageReport) protection(msg *pkicmp.PKIMessage, extra, caCerts []*x50
 	}
 	trust := ""
 	if signer != nil {
-		j.Signer = signer.Subject.String()
+		j.Signer = dn.Format(signer.RawSubject)
 		if len(caCerts) > 0 {
 			trusted := chainsTo(msg, caCerts)
 			j.Trusted = &trusted
@@ -383,9 +382,9 @@ func checkSignature(msg *pkicmp.PKIMessage, candidates []*x509.Certificate) (sig
 			return nil, checkUnchecked, err.Error()
 		case skipped != "":
 		case verifyErr.Reason == pkicmp.ReasonCertificateExpired:
-			skipped = "the certificate " + cand.Subject.String() + " is outside its validity period"
+			skipped = "the certificate " + dn.Format(cand.RawSubject) + " is outside its validity period"
 		case verifyErr.Reason == pkicmp.ReasonSenderMismatch:
-			skipped = "the certificate " + cand.Subject.String() + " does not name the sender"
+			skipped = "the certificate " + dn.Format(cand.RawSubject) + " does not name the sender"
 		}
 	}
 	switch {
@@ -549,7 +548,7 @@ func (r *messageReport) certRequest(m *pkicmp.CertReqMsg) {
 // csr describes the request of a p10cr body.
 func (r *messageReport) csr(csr *x509.CertificateRequest) {
 	j := certRequestJSON{
-		Subject:      csr.Subject.String(),
+		Subject:      dn.Format(csr.RawSubject),
 		Extensions:   extensionsResult(csr.Extensions),
 		POP:          popoSignature,
 		POPSignature: checkValid,
@@ -664,7 +663,7 @@ func (r *messageReport) certRep(rep *pkicmp.CertRepMessage) {
 func (r *messageReport) revRequests(rr pkicmp.RevReqContent) {
 	for i := range rr {
 		d := &rr[i]
-		j := revocationJSON{Issuer: rawName(d.CertDetails.Issuer), Serial: serialHex(d.CertDetails.SerialNumber)}
+		j := revocationJSON{Issuer: dn.Format(d.CertDetails.Issuer), Serial: serialHex(d.CertDetails.SerialNumber)}
 		if exts, err := d.CRLEntryExtensions(); err != nil {
 			r.problem("The crlEntryDetails of revocation request %d do not decode: %v", i+1, err)
 		} else {
@@ -781,17 +780,6 @@ func statusFields(info pkicmp.PKIStatusInfo) []ui.Field {
 		{Name: "Fail info", Value: strings.Join(trace.FailureNames(info.FailInfo), ", ")},
 		{Name: "Status text", Value: quoteText(info.StatusString)},
 	}
-}
-
-// rawName returns a DER Name as an RFC 4514 string. It returns "" when der is empty or does not parse.
-func rawName(der []byte) string {
-	var rdns pkix.RDNSequence
-	if rest, err := asn1.Unmarshal(der, &rdns); err != nil || len(rest) > 0 {
-		return ""
-	}
-	var name pkix.Name
-	name.FillFromRDNSequence(&rdns)
-	return name.String()
 }
 
 // serialHex returns a serial number as upper-case hex, as in certificate results.

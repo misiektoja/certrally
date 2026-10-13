@@ -25,6 +25,7 @@ import (
 	"github.com/misiektoja/go-pki-cmp/server"
 	"github.com/spf13/cobra"
 
+	"github.com/misiektoja/certrally/internal/dn"
 	"github.com/misiektoja/certrally/internal/pemfile"
 	"github.com/misiektoja/certrally/internal/secret"
 	"github.com/misiektoja/certrally/internal/trace"
@@ -225,7 +226,7 @@ func (o *mockOptions) report(p *printer, url string, caCert *x509.Certificate, s
 	}
 	p.result("Mock CA running", []ui.Field{
 		{Name: fieldServer, Value: url},
-		{Name: "CA", Value: caCert.Subject.String()},
+		{Name: "CA", Value: dn.Format(caCert.RawSubject)},
 		{Name: "Reference", Value: o.ref},
 		{Name: "Secret", Value: secretField},
 		{Name: fieldSaved, Value: o.caOut},

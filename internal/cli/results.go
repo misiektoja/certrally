@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/misiektoja/certrally/internal/dn"
 	"github.com/misiektoja/certrally/internal/keys"
 	"github.com/misiektoja/certrally/internal/pemfile"
 )
@@ -35,8 +36,8 @@ func certificateResult(cert *x509.Certificate) *certificateJSON {
 	}
 	sum := sha256.Sum256(cert.Raw)
 	c := &certificateJSON{
-		Subject:   cert.Subject.String(),
-		Issuer:    cert.Issuer.String(),
+		Subject:   dn.Format(cert.RawSubject),
+		Issuer:    dn.Format(cert.RawIssuer),
 		NotBefore: cert.NotBefore.UTC(),
 		NotAfter:  cert.NotAfter.UTC(),
 		AltNames:  altNames(cert),

@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	"github.com/misiektoja/certrally/internal/dn"
 	"github.com/misiektoja/certrally/internal/pemfile"
 	"github.com/misiektoja/certrally/internal/ui"
 )
@@ -109,7 +110,7 @@ func runRevoke(ctx context.Context, o *revokeOptions, p *printer, stdin io.Reade
 
 	if !o.yes {
 		question := fmt.Sprintf("Revoke %s, serial %s, for %s?",
-			ui.Sanitize(target.Subject.String()), formatSerial(target), reason)
+			ui.Sanitize(dn.Format(target.RawSubject)), formatSerial(target), reason)
 		ok, err := confirm(stdin, p.stderr, question)
 		if err != nil {
 			return err
@@ -148,8 +149,8 @@ func revokeTitle(reason pkicmp.CRLReason) string {
 // revokeFields describes the revoked certificate.
 func revokeFields(cert *x509.Certificate, reason pkicmp.CRLReason) []ui.Field {
 	return []ui.Field{
-		{Name: fieldSubject, Value: ui.Sanitize(cert.Subject.String())},
-		{Name: fieldIssuer, Value: ui.Sanitize(cert.Issuer.String())},
+		{Name: fieldSubject, Value: ui.Sanitize(dn.Format(cert.RawSubject))},
+		{Name: fieldIssuer, Value: ui.Sanitize(dn.Format(cert.RawIssuer))},
 		{Name: fieldSerial, Value: formatSerial(cert)},
 		{Name: fieldReason, Value: reason.String()},
 	}

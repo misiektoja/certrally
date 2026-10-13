@@ -4,7 +4,6 @@ package trace
 
 import (
 	"bytes"
-	"crypto/x509/pkix"
 	"encoding/asn1"
 	"encoding/hex"
 	"fmt"
@@ -16,6 +15,8 @@ import (
 
 	compositemldsa "github.com/misiektoja/go-composite-mldsa"
 	"github.com/misiektoja/go-pki-cmp/pkicmp"
+
+	"github.com/misiektoja/certrally/internal/dn"
 )
 
 // Kind says what an Event records.
@@ -294,9 +295,7 @@ func Summarize(der []byte) *Summary {
 		ExtraCerts:    len(msg.ExtraCerts),
 	}
 	if rdns := msg.Header.Sender.DirectoryName; len(rdns) > 0 {
-		var name pkix.Name
-		name.FillFromRDNSequence(&rdns)
-		s.Sender = name.String()
+		s.Sender = dn.String(rdns)
 	}
 	if alg := msg.Header.ProtectionAlg; alg != nil {
 		s.Protection = AlgorithmName(alg.Algorithm)

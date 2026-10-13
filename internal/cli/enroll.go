@@ -462,9 +462,9 @@ func describeCertificate(cert *x509.Certificate) []ui.Field {
 		keyDesc = keys.Describe(pub)
 	}
 	return []ui.Field{
-		{Name: fieldSubject, Value: ui.Sanitize(cert.Subject.String())},
+		{Name: fieldSubject, Value: ui.Sanitize(dn.Format(cert.RawSubject))},
 		{Name: "Alt names", Value: ui.Sanitize(strings.Join(altNames(cert), ", "))},
-		{Name: fieldIssuer, Value: ui.Sanitize(cert.Issuer.String())},
+		{Name: fieldIssuer, Value: ui.Sanitize(dn.Format(cert.RawIssuer))},
 		{Name: fieldSerial, Value: formatSerial(cert)},
 		{Name: "Valid", Value: cert.NotBefore.UTC().Format(timeLayout) + " to " + cert.NotAfter.UTC().Format(timeLayout)},
 		{Name: fieldKey, Value: keyDesc},
