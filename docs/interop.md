@@ -8,6 +8,7 @@ Tested with a CMP alias in client mode that accepts the end entity password as t
 
 * `ir`, `cr`, `kur`, `p10cr` and `rr` work. `ir` was tested with ECDSA, RSA, Ed25519 and ML-DSA-65 keys. PBMAC1 and PasswordBasedMac both work.
 * EJBCA signs its responses to MAC-protected requests, even with the alias response protection set to `pbe`. RFC 9483 section 3.2 asks for the same kind of protection in every message of an operation, so certrally warns and `--profile strict` stops the enrollment.
+* `lint` found no other deviation in recorded `ir`, `p10cr`, `kur` and `rr` exchanges or in rejections.
 * Error messages are unprotected. certrally shows the reason and marks the answer as not authenticated.
 * General messages are rejected with `badRequest` "Can not handle message type '21'", so `cacerts` and `cmp genm` fail. `ping` still reports a CMP answer, but with `--ca-cert` it cannot check the unprotected answer and exits with status 4.
 * In the tested setup EJBCA signed revocation responses with its ManagementCA instead of the CA that issued the certificate. With only the issuing CA in `--ca-cert`, `revoke` exits with status 4 although EJBCA has revoked the certificate. Put both CA certificates in `--ca-cert`.
