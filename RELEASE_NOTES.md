@@ -31,7 +31,7 @@ The first version requests and revokes certificates over CMP, asks the CA for it
 
 ### Profiles
 
-* **`--profile`** sets how certrally treats a response that breaks an RFC 9483 or RFC 9810 rule that some CAs do not follow, such as a missing certificate chain or a short nonce. **`compatible`**, the default, accepts the response and prints a warning that names the rule. **`strict`** stops before accepting the response and exits with status 6. A rejection from the CA is still reported as a rejection. [docs/profiles.md](docs/profiles.md) lists the rules.
+* **`--profile`** sets how certrally treats a response that breaks an RFC 9483 or RFC 9810 rule that some CAs do not follow, such as a missing certificate chain or a short nonce. **`compatible`**, the default, accepts the response and prints a warning that names the rule. **`strict`** stops before accepting the response and exits with status 6. A rejection from the CA is still reported as a rejection. [docs/profiles.md](docs/profiles.md) lists the rules. [docs/interop.md](docs/interop.md) describes how EJBCA Community Edition and the OpenSSL CMP server behave.
 
 ### Scripts and records
 
