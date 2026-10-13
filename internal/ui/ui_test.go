@@ -76,3 +76,13 @@ func TestSanitize(t *testing.T) {
 		}
 	}
 }
+
+// TestSection checks that section fields are indented below their heading and aligned.
+func TestSection(t *testing.T) {
+	w, b := plain()
+	Section(w, "CN=CA", []Field{{Name: "Key", Value: "ML-DSA-65"}, {Name: "SHA-256", Value: "AB"}, {Name: "Empty"}})
+	want := "  CN=CA\n    Key      ML-DSA-65\n    SHA-256  AB\n"
+	if b.String() != want {
+		t.Errorf("Section wrote %q, want %q", b.String(), want)
+	}
+}

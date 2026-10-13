@@ -153,3 +153,23 @@ func TestBuildVersion(t *testing.T) {
 		}
 	}
 }
+
+// TestCommandHelp checks that every command has help and that the root help lists the top-level ones.
+func TestCommandHelp(t *testing.T) {
+	isolateColorEnv(t)
+	_, rootHelp, _ := run(t, "--help")
+	commands := [][]string{
+		{"enroll"}, {"revoke"}, {"cacerts"}, {"ping"}, {"keygen"}, {"cmp"}, {"cmp", "genm"},
+		{"cmp", "genm", "cacerts"}, {"cmp", "genm", "rootupdate"}, {"cmp", "genm", "template"},
+		{"cmp", "genm", "crl"}, {"cmp", "genm", "crlupdate"}, {"cmp", "genm", "raw"},
+	}
+	for _, c := range commands {
+		code, out, errOut := run(t, append(c, "--help")...)
+		if code != 0 || !strings.Contains(out, "certrally "+strings.Join(c, " ")) {
+			t.Errorf("%q --help exited with %d:\n%s%s", c, code, errOut, out)
+		}
+		if len(c) == 1 && !strings.Contains(rootHelp, c[0]) {
+			t.Errorf("root help does not list %s", c[0])
+		}
+	}
+}

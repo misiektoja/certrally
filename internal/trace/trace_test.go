@@ -85,7 +85,7 @@ func TestRecorderCMP(t *testing.T) {
 	if len(events) != 2 || len(seen) != 2 || seen[0] != Request || seen[1] != Response {
 		t.Fatalf("events = %+v", events)
 	}
-	if m := events[0].Message; m == nil || m.Body != "pkiconf" || m.Protection != "none" {
+	if m := events[0].Message; m == nil || m.Body != "pkiconf" || m.Protection != "none" || m.Sender != "CN=a" {
 		t.Errorf("request summary = %+v", m)
 	}
 	m := events[1].Message
@@ -142,5 +142,15 @@ func TestSummarizeGarbage(t *testing.T) {
 		if s := Summarize(der); s != nil {
 			t.Errorf("Summarize(%q) = %+v", der, s)
 		}
+	}
+}
+
+// TestSummarizeRevocation checks that the status of a revocation response is reported.
+func TestSummarizeRevocation(t *testing.T) {
+	m := Summarize(message(t, pkicmp.NewRPBody(&pkicmp.RevRepContent{Status: []pkicmp.PKIStatusInfo{{
+		Status: pkicmp.StatusRejection, FailInfo: pkicmp.FailCertRevoked,
+	}}})))
+	if m == nil || m.Body != "rp" || m.Status != "rejection" || m.FailInfo != "certRevoked" {
+		t.Errorf("summary = %+v", m)
 	}
 }

@@ -97,3 +97,55 @@ func TestWrite(t *testing.T) {
 		t.Error("CheckWritable accepted a missing directory")
 	}
 }
+
+// TestReadCRL checks PEM and DER CRLs and rejected content.
+func TestReadCRL(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "CA"},
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCRLSign | x509.KeyUsageCertSign,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, key.Public(), key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	crlDER, err := x509.CreateRevocationList(rand.Reader, &x509.RevocationList{Number: big.NewInt(7)}, ca, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	crlPEM := pem.EncodeToMemory(&pem.Block{Type: "X509 CRL", Bytes: crlDER})
+
+	dir := t.TempDir()
+	files := map[string][]byte{
+		"crl.pem":  crlPEM,
+		"crl.der":  crlDER,
+		"two.pem":  append(append([]byte{}, crlPEM...), crlPEM...),
+		"cert.pem": EncodeCertificates([]*x509.Certificate{ca}),
+	}
+	for name, data := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{"crl.pem", "crl.der"} {
+		crl, err := ReadCRL(filepath.Join(dir, name))
+		if err != nil || crl.Number.Int64() != 7 {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	for _, name := range []string{"two.pem", "cert.pem", "missing.pem"} {
+		if _, err := ReadCRL(filepath.Join(dir, name)); err == nil {
+			t.Errorf("%s: read, want an error", name)
+		}
+	}
+}
