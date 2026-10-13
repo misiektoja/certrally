@@ -2,6 +2,12 @@ package cli
 
 import (
 	"bytes"
+	"context"
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
 	"crypto/x509/pkix"
 	"io"
 	"net/http"
@@ -11,10 +17,15 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/misiektoja/go-pki-cmp/examples/mockserver"
 	"github.com/misiektoja/go-pki-cmp/pkicmp"
+	"github.com/misiektoja/go-pki-cmp/server"
 	"golang.org/x/crypto/cryptobyte"
 	cbasn1 "golang.org/x/crypto/cryptobyte/asn1"
+
+	"github.com/misiektoja/certrally/internal/pemfile"
 )
 
 // TestStrictProfile checks that the go-pki-cmp example CA meets the strict profile for every
@@ -97,15 +108,96 @@ func stripExtraCerts(t *testing.T, target string) string {
 	return ts.URL + "/cmp"
 }
 
-// TestProfileDeviation checks how each profile treats an ip without extraCerts.
+// intermediateCA issues certificates from an intermediate CA under the example CA, so an ip
+// without extraCerts lacks the chain of the new certificate.
+type intermediateCA struct {
+	*mockserver.MockCA
+	cert *x509.Certificate
+	key  crypto.Signer
+}
+
+// newIntermediateCA creates an intermediate CA under m.
+func newIntermediateCA(t *testing.T, m *mockserver.MockCA) intermediateCA {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serial, err := server.GenerateSerial()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          serial,
+		Subject:               pkix.Name{CommonName: "Test Issuing CA"},
+		NotBefore:             time.Now().Add(-time.Minute),
+		NotAfter:              time.Now().Add(time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, m.Cert(), key.Public(), m.Key())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return intermediateCA{MockCA: m, cert: cert, key: key}
+}
+
+// IssueCertificate signs the template with the intermediate CA.
+func (c intermediateCA) IssueCertificate(_ context.Context, _ server.RequestType, tmpl *x509.Certificate, _ *server.SenderIdentity) (*server.Response, error) {
+	serial, err := server.GenerateSerial()
+	if err != nil {
+		return nil, err
+	}
+	tmpl.SerialNumber = serial
+	tmpl.NotBefore, tmpl.NotAfter = time.Now().Add(-time.Minute), time.Now().Add(time.Hour)
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, c.cert, tmpl.PublicKey, c.key)
+	if err != nil {
+		return nil, err
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		return nil, err
+	}
+	return &server.Response{Certificate: cert}, nil
+}
+
+// TestProfileRootIssuer checks that a certificate from a root CA needs no chain in extraCerts,
+// because RFC 9483 leaves self-signed certificates out.
+func TestProfileRootIssuer(t *testing.T) {
+	useSecret(t, testSecret)
+	ca := startCA(t, nil)
+	dir := t.TempDir()
+	for _, trust := range [][]string{nil, {"--ca-cert", ca.caFile}} {
+		args := append([]string{"enroll", "--server", stripExtraCerts(t, ca.url), "--ref", testRef, "--profile", "strict",
+			"--cert-out", filepath.Join(dir, "c.pem"), "--key-out", filepath.Join(dir, "k.pem"), "--force"}, trust...)
+		code, doc := runJSON(t, args...)
+		if code != exitOK || doc["warnings"] != nil {
+			t.Errorf("%q exited with %d: %v", trust, code, doc)
+		}
+	}
+}
+
+// TestProfileDeviation checks how each profile treats an ip without the chain of the new certificate.
 func TestProfileDeviation(t *testing.T) {
 	const deviation = "The ip response carries no extraCerts, so the chain of the new certificate is missing (RFC 9483 section 3.3)."
 	useSecret(t, testSecret)
-	ca := startCA(t, nil)
-	server := stripExtraCerts(t, ca.url)
+	var issuing intermediateCA
+	ca := startCA(t, func(m *mockserver.MockCA) server.CA {
+		issuing = newIntermediateCA(t, m)
+		return issuing
+	})
 	dir := t.TempDir()
+	// The client gets the intermediate CA from --ca-cert, so the new certificate verifies.
+	chainFile := filepath.Join(dir, "chain.pem")
+	writeFile(t, chainFile, pemfile.EncodeCertificates([]*x509.Certificate{issuing.cert, issuing.Cert()}))
+	proxy := stripExtraCerts(t, ca.url)
 	enroll := func(name string, extra ...string) []string {
-		return append([]string{"enroll", "--server", server, "--ref", testRef,
+		return append([]string{"enroll", "--server", proxy, "--ref", testRef, "--ca-cert", chainFile,
 			"--cert-out", filepath.Join(dir, name+".pem"), "--key-out", filepath.Join(dir, name+".key")}, extra...)
 	}
 

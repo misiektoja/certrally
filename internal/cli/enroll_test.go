@@ -420,3 +420,48 @@ func TestEnrollForce(t *testing.T) {
 		t.Error("the certificate was not replaced")
 	}
 }
+
+// TestEnrollHints checks the hints for a CA that rejects PBMAC1 and for a new certificate whose issuer
+// is missing.
+func TestEnrollHints(t *testing.T) {
+	useSecret(t, testSecret)
+	dir := t.TempDir()
+	enroll := func(url string, extra ...string) (int, string) {
+		t.Helper()
+		args := append([]string{"enroll", "--server", url, "--ref", testRef, "--force",
+			"--cert-out", filepath.Join(dir, "c.pem"), "--key-out", filepath.Join(dir, "k.pem")}, extra...)
+		code, _, errOut := run(t, args...)
+		return code, errOut
+	}
+
+	const pbm = "Try --mac pbm."
+	rejecting := rejectingServer(t)
+	if code, errOut := enroll(rejecting); code != exitRejected || !strings.Contains(errOut, pbm) {
+		t.Errorf("a rejected PBMAC1 request exited with %d:\n%s", code, errOut)
+	}
+	if code, errOut := enroll(rejecting, "--mac", "pbm"); code != exitRejected || strings.Contains(errOut, pbm) {
+		t.Errorf("a rejected PasswordBasedMac request exited with %d:\n%s", code, errOut)
+	}
+
+	// The CA issues from an intermediate CA that no response carries.
+	var issuing intermediateCA
+	ca := startCA(t, func(m *mockserver.MockCA) server.CA {
+		issuing = newIntermediateCA(t, m)
+		return issuing
+	})
+	proxy := stripExtraCerts(t, ca.url)
+	tests := []struct {
+		name  string
+		extra []string
+		hint  string
+	}{
+		{"first response", nil, "Pass it with --ca-cert."},
+		{"pinned", []string{"--ca-cert", ca.caFile}, "Add the CA certificate that issued it."},
+	}
+	for _, tt := range tests {
+		code, errOut := enroll(proxy, tt.extra...)
+		if code != exitProtocol || !strings.Contains(errOut, tt.hint) || !strings.Contains(errOut, "trusted certificate: x509:") {
+			t.Errorf("%s: exited with %d, want %d with %q:\n%s", tt.name, code, exitProtocol, tt.hint, errOut)
+		}
+	}
+}

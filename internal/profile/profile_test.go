@@ -1,6 +1,7 @@
 package profile
 
 import (
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -21,21 +22,29 @@ var oidECDSAWithSHA256 = asn1.ObjectIdentifier{1, 2, 840, 10045, 4, 3, 2}
 // testCA is the name of the CA in the test responses.
 var testCA = pkix.Name{CommonName: "Test CA"}
 
-// newCertificate returns a self-signed certificate with a subject key identifier.
-func newCertificate(t *testing.T, subject pkix.Name) *x509.Certificate {
+// newCertificate returns a certificate with a subject key identifier and its key. It is self-signed
+// unless issuer and issuerKey are given.
+func newCertificate(t *testing.T, subject pkix.Name, issuer *x509.Certificate, issuerKey crypto.Signer) (*x509.Certificate, crypto.Signer) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
+	keyID := make([]byte, 8)
+	_, _ = rand.Read(keyID)
 	tmpl := &x509.Certificate{
-		SerialNumber: big.NewInt(1),
-		Subject:      subject,
-		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().Add(time.Hour),
-		SubjectKeyId: []byte{1, 2, 3, 4},
+		SerialNumber:          big.NewInt(1),
+		Subject:               subject,
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		SubjectKeyId:          keyID,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
 	}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, key.Public(), key)
+	if issuer == nil {
+		issuer, issuerKey = tmpl, key
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, issuer, key.Public(), issuerKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +52,25 @@ func newCertificate(t *testing.T, subject pkix.Name) *x509.Certificate {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return cert
+	return cert, key
+}
+
+// issuing returns an ip that issues cert, with the given extraCerts and caPubs.
+func issuing(cert *x509.Certificate, extraCerts, caPubs []*x509.Certificate) *pkicmp.PKIMessage {
+	rep := &pkicmp.CertRepMessage{Response: []pkicmp.CertResponse{{
+		Status: pkicmp.PKIStatusInfo{Status: pkicmp.StatusAccepted},
+		CertifiedKeyPair: &pkicmp.CertifiedKeyPair{CertOrEncCert: pkicmp.CertOrEncCert{
+			Certificate: &pkicmp.CMPCertificate{Raw: cert.Raw},
+		}},
+	}}}
+	for _, c := range caPubs {
+		rep.CAPubs = append(rep.CAPubs, pkicmp.CMPCertificate{Raw: c.Raw})
+	}
+	m := message(pkicmp.NewIPBody(rep), testCA, oidPBMAC1)
+	for _, c := range extraCerts {
+		m.ExtraCerts = append(m.ExtraCerts, pkicmp.CMPCertificate{Raw: c.Raw})
+	}
+	return m
 }
 
 // message returns a message from the named sender protected with alg, or unprotected when alg is nil.
@@ -70,9 +97,9 @@ func info(oid asn1.ObjectIdentifier) pkicmp.InfoTypeAndValue {
 
 // TestCheck checks each rule with a response that breaks it and one that does not.
 func TestCheck(t *testing.T) {
-	ca := newCertificate(t, testCA)
-	other := newCertificate(t, pkix.Name{CommonName: "Other"})
-	device := newCertificate(t, pkix.Name{CommonName: "device"})
+	ca, caKey := newCertificate(t, testCA, nil, nil)
+	other, _ := newCertificate(t, pkix.Name{CommonName: "Other"}, nil, nil)
+	device, _ := newCertificate(t, pkix.Name{CommonName: "device"}, ca, caKey)
 
 	macIR := func() *pkicmp.PKIMessage {
 		return message(pkicmp.NewIRBody(&pkicmp.CertReqMessages{}), pkix.Name{CommonName: "device"}, oidPBMAC1)
@@ -85,16 +112,7 @@ func TestCheck(t *testing.T) {
 		return signedBy(message(pkicmp.NewGenMBody(), pkix.Name{CommonName: "device"}, nil), device)
 	}
 	// ip returns a MAC-protected ip that issues device with the CA certificate in extraCerts.
-	ip := func() *pkicmp.PKIMessage {
-		m := message(pkicmp.NewIPBody(&pkicmp.CertRepMessage{Response: []pkicmp.CertResponse{{
-			Status: pkicmp.PKIStatusInfo{Status: pkicmp.StatusAccepted},
-			CertifiedKeyPair: &pkicmp.CertifiedKeyPair{CertOrEncCert: pkicmp.CertOrEncCert{
-				Certificate: &pkicmp.CMPCertificate{Raw: device.Raw},
-			}},
-		}}}), testCA, oidPBMAC1)
-		m.ExtraCerts = []pkicmp.CMPCertificate{{Raw: ca.Raw}}
-		return m
-	}
+	ip := func() *pkicmp.PKIMessage { return issuing(device, []*x509.Certificate{ca}, nil) }
 	genp := func() *pkicmp.PKIMessage { return signedBy(message(pkicmp.NewGenPBody(), testCA, nil), ca) }
 	errorMsg := func(status pkicmp.PKIStatus) *pkicmp.PKIMessage {
 		body := pkicmp.NewErrorBody(&pkicmp.ErrorMsgContent{PKIStatusInfo: pkicmp.PKIStatusInfo{Status: status}})
@@ -160,7 +178,45 @@ func TestCheck(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			findings := Check(tt.req, tt.resp)
+			findings := Check(tt.req, tt.resp, nil)
+			switch {
+			case tt.want == "" && len(findings) != 0:
+				t.Errorf("findings = %v, want none", findings)
+			case tt.want != "" && (len(findings) != 1 || !strings.Contains(findings[0].Text, tt.want)):
+				t.Errorf("findings = %v, want one with %q", findings, tt.want)
+			}
+		})
+	}
+}
+
+// TestCheckChain checks when a new certificate needs its chain in extraCerts. Self-signed
+// certificates are left out, so a certificate issued by a known root needs none.
+func TestCheckChain(t *testing.T) {
+	const missing = "carries no extraCerts, so the chain of the new certificate is missing"
+	root, rootKey := newCertificate(t, testCA, nil, nil)
+	sub, subKey := newCertificate(t, pkix.Name{CommonName: "Issuing CA"}, root, rootKey)
+	fromRoot, _ := newCertificate(t, pkix.Name{CommonName: "device"}, root, rootKey)
+	fromSub, _ := newCertificate(t, pkix.Name{CommonName: "device"}, sub, subKey)
+	other, _ := newCertificate(t, pkix.Name{CommonName: "Test CA"}, nil, nil)
+	req := message(pkicmp.NewIRBody(&pkicmp.CertReqMessages{}), pkix.Name{CommonName: "device"}, oidPBMAC1)
+	certs := func(c ...*x509.Certificate) []*x509.Certificate { return c }
+
+	tests := []struct {
+		name    string
+		resp    *pkicmp.PKIMessage
+		trusted []*x509.Certificate
+		want    string
+	}{
+		{"root in caPubs", issuing(fromRoot, nil, certs(root)), nil, ""},
+		{"trusted root", issuing(fromRoot, nil, nil), certs(root), ""},
+		{"unknown root", issuing(fromRoot, nil, nil), nil, missing},
+		{"root with another key", issuing(fromRoot, nil, certs(other)), nil, missing},
+		{"trusted intermediate", issuing(fromSub, nil, certs(root)), certs(root, sub), missing},
+		{"intermediate in extraCerts", issuing(fromSub, certs(sub), certs(root)), nil, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			findings := Check(req, tt.resp, tt.trusted)
 			switch {
 			case tt.want == "" && len(findings) != 0:
 				t.Errorf("findings = %v, want none", findings)
