@@ -235,7 +235,7 @@ certrally keygen --key-type ml-dsa-65 --out device.key \
 
 ### Check responses against RFC 9483
 
-certrally warns when a response breaks a rule of the Lightweight CMP Profile (RFC 9483) that some CAs do not follow, such as a missing chain for the new certificate. `--profile strict` rejects such responses instead and exits with status 6. [docs/profiles.md](docs/profiles.md) lists the rules. [docs/interop.md](docs/interop.md) describes how tested CAs behave.
+certrally warns when a response breaks a rule of the Lightweight CMP Profile (RFC 9483) that some CAs do not follow, such as a missing chain for the new certificate. `--profile strict` rejects such responses instead and exits with status 6. `lint` checks [recorded responses](#inspect-recorded-messages) the same way. [docs/profiles.md](docs/profiles.md) lists the rules. [docs/interop.md](docs/interop.md) describes how tested CAs behave.
 
 ### Use certrally in scripts
 
@@ -246,9 +246,56 @@ certrally cacerts --server https://ca.example.com/.well-known/cmp --ref device-4
   | jq -r '.result.certificates[].subject'
 ```
 
-`--capture run.jsonl` appends every message of the run, with its bytes, to a JSON Lines file for later inspection. Keep capture files private, because the messages of a shared-secret exchange allow offline guessing of the secret.
+`--capture run.jsonl` appends every message of the run, with its bytes, to a JSON Lines file that [`inspect` and `lint`](#inspect-recorded-messages) read. Keep capture files private, because the messages of a shared-secret exchange allow offline guessing of the secret.
 
 [docs/json.md](docs/json.md) describes both formats.
+
+### Inspect recorded messages
+
+`inspect` decodes the messages in a capture file, or in files that hold a message as DER, base64 or hex or several as PEM blocks. It shows the header, the protection, the body and the extra certificates of each message:
+
+```bash
+certrally inspect run.jsonl --ca-cert ca.pem
+```
+
+```text
+← kup  run.jsonl:3  ECDSA SHA-256  1062 bytes  2026-10-13 11:02:04 UTC
+  Header
+    Version          2
+    Sender           CN=Example CA
+    Recipient        CN=device-42
+    Message time     2026-10-13 11:02:04 UTC
+    Transaction ID   C0:F1:6D:53:1F:6D:D3:FE:45:E3:D6:E2:2C:BD:DD:8E
+    Sender nonce     8B:CD:7D:93:2E:99:E3:0A:91:3B:00:0E:BB:C0:D6:5D
+    Recipient nonce  14:09:0A:43:F8:0F:2D:22:A5:74:49:BA:32:61:48:71
+    Sender KID       3C:9F:DD:E9:90:36:2B:9D:3B:B9:8E:9F:A1:FB:C5:E4:2C:DF:B1:89
+    General info     confirmWaitTime
+  Protection
+    Algorithm  ECDSA SHA-256
+    Signature  valid
+    Signer     CN=Example CA
+    Trust      chains to --ca-cert
+  Certificate response 0
+    Status   accepted
+    Subject  CN=device-42
+    Issuer   CN=Example CA
+    Serial   BB:CB:71:D5:56:10:E4:A2:CC:BD:89:CA:90:CC:B9:51
+    Valid    2026-10-13 11:01 UTC to 2027-10-13 11:02 UTC
+    Key      ECDSA P-256
+  Extra certificate 1 (signer)
+    Subject  CN=Example CA
+    ...
+```
+
+certrally checks a signature with the certificates in the message and in `--ca-cert`. With `--ca-cert` it also checks that the signer chains to those certificates. It cannot check a MAC without the shared secret.
+
+`lint` checks recorded responses against the [profile rules](docs/profiles.md) and exits with status 6 when a response breaks one:
+
+```bash
+certrally lint run.jsonl
+```
+
+A FILE of `-` reads standard input.
 
 ### Colour
 
@@ -273,7 +320,7 @@ The colour depth comes from `TERM` and `COLORTERM`.
 | 3 | The CA rejected the request |
 | 4 | The response broke the protocol or failed verification |
 | 5 | The CA issued the certificate but the confirmation failed. certrally saves the certificate. Check with the CA before retrying, because a retry can issue a second certificate |
-| 6 | A response broke a rule of `--profile strict` |
+| 6 | A response broke a rule of `--profile strict`, or `lint` found a response that breaks a rule |
 
 ## Contributing
 

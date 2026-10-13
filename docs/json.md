@@ -17,7 +17,7 @@ Later versions may add fields. Existing fields keep their names and meaning.
 
 ## JSON output
 
-`--json` works with `enroll`, `revoke`, `cacerts`, `cmp genm` and its subcommands, `ping` and `keygen`. Standard output then holds exactly one JSON document, whatever the outcome. The ladder diagram and the text report are not printed. The exit status is the same as without `--json`.
+`--json` works with `enroll`, `revoke`, `cacerts`, `cmp genm` and its subcommands, `ping`, `inspect`, `lint` and `keygen`. Standard output then holds exactly one JSON document, whatever the outcome. The ladder diagram and the text report are not printed. The exit status is the same as without `--json`.
 
 When certrally cannot parse the command line, for example because of an unknown flag or a missing required flag, the document holds the error and the error is also printed on standard error. `--json` cannot be combined with `--quiet` or with an output file of `-`.
 
@@ -110,8 +110,31 @@ A certificate in a result has `subject`, `issuer`, `serial`, `notBefore`, `notAf
 | `cmp genm raw` | `items`, each with `infoType`, `oid` and `value` |
 | `ping` | `sent`, `answered`, `sender`, `protection`, `rttMs` with `min`, `avg` and `max`. With `--ca-cert`, `verified` tells whether every answer was signed by that CA |
 | `keygen` | `keyType`, `key`, `publicKey`, `csr`, `saved`. With `--list`, `keyTypes` |
+| `inspect` | `messages`, one [inspected message](#inspected-messages) per message in file order |
+| `lint` | `checked` and `skipped` count the responses checked and those without a request before them. `findings` lists each deviation with `source`, `body`, `text` and `rule`. With exit status 6 the result is present |
 
 `saved` lists the files written, in the order they were written.
+
+### Inspected messages
+
+| Field | Meaning |
+|---|---|
+| `source` | Where the message was read, such as `run.jsonl:4` for line 4 of a capture file, `ip.der` or `msgs.pem#2` for the second PEM block |
+| `direction` | `request` or `response`. A capture records it. For other files it follows from the body type |
+| `time`, `server` | When a capture recorded the message and the server of its run |
+| `size`, `body` | The message size in bytes and the PKIBody type |
+| `header` | `pvno`, `sender`, `recipient`, `messageTime`, `transactionId`, `senderNonce`, `recipNonce`, `senderKid`, `recipKid`, `freeText`, `generalInfo` with the info type names and `certProfile`. An empty `sender` or `recipient` is the NULL-DN |
+| `protection` | `algorithm`, `none` for an unprotected message. `check` is `valid`, `invalid` or `unchecked`, with the reason in `problem`. A MAC is `unchecked`. `signer` is the subject of the certificate whose signature verifies. With `--ca-cert`, `trusted` tells whether the signer chains to those certificates |
+| `requests` | The requests of `ir`, `cr`, `kur` and `p10cr`: `certReqId` (absent for `p10cr`), `subject`, `key`, `extensions`, `pop` (`signature`, `raVerified`, `keyEncipherment`, `keyAgreement` or `none`), `popSignature` and `popProblem` for a signature proof and `oldCert` with `issuer` and `serial` for a key update |
+| `responses` | The responses of `ip`, `cp` and `kup`: `certReqId`, `status`, `failInfo`, `statusText`, `certificate` and `encrypted` when the certificate is encrypted |
+| `caPubs`, `extraCerts` | Certificates |
+| `revocations` | The entries of `rr` with `issuer`, `serial` and `reason`, or of `rp` with `status`, `failInfo`, `statusText` and, when the CA names the certificate, `issuer` and `serial` |
+| `confirmations` | The entries of `certConf`: `certReqId`, `certHash`, `hashAlg` and the status. No status means the certificate is accepted |
+| `polls` | The entries of `pollReq` with `certReqId`, or of `pollRep` with `certReqId`, `checkAfter` and `reason` |
+| `error` | The content of an `error` body: `status`, `failInfo`, `statusText`, `errorCode` and `errorDetails` |
+| `items` | The items of `genm` and `genp`, like those of `cmp genm raw` |
+| `nested` | The body types of the messages in a `nested` body |
+| `problems` | Parts of the message that could not be decoded |
 
 ## Capture files
 
@@ -121,6 +144,6 @@ A certificate in a result has `subject`, `issuer`, `serial`, `notBefore`, `notAf
 2. One [message record](#message-records) per request, response or failure, including `der`.
 3. An `end` line with `time` and `exitStatus`.
 
-Each run appends its own lines, so one file can hold several runs. `--capture` works together with `--json` and `--quiet`.
+Each run appends its own lines, so one file can hold several runs. `--capture` works together with `--json` and `--quiet`. `certrally inspect` and `certrally lint` read capture files.
 
 certrally creates the file with mode 0600. Keep capture files private: anyone who has the messages of a MAC-protected exchange can try to guess the shared secret offline.
