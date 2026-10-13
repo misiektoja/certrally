@@ -6,6 +6,7 @@ certrally is a command line client for certificate enrollment with the Certifica
 > certrally is in early development and has not been released yet.
 
 * Enrollment and key update over CMP (`ir`, `cr`, `kur`, `p10cr`) with a shared secret or a certificate
+* A step-by-step `enroll` on a terminal that prints the matching command for scripts
 * Revocation (`rr`) and the RFC 9483 support messages for CA certificates, root CA updates, request templates and CRLs
 * `ping` to check that a server answers CMP and `keygen` to create keys and requests offline
 * `mock` to run a CMP test CA on your machine, for trying certrally and testing scripts
@@ -86,7 +87,7 @@ certrally --version
 certrally mock --ca-out ca.pem
 ```
 
-Run the printed command in another terminal. The test CA listens on `127.0.0.1:8080` unless `--listen` names another address. It generates a shared secret for the reference `demo` unless `--ref` and `--secret-file` or `CERTRALLY_SECRET` provide one. It logs one line per request and keeps its key and certificates in memory, so every run starts empty. It does not sign composite ML-DSA keys.
+Run the printed command in another terminal. Running `certrally enroll` without flags there asks for the settings instead. The test CA listens on `127.0.0.1:8080` unless `--listen` names another address. It generates a shared secret for the reference `demo` unless `--ref` and `--secret-file` or `CERTRALLY_SECRET` provide one. It logs one line per request and keeps its key and certificates in memory, so every run starts empty. It does not sign composite ML-DSA keys.
 
 ### Enroll a certificate
 
@@ -135,6 +136,16 @@ certrally enroll --server https://ca.example.com/.well-known/cmp --type kur \
 ```
 
 `--type cr` requests an additional certificate. `--type p10cr` sends a PKCS#10 request, either from `--csr` or built from `--subject` and `--san`.
+
+### Enroll step by step
+
+On a terminal, `certrally enroll` without flags asks for each setting: the server, the CA to trust, the shared secret or certificate, the names, the key type and the files to write. It checks every answer before it moves on. Flags you give answer their questions. `--interactive` asks only for the rest:
+
+```bash
+certrally enroll --interactive --server https://ca.example.com/.well-known/cmp
+```
+
+Before it sends the request, certrally prints the same request as one command for scripts and asks for confirmation. The shared secret is hidden while you type it and never appears in that command. The questions need a terminal and cannot be combined with `--json`. With `ACCESSIBLE=1` they are asked line by line, for example for a screen reader.
 
 Notes:
 
