@@ -1,7 +1,8 @@
 # Keeps dependencies current without letting updates arrive faster than they can be reviewed.
 #
 # Go modules and GitHub Actions are grouped so one pull request carries a whole ecosystem's patch and
-# minor updates. Major updates stay separate, because they need their own validation run.
+# minor updates. Major updates stay separate, because they need their own validation run. The Docker
+# entry keeps the pinned base image digest of the release image current.
 version: 2
 
 updates:
@@ -40,3 +41,14 @@ updates:
         update-types:
           - minor
           - patch
+
+  - package-ecosystem: docker
+    directory: "/"
+    target-branch: dev
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: build
+      include: scope

@@ -40,3 +40,6 @@ jobs:
 
       - name: Lint workflows
         run: make actionlint
+
+      - name: Check the release configuration
+        run: make release-config-check
