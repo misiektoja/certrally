@@ -90,7 +90,7 @@ certrally --version
 certrally mock --ca-out ca.pem
 ```
 
-Run the printed command in another terminal. Running `certrally enroll` without flags there asks for the settings instead. The test CA listens on `127.0.0.1:8080` unless `--listen` names another address. It generates a shared secret for the reference `demo` unless `--ref` and `--secret-file` or `CERTRALLY_SECRET` provide one. It logs one line per request and keeps its key and certificates in memory, so every run starts empty. It does not sign composite ML-DSA keys.
+Run the printed command in another terminal. Running `certrally enroll` without flags there asks for the settings instead. The test CA listens on `127.0.0.1:8080` unless `--listen` names another address. It generates a shared secret for the reference `demo` unless `--ref` and `--secret-file` or `CERTRALLY_SECRET` provide one. It logs one line per request and keeps its key and certificates in memory, so every run starts empty.
 
 ### Enroll a certificate
 
