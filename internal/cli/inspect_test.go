@@ -245,6 +245,52 @@ func TestInspectExpiredSigner(t *testing.T) {
 	}
 }
 
+// TestInspectDamagedSignatureWithChain checks a damaged signature in a message that carries its CA certificate
+// and no senderKID, as Nokia NCM sends them. The CA certificate does not name the sender, which must not turn
+// the invalid signature into an unchecked one.
+func TestInspectDamagedSignatureWithChain(t *testing.T) {
+	now := time.Now()
+	caKey, caCert := testCertificate(t, &x509.Certificate{
+		Subject:               pkix.Name{CommonName: "Chain CA"},
+		NotBefore:             now.Add(-time.Hour),
+		NotAfter:              now.Add(time.Hour),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign,
+	}, nil, nil)
+	signerKey, signer := testCertificate(t, &x509.Certificate{
+		Subject:   pkix.Name{CommonName: "Chain signer"},
+		NotBefore: now.Add(-time.Hour),
+		NotAfter:  now.Add(time.Hour),
+		KeyUsage:  x509.KeyUsageDigitalSignature,
+	}, caCert, caKey)
+	msg := pkicmp.NewPKIMessage(pkicmp.NewPKIConfBody(), pkicmp.MessageOptions{
+		Sender: pkicmp.NewDirectoryNameFromRawDER(signer.RawSubject),
+	})
+	creds, err := pkicmp.NewSignatureCredentials(signerKey, signer, caCert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := creds.Protect(msg); err != nil {
+		t.Fatal(err)
+	}
+	if len(msg.Header.SenderKID) != 0 || len(msg.ExtraCerts) != 2 {
+		t.Fatalf("senderKID %X and %d extra certificates, want none and 2", msg.Header.SenderKID, len(msg.ExtraCerts))
+	}
+	msg.Protection[len(msg.Protection)/2] ^= 0xff
+	der, err := msg.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(t.TempDir(), "damaged.der")
+	writeFile(t, file, der)
+
+	code, doc := runJSON(t, "inspect", file)
+	if p := "result.messages.0.protection."; code != exitOK || get(doc, p+"check") != "invalid" {
+		t.Errorf("exited with %d, want an invalid signature: %v", code, get(doc, "result.messages.0.protection"))
+	}
+}
+
 // testCertificate certifies a new key with template, signed by issuerKey under issuer or self-signed when
 // issuer is nil.
 func testCertificate(t *testing.T, template, issuer *x509.Certificate, issuerKey *ecdsa.PrivateKey) (*ecdsa.PrivateKey, *x509.Certificate) {
