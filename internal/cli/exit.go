@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"strings"
 
 	"github.com/misiektoja/go-pki-cmp/client"
@@ -65,7 +66,8 @@ func exitCode(err error, r *trace.Recorder) int {
 
 // errorField shows an error message, which can quote the peer, safely.
 func errorField(message string) ui.Field {
-	return ui.Field{Name: "Error", Value: ui.Sanitize(message)}
+	// Joined errors put each cause on its own line, which would break the field layout.
+	return ui.Field{Name: "Error", Value: ui.Sanitize(strings.ReplaceAll(message, "\n", ": "))}
 }
 
 // hintField suggests what to change.
@@ -152,7 +154,11 @@ func (s *session) failure(err error) *failure {
 			Hint:    "Use --profile compatible to accept these deviations with a warning.",
 		}
 	default:
-		return &failure{code: code, Title: "The exchange failed", Message: err.Error(), Hint: verificationHint(err)}
+		hint := issuedTrustHint(err, s.pinned)
+		if hint == "" {
+			hint = verificationHint(err)
+		}
+		return &failure{code: code, Title: "The exchange failed", Message: err.Error(), Hint: hint}
 	}
 }
 
@@ -178,6 +184,11 @@ func (s *session) rejection(err error) *failure {
 		}
 	}
 	f.Status, f.FailInfo, f.Hint = status.String(), trace.FailureNames(failInfo), failureHint(failInfo)
+	if failInfo == 0 || failInfo&pbmFailures != 0 {
+		if req := s.lastRequest(); req != nil && req.Protection == "PBMAC1" {
+			f.Hint = strings.TrimSpace(f.Hint + " Some CAs accept only PasswordBasedMac. Try --mac pbm.")
+		}
+	}
 	if text != "" {
 		f.StatusText = []string{text}
 	}
@@ -205,6 +216,21 @@ var failureHints = []struct {
 	{pkicmp.FailSystemUnavail, "The CA is temporarily unavailable. Try again later."},
 	{pkicmp.FailTransactionIdInUse, "The CA still holds a transaction with this ID. Try again."},
 	{pkicmp.FailBadRequest, "The CA does not accept this request."},
+}
+
+// pbmFailures are the failure bits that CAs without PBMAC1 support answer a PBMAC1-protected request
+// with. The OpenSSL CMP server, for one, answers badRequest.
+const pbmFailures = pkicmp.FailBadRequest | pkicmp.FailBadMessageCheck | pkicmp.FailSignerNotTrusted
+
+// lastRequest returns the summary of the last request sent, or nil when none was.
+func (s *session) lastRequest() *trace.Summary {
+	events := s.recorder.Events()
+	for _, ev := range slices.Backward(events) {
+		if ev.Kind == trace.Request && ev.Message != nil {
+			return ev.Message
+		}
+	}
+	return nil
 }
 
 // failureHint returns a suggestion for the failure bits. It returns "" when none applies.
@@ -249,6 +275,21 @@ func (c *connection) transportHint(err, problem error) string {
 		return "Check the path in --server."
 	}
 	return ""
+}
+
+// issuedTrustHint explains a new certificate that does not chain to the trusted CA certificates. It
+// returns "" for other errors.
+func issuedTrustHint(err error, pinned bool) string {
+	// The go-pki-cmp client names this check "verify certificate trust".
+	if clientErr, ok := errors.AsType[*client.Error](err); !ok || clientErr.Op != "verify certificate trust" {
+		return ""
+	}
+	if pinned {
+		return "The new certificate does not chain to the certificates in --ca-cert. " +
+			"Add the CA certificate that issued it."
+	}
+	return "The response does not carry the CA certificate that issued the new certificate. " +
+		"Pass it with --ca-cert."
 }
 
 // verificationHint names the flag that would let a failed response verify. It returns "" when it has none.
