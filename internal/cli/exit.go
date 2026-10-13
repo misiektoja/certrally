@@ -184,10 +184,13 @@ func (s *session) rejection(err error) *failure {
 		}
 	}
 	f.Status, f.FailInfo, f.Hint = status.String(), trace.FailureNames(failInfo), failureHint(failInfo)
-	if failInfo == 0 || failInfo&pbmFailures != 0 {
-		if req := s.lastRequest(); req != nil && req.Protection == "PBMAC1" {
-			f.Hint = strings.TrimSpace(f.Hint + " Some CAs accept only PasswordBasedMac. Try --mac pbm.")
-		}
+	req := s.lastRequest()
+	if req != nil && req.Body == "genm" && failInfo == pkicmp.FailBadRequest {
+		// EJBCA Community Edition, for one, rejects every general message this way.
+		f.Hint += " It may not support general messages."
+	}
+	if req != nil && req.Protection == "PBMAC1" && pbmacUnsupported(failInfo, text) {
+		f.Hint = strings.TrimSpace(f.Hint + " Some CAs accept only PasswordBasedMac. Try --mac pbm.")
 	}
 	if text != "" {
 		f.StatusText = []string{text}
@@ -203,6 +206,8 @@ var failureHints = []struct {
 	{pkicmp.FailBadMessageCheck, "The CA could not verify the request protection. " +
 		"Check the shared secret and --ref, or --cert and --key."},
 	{pkicmp.FailSignerNotTrusted, "The CA does not trust the certificate in --cert."},
+	{pkicmp.FailWrongIntegrity, "The CA expects the other kind of protection: " +
+		"a shared secret instead of --cert and --key, or the reverse."},
 	{pkicmp.FailCertRevoked, "The certificate is already revoked."},
 	{pkicmp.FailBadCertId, "The CA does not know this certificate."},
 	{pkicmp.FailWrongAuthority, "The request reached the wrong CA. Check --server and --recipient."},
@@ -218,9 +223,17 @@ var failureHints = []struct {
 	{pkicmp.FailBadRequest, "The CA does not accept this request."},
 }
 
-// pbmFailures are the failure bits that CAs without PBMAC1 support answer a PBMAC1-protected request
-// with. The OpenSSL CMP server, for one, answers badRequest.
-const pbmFailures = pkicmp.FailBadRequest | pkicmp.FailBadMessageCheck | pkicmp.FailSignerNotTrusted
+// pbmacUnsupported reports whether a rejection of a PBMAC1-protected request suggests that the CA does
+// not know PBMAC1. Such a CA cannot check the MAC or takes the request for a signed one. badRequest
+// alone says nothing about the protection, so it counts only when the text asks for a signer
+// certificate, as the OpenSSL CMP server does with "no suitable sender cert".
+func pbmacUnsupported(failInfo pkicmp.PKIFailureInfo, text string) bool {
+	const protection = pkicmp.FailBadMessageCheck | pkicmp.FailWrongIntegrity | pkicmp.FailSignerNotTrusted
+	if failInfo&protection != 0 {
+		return true
+	}
+	return failInfo&pkicmp.FailBadRequest != 0 && strings.Contains(strings.ToLower(text), "sender cert")
+}
 
 // lastRequest returns the summary of the last request sent, or nil when none was.
 func (s *session) lastRequest() *trace.Summary {
@@ -260,6 +273,7 @@ func (s *session) transportFailure(err error) *failure {
 // transportHint suggests a fix for a failure to reach the server. It returns "" when it has none.
 func (c *connection) transportHint(err, problem error) string {
 	_, unknownAuthority := errors.AsType[x509.UnknownAuthorityError](problem)
+	_, wrongHost := errors.AsType[x509.HostnameError](problem)
 	_, dnsFailure := errors.AsType[*net.DNSError](problem)
 	_, netFailure := errors.AsType[*net.OpError](problem)
 	switch {
@@ -267,6 +281,9 @@ func (c *connection) transportHint(err, problem error) string {
 		return fmt.Sprintf("No answer within --timeout %s.", c.timeout)
 	case unknownAuthority:
 		return "The HTTPS certificate of the server is not trusted. Pass its CA with --tls-ca-cert."
+	case wrongHost:
+		return "The HTTPS certificate of the server is issued for another host name. " +
+			"Use a name from the certificate in --server."
 	case dnsFailure:
 		return "Check the host name in --server."
 	case netFailure:
