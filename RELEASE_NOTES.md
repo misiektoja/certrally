@@ -37,7 +37,7 @@ The first version requests and revokes certificates over CMP, asks the CA for it
 
 * **`--json`** prints the outcome of `enroll`, `revoke`, `cacerts`, `cmp genm`, `ping`, `inspect`, `lint` and `keygen` as one JSON document on standard output. It holds the exit status, every message of the exchange, the result of the command and any error. [docs/json.md](docs/json.md) describes the fields.
 * **`--capture FILE`** appends every message of a run, with its bytes and timing, to a JSON Lines file. Several runs can share one file. New files get mode 0600, because the messages of a shared-secret exchange allow offline guessing of the secret.
-* **`certrally inspect`** decodes CMP messages from capture files and from DER, base64, hex or PEM files. It shows the header, protection, body and extra certificates of each message. It checks signatures and, with `--ca-cert`, whether the signer chains to that CA. **`certrally lint`** checks recorded responses against the profile rules and against the transaction ID and nonces of their requests. It exits with status 6 when a response breaks a rule.
+* **`certrally inspect`** decodes CMP messages from capture files and from DER, base64, hex or PEM files. It shows the header, protection, body and extra certificates of each message. It checks signatures and, with `--ca-cert`, whether the signer chains to that CA. It checks PBM and PBMAC1 MACs with the shared secret from `--secret-file` or `CERTRALLY_SECRET`. **`certrally lint`** checks recorded responses against the profile rules and against the transaction ID and nonces of their requests. It exits with status 6 when a response breaks a rule.
 
 ### Installation
 
