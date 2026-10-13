@@ -4,6 +4,7 @@ package trace
 
 import (
 	"bytes"
+	"crypto/x509/pkix"
 	"encoding/asn1"
 	"fmt"
 	"io"
@@ -54,10 +55,12 @@ type Summary struct {
 	// Body is the body type, such as "ir", "ip" or "error".
 	Body string
 	// Protection names the protection algorithm, or "none".
-	Protection    string
+	Protection string
+	// Sender is the sender name in the header. It is peer-controlled text.
+	Sender        string
 	TransactionID []byte
 	SenderKID     []byte
-	// Status, FailInfo and StatusText come from the first status in ip, cp, kup or error bodies.
+	// Status, FailInfo and StatusText come from the first status in ip, cp, kup, rp or error bodies.
 	// They are peer-controlled text and must be sanitized before display.
 	Status     string
 	FailInfo   string
@@ -205,6 +208,11 @@ func Summarize(der []byte) *Summary {
 		SenderKID:     msg.Header.SenderKID,
 		ExtraCerts:    len(msg.ExtraCerts),
 	}
+	if rdns := msg.Header.Sender.DirectoryName; len(rdns) > 0 {
+		var name pkix.Name
+		name.FillFromRDNSequence(&rdns)
+		s.Sender = name.String()
+	}
 	if alg := msg.Header.ProtectionAlg; alg != nil {
 		s.Protection = AlgorithmName(alg.Algorithm)
 	}
@@ -240,6 +248,12 @@ func statusOf(body *pkicmp.PKIBody) (pkicmp.PKIStatusInfo, bool) {
 			return pkicmp.PKIStatusInfo{}, false
 		}
 		return content.PKIStatusInfo, true
+	case pkicmp.BodyTypeRP:
+		content, err := body.RP()
+		if err != nil || len(content.Status) == 0 {
+			return pkicmp.PKIStatusInfo{}, false
+		}
+		return content.Status[0], true
 	default:
 		return pkicmp.PKIStatusInfo{}, false
 	}

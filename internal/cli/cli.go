@@ -62,9 +62,17 @@ func newRootCommand() *cobra.Command {
 		Use:   "certrally",
 		Short: "Certificate enrollment client for CMP",
 		Long: "certrally is a certificate enrollment client for the Certificate Management Protocol (CMP).\n\n" +
-			"It shows each exchange as a ladder diagram and explains failures.",
+			"It shows each exchange as a ladder diagram and explains failures. It trusts the CA that answers " +
+			"its first request, unless --ca-cert names the CA to expect.",
 	}
-	cmd.AddCommand(newEnrollCommand())
+	cmd.AddCommand(
+		newEnrollCommand(),
+		newRevokeCommand(),
+		newCACertsCommand("cacerts"),
+		newCMPCommand(),
+		newPingCommand(),
+		newKeygenCommand(),
+	)
 
 	// Run applies the colour mode before parsing. The flag is still defined here so that help lists
 	// it, an invalid value is rejected and shell completion offers the valid values.
@@ -83,7 +91,7 @@ func completeColorMode(*cobra.Command, []string, string) ([]string, cobra.ShellC
 	return values, cobra.ShellCompDirectiveNoFileComp
 }
 
-// colorModeFromArgs returns the --color value in args, or Auto when it is absent or invalid. An
+// colorModeFromArgs returns the --color value in args. It returns Auto when the flag is absent or invalid. An
 // invalid value is reported later by cobra, with the rest of the command line.
 func colorModeFromArgs(args []string) termcolor.Mode {
 	fs := pflag.NewFlagSet("certrally", pflag.ContinueOnError)
@@ -122,7 +130,7 @@ func (f *colorFlag) Type() string { return "mode" }
 // version is empty for a build without version information, which makes fang report it as unknown.
 //
 // fang reads build information only for binaries installed with go install. Go also stamps a version
-// derived from the repository state into binaries built inside a Git checkout, and that version is
+// derived from the repository state into binaries built inside a Git checkout. That version is
 // worth showing.
 func buildVersion(info *debug.BuildInfo) (version, commit string) {
 	if info.Main.Version == "" || info.Main.Version == "(devel)" {

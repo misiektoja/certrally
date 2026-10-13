@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -339,4 +340,31 @@ func (s *session) client(extra ...client.Option) (*client.Client, error) {
 		opts = append(opts, client.WithRecipient(name))
 	}
 	return client.NewClient(s.conn.server, append(opts, extra...)...), nil
+}
+
+// exchange runs one operation against the server. It loads the credentials, opens a session and
+// draws the ladder around op. A failure is reported before the error is returned.
+func exchange[T any](ctx context.Context, conn *connection, prot *protection, stdin io.Reader, stderr io.Writer, op func(context.Context, *client.Client, *protected) (T, error)) (T, *session, error) {
+	var zero T
+	pr, err := prot.load(stdin, stderr)
+	if err != nil {
+		return zero, nil, err
+	}
+	s, err := conn.open(stderr, pr.chain)
+	if err != nil {
+		return zero, nil, err
+	}
+	c, err := s.client(pr.clientOpts...)
+	if err != nil {
+		return zero, nil, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, conn.timeout)
+	defer cancel()
+	s.startLadder()
+	result, err := op(ctx, c, pr)
+	s.endLadder()
+	if err != nil {
+		return zero, s, s.fail(err)
+	}
+	return result, s, nil
 }

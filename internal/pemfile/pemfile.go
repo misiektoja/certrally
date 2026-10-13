@@ -54,6 +54,26 @@ func ReadCSR(path string) ([]byte, error) {
 	return ders[0], nil
 }
 
+// ReadCRL reads a certificate revocation list in PEM or DER form.
+func ReadCRL(path string) (*x509.RevocationList, error) {
+	data, err := os.ReadFile(path) //nolint:gosec // G304: the user names the file to read.
+	if err != nil {
+		return nil, err
+	}
+	ders, err := decodeAll(data, "X509 CRL")
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if len(ders) != 1 {
+		return nil, fmt.Errorf("%s: holds %d CRLs, want 1", path, len(ders))
+	}
+	crl, err := x509.ParseRevocationList(ders[0])
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return crl, nil
+}
+
 // decodeAll returns the DER content of every PEM block of the wanted types. Data without any PEM
 // block is treated as a single DER value. Blocks of other types are an error, so that a key passed
 // where a certificate is expected is reported rather than ignored.

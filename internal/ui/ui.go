@@ -166,6 +166,17 @@ func Report(w io.Writer, ok bool, title string, fields []Field) {
 		mark, style = "✗", bad
 	}
 	_, _ = fmt.Fprintf(w, "%s %s\n", style.Render(mark), bold.Render(title))
+	writeFields(w, "  ", fields)
+}
+
+// Section writes a heading under a report, followed by its fields indented below it.
+func Section(w io.Writer, heading string, fields []Field) {
+	_, _ = fmt.Fprintf(w, "  %s\n", bold.Render(heading))
+	writeFields(w, "    ", fields)
+}
+
+// writeFields writes the non-empty fields with their names aligned.
+func writeFields(w io.Writer, indent string, fields []Field) {
 	width := 0
 	for _, f := range fields {
 		if f.Value != "" {
@@ -177,7 +188,7 @@ func Report(w io.Writer, ok bool, title string, fields []Field) {
 			continue
 		}
 		name := f.Name + strings.Repeat(" ", width-len(f.Name))
-		_, _ = fmt.Fprintf(w, "  %s  %s\n", faint.Render(name), f.Value)
+		_, _ = fmt.Fprintf(w, "%s%s  %s\n", indent, faint.Render(name), f.Value)
 	}
 }
 
