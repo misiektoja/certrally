@@ -1,0 +1,198 @@
+package cli
+
+import (
+	"bytes"
+	"crypto/x509/pkix"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/misiektoja/go-pki-cmp/pkicmp"
+	"golang.org/x/crypto/cryptobyte"
+	cbasn1 "golang.org/x/crypto/cryptobyte/asn1"
+)
+
+// TestStrictProfile checks that the go-pki-cmp example CA meets the strict profile for every
+// command, so a deviation the checks report points at a real CA problem.
+func TestStrictProfile(t *testing.T) {
+	useSecret(t, testSecret)
+	ca := startCA(t, nil)
+	certFile, keyFile := enrollIR(t, ca, "--subject", "CN=device-42")
+	dir := t.TempDir()
+	crlFile := filepath.Join(dir, "ca.crl")
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{"ir", []string{"enroll", "--ref", testRef, "--cert-out", filepath.Join(dir, "ir.pem"), "--key-out", filepath.Join(dir, "ir.key")}},
+		{"kur", []string{"enroll", "--type", "kur", "--cert", certFile, "--key", keyFile,
+			"--cert-out", filepath.Join(dir, "kur.pem"), "--key-out", filepath.Join(dir, "kur.key")}},
+		{"cacerts", []string{"cacerts", "--ref", testRef}},
+		{"template", []string{"cmp", "genm", "template", "--ref", testRef}},
+		{"crl", []string{"cmp", "genm", "crl", "--ref", testRef, "--out", crlFile}},
+		{"raw", []string{"cmp", "genm", "raw", "caCerts", "--ref", testRef}},
+		{"ping", []string{"ping"}},
+		{"revoke", []string{"revoke", "--cert", certFile, "--key", keyFile, "--yes"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := append(slices.Clone(tt.args), "--server", ca.url, "--profile", "strict")
+			code, doc := runJSON(t, args...)
+			if code != exitOK || doc["warnings"] != nil || doc["profile"] != "strict" {
+				t.Errorf("exited with %d: %v", code, doc)
+			}
+		})
+	}
+}
+
+// withoutExtraCerts returns a PKIMessage without its extraCerts field. It returns der unchanged
+// when der is not a PKIMessage.
+func withoutExtraCerts(der []byte) []byte {
+	input := cryptobyte.String(der)
+	var seq, header, body, protection cryptobyte.String
+	var protectionPresent bool
+	if !input.ReadASN1(&seq, cbasn1.SEQUENCE) || !seq.ReadASN1Element(&header, cbasn1.SEQUENCE) ||
+		!seq.ReadAnyASN1Element(&body, nil) ||
+		!seq.ReadOptionalASN1(&protection, &protectionPresent, cbasn1.Tag(0).Constructed().ContextSpecific()) {
+		return der
+	}
+	var b cryptobyte.Builder
+	b.AddASN1(cbasn1.SEQUENCE, func(b *cryptobyte.Builder) {
+		b.AddBytes(header)
+		b.AddBytes(body)
+		if protectionPresent {
+			b.AddASN1(cbasn1.Tag(0).Constructed().ContextSpecific(), func(b *cryptobyte.Builder) { b.AddBytes(protection) })
+		}
+	})
+	return b.BytesOrPanic()
+}
+
+// stripExtraCerts serves a proxy in front of target that removes extraCerts from every response.
+// extraCerts are outside the protection, so the responses still verify.
+func stripExtraCerts(t *testing.T, target string) string {
+	t.Helper()
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp, err := http.Post(target, r.Header.Get("Content-Type"), r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		defer func() { _ = resp.Body.Close() }()
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+		w.WriteHeader(resp.StatusCode)
+		_, _ = io.Copy(w, bytes.NewReader(withoutExtraCerts(body)))
+	}))
+	t.Cleanup(ts.Close)
+	return ts.URL + "/cmp"
+}
+
+// TestProfileDeviation checks how each profile treats an ip without extraCerts.
+func TestProfileDeviation(t *testing.T) {
+	const deviation = "The ip response carries no extraCerts, so the chain of the new certificate is missing (RFC 9483 section 3.3)."
+	useSecret(t, testSecret)
+	ca := startCA(t, nil)
+	server := stripExtraCerts(t, ca.url)
+	dir := t.TempDir()
+	enroll := func(name string, extra ...string) []string {
+		return append([]string{"enroll", "--server", server, "--ref", testRef,
+			"--cert-out", filepath.Join(dir, name+".pem"), "--key-out", filepath.Join(dir, name+".key")}, extra...)
+	}
+
+	t.Run("compatible text", func(t *testing.T) {
+		code, _, errOut := run(t, enroll("text")...)
+		if code != exitOK || !strings.Contains(errOut, deviation) {
+			t.Errorf("exited with %d:\n%s", code, errOut)
+		}
+	})
+	t.Run("compatible json", func(t *testing.T) {
+		code, doc := runJSON(t, enroll("json")...)
+		if code != exitOK || get(doc, "warnings.0") != deviation || doc["profile"] != "compatible" {
+			t.Errorf("exited with %d: %v", code, doc)
+		}
+	})
+	t.Run("strict", func(t *testing.T) {
+		code, doc := runJSON(t, enroll("strict", "--profile", "strict")...)
+		if code != exitProfile || get(doc, "error.title") != "The response breaks the strict profile" ||
+			get(doc, "error.message") != deviation || doc["warnings"] != nil {
+			t.Errorf("exited with %d: %v", code, doc)
+		}
+		// The certificate is not accepted, so it is neither confirmed nor saved.
+		if got := exchangeBodies(doc); got != "ir ip" {
+			t.Errorf("exchange bodies = %q", got)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "strict.pem")); !os.IsNotExist(err) {
+			t.Errorf("certificate saved: %v", err)
+		}
+	})
+	t.Run("strict text", func(t *testing.T) {
+		code, _, errOut := run(t, enroll("strict-text", "--profile", "strict")...)
+		if code != exitProfile || !strings.Contains(errOut, "--profile compatible") {
+			t.Errorf("exited with %d:\n%s", code, errOut)
+		}
+	})
+}
+
+// rejectingServer answers every request with an unprotected rejection whose senderNonce is too short.
+func rejectingServer(t *testing.T) string {
+	t.Helper()
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		der, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		req, err := pkicmp.ParsePKIMessage(der)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		status := pkicmp.PKIStatusInfo{Status: pkicmp.StatusRejection, FailInfo: pkicmp.FailBadRequest}
+		resp := pkicmp.NewPKIMessage(pkicmp.NewErrorBody(&pkicmp.ErrorMsgContent{PKIStatusInfo: status}), pkicmp.MessageOptions{
+			Sender:        pkicmp.NewDirectoryName(pkix.Name{CommonName: "Test CA"}),
+			Recipient:     req.Header.Sender,
+			TransactionID: req.Header.TransactionID,
+			SenderNonce:   make([]byte, 8),
+			RecipNonce:    req.Header.SenderNonce,
+		})
+		out, err := resp.MarshalBinary()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/pkixcmp")
+		_, _ = w.Write(out)
+	}))
+	t.Cleanup(ts.Close)
+	return ts.URL + "/cmp"
+}
+
+// TestProfileRejection checks that a strict session reports a CA rejection with the rules it
+// breaks as warnings, because the reason the CA gives matters more.
+func TestProfileRejection(t *testing.T) {
+	useSecret(t, testSecret)
+	code, doc := runJSON(t, "cacerts", "--server", rejectingServer(t), "--ref", testRef, "--profile", "strict")
+	want := "The error response has a senderNonce of 64 bits instead of at least 128 (RFC 9483 section 3.5)."
+	if code != exitRejected || get(doc, "error.status") != "rejection" || get(doc, "warnings.0") != want {
+		t.Errorf("exited with %d: %v", code, doc)
+	}
+}
+
+// TestProfileUsage checks that an unknown profile is a usage error.
+func TestProfileUsage(t *testing.T) {
+	isolateColorEnv(t)
+	code, _, errOut := run(t, "ping", "--server", "http://ca.test/cmp", "--profile", "lenient")
+	if code != exitLocal || !strings.Contains(errOut, "--profile") {
+		t.Errorf("exited with %d:\n%s", code, errOut)
+	}
+}

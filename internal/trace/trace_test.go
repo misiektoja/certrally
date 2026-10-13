@@ -122,6 +122,36 @@ func TestRecorderTransport(t *testing.T) {
 	}
 }
 
+// TestRecorderInspect checks that Inspect sees each CMP request and response and can stop the
+// response from reaching the caller. A response that is not CMP is not inspected.
+func TestRecorderInspect(t *testing.T) {
+	reqDER := message(t, pkicmp.NewGenMBody())
+	respDER := message(t, pkicmp.NewGenPBody())
+	stop := errors.New("stop")
+	var inspected []string
+	r := &Recorder{
+		Next: respond(200, "application/pkixcmp", respDER),
+		Inspect: func(request, response Event) error {
+			inspected = append(inspected, request.Message.Body+" "+response.Message.Body)
+			return stop
+		},
+	}
+	if _, err := send(t, r, reqDER); !errors.Is(err, stop) {
+		t.Errorf("error = %v, want the Inspect error", err)
+	}
+	if len(inspected) != 1 || inspected[0] != "genm genp" {
+		t.Errorf("inspected = %v", inspected)
+	}
+	if events := r.Events(); len(events) != 2 || events[1].Kind != Response || r.TransportError() != nil {
+		t.Errorf("events = %v", events)
+	}
+
+	r.Next = respond(404, "text/html", []byte("<html>"))
+	if _, err := send(t, r, reqDER); err != nil || len(inspected) != 1 {
+		t.Errorf("error = %v, inspected = %v", err, inspected)
+	}
+}
+
 // TestAlgorithmName checks known, composite and unknown protection algorithms.
 func TestAlgorithmName(t *testing.T) {
 	alg := compositemldsa.Algorithms()[0]
