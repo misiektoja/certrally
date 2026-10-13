@@ -4,7 +4,7 @@ Notable changes to certrally. Versions follow the `vMAJOR.MINOR.PATCH` tags publ
 
 ## v0.1.0 - TBD
 
-The first version requests and revokes certificates over CMP, asks the CA for its certificates, request template and CRLs, checks that a server answers and generates keys, including ML-DSA and composite ML-DSA keys. On a terminal, enroll can ask for each setting step by step. A built-in test CA lets you try it without a real CA. Each exchange is shown as a live message diagram and needs no trust setup. certrally warns about responses that break RFC 9483. A strict profile rejects them. Scripts get the outcome as JSON. Every message of a run can be recorded to a file. Releases come as archives for Linux, macOS and Windows, a Homebrew cask and a container image.
+The first version requests and revokes certificates over CMP, asks the CA for its certificates, request template and CRLs, checks that a server answers and generates keys, including ML-DSA and composite ML-DSA keys. On a terminal, enroll can ask for each setting step by step. A built-in test CA lets you try it without a real CA. Each exchange is shown as a live message diagram and needs no trust setup. certrally warns about responses that break RFC 9483. A strict profile rejects them. Scripts get the outcome as JSON. Every message of a run can be recorded to a file, decoded later and checked against RFC 9483. Releases come as archives for Linux, macOS and Windows, a Homebrew cask and a container image.
 
 ### Enrollment
 
@@ -35,8 +35,9 @@ The first version requests and revokes certificates over CMP, asks the CA for it
 
 ### Scripts and records
 
-* **`--json`** prints the outcome of `enroll`, `revoke`, `cacerts`, `cmp genm`, `ping` and `keygen` as one JSON document on standard output. It holds the exit status, every message of the exchange, the result of the command and any error. [docs/json.md](docs/json.md) describes the fields.
+* **`--json`** prints the outcome of `enroll`, `revoke`, `cacerts`, `cmp genm`, `ping`, `inspect`, `lint` and `keygen` as one JSON document on standard output. It holds the exit status, every message of the exchange, the result of the command and any error. [docs/json.md](docs/json.md) describes the fields.
 * **`--capture FILE`** appends every message of a run, with its bytes and timing, to a JSON Lines file. Several runs can share one file. New files get mode 0600, because the messages of a shared-secret exchange allow offline guessing of the secret.
+* **`certrally inspect`** decodes CMP messages from capture files and from DER, base64, hex or PEM files. It shows the header, protection, body and extra certificates of each message. It checks signatures and, with `--ca-cert`, whether the signer chains to that CA. **`certrally lint`** checks recorded responses against the profile rules and against the transaction ID and nonces of their requests. It exits with status 6 when a response breaks a rule.
 
 ### Installation
 
