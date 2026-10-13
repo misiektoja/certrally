@@ -183,3 +183,161 @@ type keyTypesJSON struct {
 func pemString(typ string, der []byte) string {
 	return string(pem.EncodeToMemory(&pem.Block{Type: typ, Bytes: der}))
 }
+
+// inspectJSON is the result of inspect.
+type inspectJSON struct {
+	Messages []messageJSON `json:"messages"`
+}
+
+// messageJSON describes one CMP message. The members after protection appear only for the body
+// types that carry them.
+type messageJSON struct {
+	// Source locates the message, such as "run.jsonl:4" for line 4 of a capture file.
+	Source string `json:"source"`
+	// Direction is "request" or "response".
+	Direction string `json:"direction"`
+	// Time and Server come from a capture file.
+	Time       *time.Time     `json:"time,omitempty"`
+	Server     string         `json:"server,omitempty"`
+	Size       int            `json:"size"`
+	Body       string         `json:"body"`
+	Header     headerJSON     `json:"header"`
+	Protection protectionJSON `json:"protection"`
+	// Requests are the certificate requests of ir, cr, kur and p10cr.
+	Requests []certRequestJSON `json:"requests,omitempty"`
+	// Responses are the certificate responses of ip, cp and kup.
+	Responses []certResponseJSON `json:"responses,omitempty"`
+	CAPubs    []*certificateJSON `json:"caPubs,omitempty"`
+	// Revocations are the entries of rr and rp.
+	Revocations []revocationJSON `json:"revocations,omitempty"`
+	// Confirmations are the entries of certConf.
+	Confirmations []confirmationJSON `json:"confirmations,omitempty"`
+	// Polls are the entries of pollReq and pollRep.
+	Polls []pollJSON        `json:"polls,omitempty"`
+	Error *errorContentJSON `json:"error,omitempty"`
+	Items []infoItemJSON    `json:"items,omitempty"`
+	// Nested lists the body types of the messages in a nested body.
+	Nested     []string           `json:"nested,omitempty"`
+	ExtraCerts []*certificateJSON `json:"extraCerts,omitempty"`
+	// Problems lists the parts of the message that could not be decoded.
+	Problems []string `json:"problems,omitempty"`
+}
+
+// headerJSON describes a PKIHeader.
+type headerJSON struct {
+	PVNO          int        `json:"pvno"`
+	Sender        string     `json:"sender"`
+	Recipient     string     `json:"recipient"`
+	MessageTime   *time.Time `json:"messageTime,omitempty"`
+	TransactionID string     `json:"transactionId,omitempty"`
+	SenderNonce   string     `json:"senderNonce,omitempty"`
+	RecipNonce    string     `json:"recipNonce,omitempty"`
+	SenderKID     string     `json:"senderKid,omitempty"`
+	RecipKID      string     `json:"recipKid,omitempty"`
+	FreeText      []string   `json:"freeText,omitempty"`
+	// GeneralInfo names the info types in generalInfo.
+	GeneralInfo []string `json:"generalInfo,omitempty"`
+	CertProfile string   `json:"certProfile,omitempty"`
+}
+
+// protectionJSON describes the protection of a message.
+type protectionJSON struct {
+	// Algorithm is the protection algorithm. It is "none" for an unprotected message.
+	Algorithm string `json:"algorithm"`
+	// Check is "valid", "invalid" or "unchecked". It is absent for an unprotected message. A MAC
+	// is unchecked.
+	Check string `json:"check,omitempty"`
+	// Signer is the subject of the certificate whose signature verifies.
+	Signer string `json:"signer,omitempty"`
+	// Trusted tells with --ca-cert whether the signer chains to those certificates.
+	Trusted *bool `json:"trusted,omitempty"`
+	// Problem says why the protection is invalid or unchecked.
+	Problem string `json:"problem,omitempty"`
+}
+
+// certRequestJSON describes a certificate request.
+type certRequestJSON struct {
+	// CertReqID is absent for p10cr, which has none.
+	CertReqID  *int64          `json:"certReqId,omitempty"`
+	Subject    string          `json:"subject,omitempty"`
+	Key        string          `json:"key,omitempty"`
+	Extensions []extensionJSON `json:"extensions,omitempty"`
+	// POP is the kind of proof-of-possession: "signature", "raVerified", "keyEncipherment",
+	// "keyAgreement" or "none".
+	POP string `json:"pop"`
+	// POPSignature is "valid", "invalid" or "unchecked" for a signature proof.
+	POPSignature string `json:"popSignature,omitempty"`
+	// POPProblem says why the proof is invalid or unchecked.
+	POPProblem string `json:"popProblem,omitempty"`
+	// OldCert is the certificate a key update request replaces.
+	OldCert *certIDJSON `json:"oldCert,omitempty"`
+}
+
+// certIDJSON names a certificate by issuer and serial number.
+type certIDJSON struct {
+	Issuer string `json:"issuer"`
+	Serial string `json:"serial"`
+}
+
+// statusJSON is a PKIStatusInfo.
+type statusJSON struct {
+	Status     string   `json:"status"`
+	FailInfo   []string `json:"failInfo,omitempty"`
+	StatusText []string `json:"statusText,omitempty"`
+}
+
+// certResponseJSON describes a certificate response.
+type certResponseJSON struct {
+	CertReqID int64 `json:"certReqId"`
+	statusJSON
+	Certificate *certificateJSON `json:"certificate,omitempty"`
+	// Encrypted is set when the CA sent the certificate encrypted.
+	Encrypted bool `json:"encrypted,omitempty"`
+}
+
+// revocationJSON is an entry of rr or rp. Issuer and Serial are absent in rp when the CA does not
+// name the certificate. Reason appears in rr and the status in rp.
+type revocationJSON struct {
+	Issuer string `json:"issuer,omitempty"`
+	Serial string `json:"serial,omitempty"`
+	Reason string `json:"reason,omitempty"`
+	*statusJSON
+}
+
+// confirmationJSON is an entry of certConf. A missing status means the certificate is accepted.
+type confirmationJSON struct {
+	CertReqID int64  `json:"certReqId"`
+	CertHash  string `json:"certHash"`
+	HashAlg   string `json:"hashAlg,omitempty"`
+	*statusJSON
+}
+
+// pollJSON is an entry of pollReq or pollRep. CheckAfter and Reason appear in pollRep.
+type pollJSON struct {
+	CertReqID  int64    `json:"certReqId"`
+	CheckAfter *int64   `json:"checkAfter,omitempty"`
+	Reason     []string `json:"reason,omitempty"`
+}
+
+// errorContentJSON is the content of an error body.
+type errorContentJSON struct {
+	statusJSON
+	ErrorCode    int      `json:"errorCode,omitempty"`
+	ErrorDetails []string `json:"errorDetails,omitempty"`
+}
+
+// lintJSON is the result of lint.
+type lintJSON struct {
+	// Checked counts the responses checked and Skipped those without a request before them.
+	Checked  int               `json:"checked"`
+	Skipped  int               `json:"skipped"`
+	Findings []lintFindingJSON `json:"findings"`
+}
+
+// lintFindingJSON is a rule that a response breaks.
+type lintFindingJSON struct {
+	Source string `json:"source"`
+	Body   string `json:"body"`
+	Text   string `json:"text"`
+	Rule   string `json:"rule"`
+}

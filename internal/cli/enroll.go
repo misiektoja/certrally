@@ -450,7 +450,7 @@ func lastStatus(r *trace.Recorder) string {
 // certificateFields describes an issued certificate for the result report.
 func certificateFields(cert *x509.Certificate, status string, saved []string) []ui.Field {
 	return append(describeCertificate(cert),
-		ui.Field{Name: "Status", Value: status},
+		ui.Field{Name: fieldStatus, Value: status},
 		ui.Field{Name: fieldSaved, Value: strings.Join(saved, ", ")},
 	)
 }
@@ -465,7 +465,7 @@ func describeCertificate(cert *x509.Certificate) []ui.Field {
 		{Name: fieldSubject, Value: ui.Sanitize(cert.Subject.String())},
 		{Name: "Alt names", Value: ui.Sanitize(strings.Join(altNames(cert), ", "))},
 		{Name: fieldIssuer, Value: ui.Sanitize(cert.Issuer.String())},
-		{Name: "Serial", Value: formatSerial(cert)},
+		{Name: fieldSerial, Value: formatSerial(cert)},
 		{Name: "Valid", Value: cert.NotBefore.UTC().Format(timeLayout) + " to " + cert.NotAfter.UTC().Format(timeLayout)},
 		{Name: fieldKey, Value: keyDesc},
 	}

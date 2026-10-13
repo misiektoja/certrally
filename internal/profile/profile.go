@@ -2,7 +2,8 @@
 // and RFC 9810 that the go-pki-cmp client relaxes for interoperability.
 //
 // The client already rejects a response with the wrong transaction ID, wrong nonces or a protection
-// that does not verify. The rules here cover deviations that the client accepts.
+// that does not verify. Check covers deviations that the client accepts. CheckReply covers the
+// transaction ID and nonces for responses that no client has checked.
 package profile
 
 import (
@@ -61,6 +62,30 @@ func Check(req, resp *pkicmp.PKIMessage, trusted []*x509.Certificate) []Finding 
 	c.protection()
 	c.extraCerts()
 	c.content()
+	return c.findings
+}
+
+// CheckReply returns the rules that resp breaks in referring to the request it answers. requests
+// are the requests sent so far, in order, and resp answers the last one. A delayed response may
+// carry the senderNonce of an earlier request of the same transaction. The client enforces these
+// rules on live responses, so only responses it has not checked, such as captured ones, need
+// CheckReply.
+func CheckReply(requests []*pkicmp.PKIMessage, resp *pkicmp.PKIMessage) []Finding {
+	c := &checker{resp: resp, body: resp.Body.Type.String()}
+	txID := requests[len(requests)-1].Header.TransactionID
+	if !bytes.Equal(resp.Header.TransactionID, txID) {
+		c.add(rfc9483("3.1"), "has a different transactionID than the request")
+	}
+	nonce := resp.Header.RecipNonce
+	answers := func(r *pkicmp.PKIMessage) bool {
+		return bytes.Equal(r.Header.TransactionID, txID) && bytes.Equal(r.Header.SenderNonce, nonce)
+	}
+	switch {
+	case len(nonce) == 0:
+		c.add(rfc9483("3.5"), "has no recipNonce")
+	case !slices.ContainsFunc(requests, answers):
+		c.add(rfc9483("3.5"), "has a recipNonce that is not the senderNonce of the request")
+	}
 	return c.findings
 }
 

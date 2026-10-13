@@ -180,6 +180,15 @@ func Section(w io.Writer, heading string, fields []Field) {
 	writeFields(w, "    ", fields)
 }
 
+// Heading writes a bold title followed by faint details, for a report that is neither a success
+// nor a failure. Values must already be sanitized if they come from the peer.
+func Heading(w io.Writer, title, details string) {
+	if details != "" {
+		details = "  " + faint.Render(details)
+	}
+	_, _ = fmt.Fprintf(w, "%s%s\n", bold.Render(title), details)
+}
+
 // writeFields writes the non-empty fields with their names aligned.
 func writeFields(w io.Writer, indent string, fields []Field) {
 	width := 0

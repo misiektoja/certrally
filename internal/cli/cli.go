@@ -101,6 +101,8 @@ func newRootCommand() *cobra.Command {
 		newCACertsCommand("cacerts"),
 		newCMPCommand(),
 		newPingCommand(),
+		newInspectCommand(),
+		newLintCommand(),
 		newKeygenCommand(),
 		newMockCommand(),
 	)

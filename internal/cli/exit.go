@@ -96,7 +96,7 @@ func (f *failure) fields(s *session) []ui.Field {
 	switch {
 	case f.Status != "":
 		fields = append(fields,
-			ui.Field{Name: "Status", Value: f.Status},
+			ui.Field{Name: fieldStatus, Value: f.Status},
 			ui.Field{Name: "Fail info", Value: strings.Join(f.FailInfo, ", ")},
 			ui.Field{Name: "CA says", Value: quoteText(f.StatusText)},
 		)

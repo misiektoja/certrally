@@ -150,8 +150,8 @@ func revokeFields(cert *x509.Certificate, reason pkicmp.CRLReason) []ui.Field {
 	return []ui.Field{
 		{Name: fieldSubject, Value: ui.Sanitize(cert.Subject.String())},
 		{Name: fieldIssuer, Value: ui.Sanitize(cert.Issuer.String())},
-		{Name: "Serial", Value: formatSerial(cert)},
-		{Name: "Reason", Value: reason.String()},
+		{Name: fieldSerial, Value: formatSerial(cert)},
+		{Name: fieldReason, Value: reason.String()},
 	}
 }
 
