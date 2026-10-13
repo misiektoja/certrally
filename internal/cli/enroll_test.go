@@ -246,6 +246,19 @@ func TestEnrollSigned(t *testing.T) {
 	}
 }
 
+// TestEnrollSignedOtherCA checks the hint for a signed response whose signer does not chain to --ca-cert.
+func TestEnrollSignedOtherCA(t *testing.T) {
+	useSecret(t, testSecret)
+	ca, other := startCA(t, nil), startCA(t, nil)
+	certFile, keyFile := enrollIR(t, ca)
+	dir := t.TempDir()
+	code, _, errOut := run(t, "enroll", "--server", ca.url, "--type", "kur", "--cert", certFile, "--key", keyFile,
+		"--ca-cert", other.caFile, "--cert-out", filepath.Join(dir, "cert.pem"), "--key-out", filepath.Join(dir, "key.pem"))
+	if code != exitProtocol || !strings.Contains(errOut, "not signed by the CA in --ca-cert") {
+		t.Errorf("exited with %d, want %d with the --ca-cert hint:\n%s", code, exitProtocol, errOut)
+	}
+}
+
 // TestEnrollComposite checks enrollment of a composite ML-DSA key and that the certificate signs a key
 // update and a revocation.
 func TestEnrollComposite(t *testing.T) {
