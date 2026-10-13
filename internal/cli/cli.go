@@ -3,6 +3,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"runtime/debug"
@@ -21,7 +22,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	// applied before cobra parses the command line.
 	if err := termcolor.Apply(colorModeFromArgs(args)); err != nil {
 		_, _ = fmt.Fprintln(stderr, "certrally:", err)
-		return 1
+		return exitLocal
 	}
 
 	root := newRootCommand()
@@ -29,7 +30,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	root.SetOut(stdout)
 	root.SetErr(stderr)
 
-	var opts []fang.Option
+	opts := []fang.Option{fang.WithErrorHandler(handleError)}
 	if info, ok := debug.ReadBuildInfo(); ok {
 		version, commit := buildVersion(info)
 		if version != "" {
@@ -37,9 +38,22 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	if err := fang.Execute(ctx, root, opts...); err != nil {
-		return 1
+		if ee, ok := errors.AsType[*exitError](err); ok {
+			return ee.code
+		}
+		return exitLocal
 	}
-	return 0
+	return exitOK
+}
+
+// handleError prints errors that a command has not already reported. fang capitalizes the first
+// word of an error, which would turn a leading flag name such as --key-out into --Key-Out.
+func handleError(w io.Writer, styles fang.Styles, err error) {
+	if _, ok := errors.AsType[*exitError](err); ok {
+		return
+	}
+	styles.ErrorText = styles.ErrorText.UnsetTransform()
+	fang.DefaultErrorHandler(w, styles, err)
 }
 
 // newRootCommand returns the certrally command with its global flags.
@@ -48,8 +62,9 @@ func newRootCommand() *cobra.Command {
 		Use:   "certrally",
 		Short: "Certificate enrollment client for CMP",
 		Long: "certrally is a certificate enrollment client for the Certificate Management Protocol (CMP).\n\n" +
-			"It is in early development and has no enrollment commands yet.",
+			"It shows each exchange as a ladder diagram and explains failures.",
 	}
+	cmd.AddCommand(newEnrollCommand())
 
 	// Run applies the colour mode before parsing. The flag is still defined here so that help lists
 	// it, an invalid value is rejected and shell completion offers the valid values.
