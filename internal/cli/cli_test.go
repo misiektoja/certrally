@@ -159,7 +159,7 @@ func TestCommandHelp(t *testing.T) {
 	isolateColorEnv(t)
 	_, rootHelp, _ := run(t, "--help")
 	commands := [][]string{
-		{"enroll"}, {"revoke"}, {"cacerts"}, {"ping"}, {"keygen"}, {"cmp"}, {"cmp", "genm"},
+		{"enroll"}, {"revoke"}, {"cacerts"}, {"ping"}, {"keygen"}, {"mock"}, {"cmp"}, {"cmp", "genm"},
 		{"cmp", "genm", "cacerts"}, {"cmp", "genm", "rootupdate"}, {"cmp", "genm", "template"},
 		{"cmp", "genm", "crl"}, {"cmp", "genm", "crlupdate"}, {"cmp", "genm", "raw"},
 	}
