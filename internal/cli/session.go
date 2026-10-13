@@ -64,8 +64,7 @@ func (c *connection) addFlags(cmd *cobra.Command, timeout time.Duration, timeout
 
 // validate checks the server URL, the timeout and the profile.
 func (c *connection) validate() error {
-	u, err := url.Parse(c.server)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+	if !isServerURL(c.server) {
 		return fmt.Errorf("--server %q is not an http or https URL", c.server)
 	}
 	if c.timeout <= 0 {
@@ -75,6 +74,12 @@ func (c *connection) validate() error {
 		return fmt.Errorf("invalid --profile %q, want compatible or strict", c.profile)
 	}
 	return nil
+}
+
+// isServerURL reports whether s is an http or https URL with a host.
+func isServerURL(s string) bool {
+	u, err := url.Parse(s)
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
 }
 
 // checkCapture rejects a --capture file that is also an output of the command.
@@ -108,6 +113,13 @@ func (c *connection) redactedServer() string {
 	return u.Redacted()
 }
 
+// Names of the flags that several commands define and the enroll wizard sets.
+const (
+	flagRef     = "ref"
+	flagSAN     = "san"
+	flagSubject = "subject"
+)
+
 // protection holds the flags that protect requests with a shared secret or a signature.
 type protection struct {
 	ref        string
@@ -117,12 +129,15 @@ type protection struct {
 	keyFile    string
 	extraCerts string
 	sender     string
+	// secret is a shared secret typed into the enroll wizard. It takes the place of the sources that
+	// --secret-file names.
+	secret []byte
 }
 
 // addFlags registers the protection flags.
 func (p *protection) addFlags(cmd *cobra.Command) {
 	f := cmd.Flags()
-	f.StringVar(&p.ref, "ref", "", "reference that identifies the shared secret to the CA")
+	f.StringVar(&p.ref, flagRef, "", "reference that identifies the shared secret to the CA")
 	f.StringVar(&p.mac, "mac", "pbmac1", "shared-secret MAC algorithm: pbmac1 or pbm")
 	f.StringVar(&p.secretFile, "secret-file", "", "read the shared secret from a file, or - for standard input")
 	f.StringVar(&p.certFile, "cert", "", "sign the request with this certificate file, which may include the chain")
@@ -131,7 +146,7 @@ func (p *protection) addFlags(cmd *cobra.Command) {
 	f.StringVar(&p.sender, "sender", "", "sender name in the request header")
 	cmd.MarkFlagsRequiredTogether("cert", "key")
 	_ = cmd.RegisterFlagCompletionFunc("mac", fixedCompletion(macAlgorithms))
-	for _, name := range []string{"ref", "sender"} {
+	for _, name := range []string{flagRef, "sender"} {
 		_ = cmd.RegisterFlagCompletionFunc(name, cobra.NoFileCompletions)
 	}
 }
@@ -183,9 +198,13 @@ func (p *protection) load(stdin io.Reader, prompt io.Writer) (*protected, error)
 		}
 		pr.creds, pr.chain = creds, chain
 	} else {
-		s, err := secret.Source{File: p.secretFile, LookupEnv: os.LookupEnv, Stdin: stdin, Prompt: prompt}.Read()
-		if err != nil {
-			return nil, err
+		s := p.secret
+		if s == nil {
+			var err error
+			s, err = secret.Source{File: p.secretFile, LookupEnv: os.LookupEnv, Stdin: stdin, Prompt: prompt}.Read()
+			if err != nil {
+				return nil, err
+			}
 		}
 		var macOpts []pkicmp.MACCredentialOption
 		if p.mac == "pbm" {

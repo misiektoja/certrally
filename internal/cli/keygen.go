@@ -51,13 +51,13 @@ func newKeygenCommand() *cobra.Command {
 	f.StringVar(&o.out, "out", "", "write the private key to this file, or - for standard output")
 	f.StringVar(&o.pubOut, "pub-out", "", "write the public key to this file")
 	f.StringVar(&o.csrOut, "csr-out", "", "write a certificate request for the key to this file")
-	f.StringVar(&o.subject, "subject", "", "subject name of the request, such as CN=device-42,O=Example")
-	f.StringArrayVar(&o.sans, "san", nil, "subject alternative name of the request (repeatable)")
+	f.StringVar(&o.subject, flagSubject, "", "subject name of the request, such as CN=device-42,O=Example")
+	f.StringArrayVar(&o.sans, flagSAN, nil, "subject alternative name of the request (repeatable)")
 	f.BoolVar(&o.force, "force", false, "replace existing output files")
 	f.BoolVar(&o.list, "list", false, "list the key types and exit")
 	o.outputOptions.addFlags(cmd)
 	_ = cmd.RegisterFlagCompletionFunc("key-type", fixedCompletion(keys.TypeNames()))
-	for _, name := range []string{"subject", "san"} {
+	for _, name := range []string{flagSubject, flagSAN} {
 		_ = cmd.RegisterFlagCompletionFunc(name, cobra.NoFileCompletions)
 	}
 	return cmd

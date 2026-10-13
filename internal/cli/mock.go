@@ -14,7 +14,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -69,11 +68,11 @@ func newMockCommand() *cobra.Command {
 	}
 	f := cmd.Flags()
 	f.StringVar(&o.listen, "listen", "127.0.0.1:8080", "address and port to listen on. Port 0 picks a free port")
-	f.StringVar(&o.ref, "ref", "demo", "reference that identifies the shared secret")
+	f.StringVar(&o.ref, flagRef, "demo", "reference that identifies the shared secret")
 	f.StringVar(&o.secretFile, "secret-file", "", "read the shared secret from a file, or - for standard input")
 	f.StringVar(&o.caOut, "ca-out", "", "save the CA certificate to this file, for --ca-cert")
 	f.BoolVar(&o.force, "force", false, "replace an existing --ca-out file")
-	for _, name := range []string{"listen", "ref"} {
+	for _, name := range []string{"listen", flagRef} {
 		_ = cmd.RegisterFlagCompletionFunc(name, cobra.NoFileCompletions)
 	}
 	return cmd
@@ -245,17 +244,6 @@ func (o *mockOptions) report(p *printer, url string, caCert *x509.Certificate, s
 		command = secret.EnvVar + "=" + string(sec.value) + " " + command
 	}
 	p.line("\nEnroll a certificate from another terminal:\n  " + command + "\n\nPress Ctrl-C to stop.\n")
-}
-
-// shellSafe matches the words a POSIX shell takes literally.
-var shellSafe = regexp.MustCompile(`^[A-Za-z0-9_./:@%+=,-]+$`)
-
-// shellQuote quotes s for a POSIX shell when it contains other characters.
-func shellQuote(s string) string {
-	if shellSafe.MatchString(s) {
-		return s
-	}
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // mockCA is the go-pki-cmp example CA with a clear rejection for composite ML-DSA keys, which it

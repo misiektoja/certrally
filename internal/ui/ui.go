@@ -169,6 +169,11 @@ func Report(w io.Writer, ok bool, title string, fields []Field) {
 	writeFields(w, "  ", fields)
 }
 
+// Answer writes an answer to a question of an interactive form.
+func Answer(w io.Writer, question, answer string) {
+	_, _ = fmt.Fprintf(w, "%s %s  %s\n", good.Render("✓"), faint.Render(question), answer)
+}
+
 // Section writes a heading under a report, followed by its fields indented below it.
 func Section(w io.Writer, heading string, fields []Field) {
 	_, _ = fmt.Fprintf(w, "  %s\n", bold.Render(heading))

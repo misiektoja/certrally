@@ -54,6 +54,7 @@ type enrollOptions struct {
 	chainOut    string
 	force       bool
 	certProfile string
+	interactive bool
 }
 
 // newEnrollCommand returns the enroll command.
@@ -68,6 +69,8 @@ func newEnrollCommand() *cobra.Command {
 			"requests normally use. A new key is generated unless --new-key or --csr supplies one.\n\n" +
 			"The shared secret is read from --secret-file, the CERTRALLY_SECRET environment variable or a " +
 			"prompt, never from the command line.\n\n" +
+			"Run without flags on a terminal, or with --interactive, to be asked for each setting. The " +
+			"equivalent command is printed before the request is sent.\n\n" +
 			exitStatusHelp,
 		Example: "  certrally enroll --server https://ca.example.com/.well-known/cmp --ref device-42 \\\n" +
 			"    --secret-file secret.txt --subject CN=device-42 --san device-42.example.com \\\n" +
@@ -75,6 +78,10 @@ func newEnrollCommand() *cobra.Command {
 			"  certrally enroll --server https://ca.example.com/.well-known/cmp --type kur \\\n" +
 			"    --cert device.pem --key device.key --cert-out device-new.pem --key-out device-new.key",
 		Args: cobra.NoArgs,
+		// The wizard runs before cobra checks the required flags, because it fills them in.
+		PreRunE: func(cmd *cobra.Command, _ []string) error {
+			return startEnrollWizard(cmd, o)
+		},
 		RunE: runWith(&o.outputOptions, func(cmd *cobra.Command, _ []string, p *printer) error {
 			return runEnroll(cmd.Context(), o, p, cmd.InOrStdin())
 		}),
@@ -85,8 +92,8 @@ func newEnrollCommand() *cobra.Command {
 
 	f := cmd.Flags()
 	f.StringVar(&o.reqType, "type", typeIR, "request type: ir, cr, kur or p10cr")
-	f.StringVar(&o.subject, "subject", "", "subject name, such as CN=device-42,O=Example")
-	f.StringArrayVar(&o.sans, "san", nil, "subject alternative name: dns:, ip:, email: or uri: value (repeatable)")
+	f.StringVar(&o.subject, flagSubject, "", "subject name, such as CN=device-42,O=Example")
+	f.StringArrayVar(&o.sans, flagSAN, nil, "subject alternative name: dns:, ip:, email: or uri: value (repeatable)")
 	f.StringVar(&o.keyType, "key-type", keys.DefaultType,
 		"type of the generated key, such as ecdsa-p384, rsa-3072, ml-dsa-65 or mldsa65-ecdsa-p256-sha512")
 	f.StringVar(&o.newKey, "new-key", "", "certify the private key in this file instead of generating one")
@@ -96,12 +103,13 @@ func newEnrollCommand() *cobra.Command {
 	f.StringVar(&o.chainOut, "chain-out", "", "write the issuing CA certificates from the response to this file")
 	f.BoolVar(&o.force, "force", false, "replace existing output files")
 	f.StringVar(&o.certProfile, "cert-profile", "", "certificate profile to request")
+	f.BoolVar(&o.interactive, "interactive", false, "ask for the settings that the command line leaves out")
 
 	_ = cmd.MarkFlagRequired("cert-out")
 	cmd.MarkFlagsMutuallyExclusive("key-type", "new-key", "csr")
 	_ = cmd.RegisterFlagCompletionFunc("type", fixedCompletion(requestTypes))
 	_ = cmd.RegisterFlagCompletionFunc("key-type", fixedCompletion(keys.TypeNames()))
-	for _, name := range []string{"subject", "san", "cert-profile"} {
+	for _, name := range []string{flagSubject, flagSAN, "cert-profile"} {
 		_ = cmd.RegisterFlagCompletionFunc(name, cobra.NoFileCompletions)
 	}
 	return cmd
