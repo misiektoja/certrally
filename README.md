@@ -15,19 +15,57 @@ certrally is a command line client for certificate enrollment with the Certifica
 * JSON output for scripts and capture files that record every message of a run
 * Exit statuses that tell scripts why a request failed
 
-Planned for the first releases:
-
-* Prebuilt binaries for Linux, macOS and Windows
-
 EST support is planned after CMP.
 
 ## Install
 
-certrally needs Go 1.27.2 or newer to build from source:
+Each [release](https://github.com/misiektoja/certrally/releases) has archives for Linux, macOS and Windows on amd64 and arm64. A binary downloaded with a browser on macOS needs `xattr -d com.apple.quarantine certrally` before its first run, because it is not notarized.
+
+With Homebrew on macOS or Linux, which also installs shell completions:
+
+```bash
+brew install misiektoja/tap/certrally
+```
+
+As a container image for linux/amd64 and linux/arm64:
+
+```bash
+docker run --rm ghcr.io/misiektoja/certrally --help
+```
+
+The image runs as an unprivileged user. To save files to the current directory, run it as your user and mount the directory:
+
+```bash
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work" -w /work -e CERTRALLY_SECRET \
+  ghcr.io/misiektoja/certrally enroll --server https://ca.example.com/.well-known/cmp \
+  --ref device-42 --cert-out device.pem --key-out device.key
+```
+
+From source with Go 1.27.2 or newer:
 
 ```bash
 go install github.com/misiektoja/certrally/cmd/certrally@latest
 ```
+
+### Verify a download
+
+`checksums.txt` lists the SHA-256 digest of every archive. The release workflow signs it with a keyless cosign signature. Check the signature, then the archives:
+
+```bash
+cosign verify-blob --bundle checksums.txt.sigstore.json \
+  --certificate-identity https://github.com/misiektoja/certrally/.github/workflows/release.yml@refs/tags/v0.1.0 \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com checksums.txt
+sha256sum --check --ignore-missing checksums.txt
+```
+
+Archives and images also carry GitHub build provenance:
+
+```bash
+gh attestation verify certrally_0.1.0_linux_amd64.tar.gz --repo misiektoja/certrally
+gh attestation verify oci://ghcr.io/misiektoja/certrally:0.1.0 --repo misiektoja/certrally
+```
+
+Each archive has an SPDX SBOM next to it, named after the archive with `.sbom.json` appended. The image carries its SBOM as an attestation.
 
 ## Usage
 

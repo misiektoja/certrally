@@ -32,6 +32,14 @@ Every change must comply with the Developer Certificate of Origin 1.1. Use `git 
 
 Release headings use `## vX.Y.Z - D Mon YYYY`, for example `## v0.1.0 - 2 Nov 2026`. Use an unpadded day and an abbreviated English month. Keep `TBD` until the release date is set.
 
+## Releases
+
+Pushing a `vX.Y.Z` tag on `main` starts the [release workflow](.github/workflows/release.yml). It checks that the tag is on the default branch, that RELEASE_NOTES.md has a dated section for the version and that the tests pass. GoReleaser then publishes the archives, the signed `checksums.txt`, the SBOMs, the container images on `ghcr.io/misiektoja/certrally` and the Homebrew cask. The release description is the RELEASE_NOTES.md section. Tags with a prerelease suffix are refused.
+
+The workflow needs a repository secret named `HOMEBREW_TAP_TOKEN` that can push to `misiektoja/homebrew-tap`. GitHub creates the container package as private on the first release. Make it public in the package settings once.
+
+`make release-snapshot` builds the archives, the cask and per-platform images into `dist/` without publishing. It needs Docker with Buildx. `SNAPSHOT_SKIP` lists the steps to leave out and defaults to `sign,sbom`, because signing needs the identity of a CI run and the SBOMs need syft. `make release-config-check` validates `.goreleaser.yaml`.
+
 ## Code style
 
 [.editorconfig](.editorconfig) records the whitespace rules: UTF-8, LF line endings, a final newline, no trailing whitespace, tabs for Go and Make recipes, four spaces for shell scripts and two spaces for YAML and TOML. Markdown keeps meaningful trailing spaces. `LICENSE` stays verbatim.
