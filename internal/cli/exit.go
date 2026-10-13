@@ -11,6 +11,7 @@ import (
 	"github.com/misiektoja/go-pki-cmp/client"
 	"github.com/misiektoja/go-pki-cmp/pkicmp"
 
+	"github.com/misiektoja/certrally/internal/profile"
 	"github.com/misiektoja/certrally/internal/trace"
 	"github.com/misiektoja/certrally/internal/ui"
 )
@@ -23,6 +24,7 @@ const (
 	exitRejected    = 3 // the CA answered with a rejection
 	exitProtocol    = 4 // the exchange broke the protocol or failed verification
 	exitUnconfirmed = 5 // the certificate was issued but the confirmation failed
+	exitProfile     = 6 // a response broke a rule of the strict profile
 )
 
 // exitError is an error that has already been reported to the user and carries the exit status.
@@ -38,14 +40,17 @@ func (e *exitError) Error() string { return e.err.Error() }
 func (e *exitError) Unwrap() error { return e.err }
 
 // exitCode classifies a failed exchange. The order matters: a confirmation failure can wrap a CA
-// rejection. A rejection can also arrive with an HTTP error status.
+// rejection or a profile violation. A rejection can also arrive with an HTTP error status.
 func exitCode(err error, r *trace.Recorder) int {
 	_, unconfirmed := errors.AsType[*client.ConfirmationError](err)
+	_, violation := errors.AsType[*profileError](err)
 	_, rejected := errors.AsType[*pkicmp.PKIStatusError](err)
 	_, unverified := errors.AsType[*client.UnverifiedStatusError](err)
 	switch {
 	case unconfirmed:
 		return exitUnconfirmed
+	case violation:
+		return exitProfile
 	case rejected, unverified, errors.Is(err, client.ErrInfoTypeNotSupported):
 		return exitRejected
 	case errors.Is(err, context.Canceled):
@@ -109,6 +114,20 @@ func quoteText(text []string) string {
 	return fmt.Sprintf("%q", ui.Sanitize(strings.Join(text, " ")))
 }
 
+// profileError reports a response that breaks rules of the strict profile.
+type profileError struct {
+	findings []profile.Finding
+}
+
+// Error lists the deviations as sentences.
+func (e *profileError) Error() string {
+	texts := make([]string, 0, len(e.findings))
+	for _, f := range e.findings {
+		texts = append(texts, f.String())
+	}
+	return strings.Join(texts, " ")
+}
+
 // fail explains a failed exchange and returns the error that carries the exit status.
 func (s *session) fail(err error) error {
 	return s.p.fail(s.failure(err), err)
@@ -124,6 +143,14 @@ func (s *session) failure(err error) *failure {
 		return s.transportFailure(err)
 	case exitLocal:
 		return &failure{code: code, Title: "The request was not completed", Message: err.Error()}
+	case exitProfile:
+		violation, _ := errors.AsType[*profileError](err)
+		return &failure{
+			code:    code,
+			Title:   "The response breaks the strict profile",
+			Message: violation.Error(),
+			Hint:    "Use --profile compatible to accept these deviations with a warning.",
+		}
 	default:
 		return &failure{code: code, Title: "The exchange failed", Message: err.Error(), Hint: verificationHint(err)}
 	}

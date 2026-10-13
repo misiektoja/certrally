@@ -23,6 +23,7 @@ import (
 	"github.com/misiektoja/certrally/internal/dn"
 	"github.com/misiektoja/certrally/internal/keys"
 	"github.com/misiektoja/certrally/internal/pemfile"
+	"github.com/misiektoja/certrally/internal/profile"
 	"github.com/misiektoja/certrally/internal/secret"
 	"github.com/misiektoja/certrally/internal/trace"
 	"github.com/misiektoja/certrally/internal/ui"
@@ -39,6 +40,7 @@ type connection struct {
 	recipient string
 	timeout   time.Duration
 	capture   string
+	profile   string
 }
 
 // addFlags registers the connection flags with the given default timeout.
@@ -51,13 +53,16 @@ func (c *connection) addFlags(cmd *cobra.Command, timeout time.Duration, timeout
 	f.StringVar(&c.recipient, "recipient", "", "name of the CA in the request header")
 	f.DurationVar(&c.timeout, "timeout", timeout, timeoutHelp)
 	f.StringVar(&c.capture, "capture", "", "append the exchanged messages to this file as JSON Lines")
+	f.StringVar(&c.profile, "profile", profile.Compatible,
+		"how to treat responses that break RFC 9483: compatible warns, strict fails")
 	_ = cmd.MarkFlagRequired("server")
+	_ = cmd.RegisterFlagCompletionFunc("profile", fixedCompletion(profile.Names))
 	for _, name := range []string{"server", "recipient", "timeout"} {
 		_ = cmd.RegisterFlagCompletionFunc(name, cobra.NoFileCompletions)
 	}
 }
 
-// validate checks the server URL and the timeout.
+// validate checks the server URL, the timeout and the profile.
 func (c *connection) validate() error {
 	u, err := url.Parse(c.server)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
@@ -65,6 +70,9 @@ func (c *connection) validate() error {
 	}
 	if c.timeout <= 0 {
 		return errors.New("--timeout must be positive")
+	}
+	if !slices.Contains(profile.Names, c.profile) {
+		return fmt.Errorf("invalid --profile %q, want compatible or strict", c.profile)
 	}
 	return nil
 }
@@ -228,12 +236,16 @@ type session struct {
 	ladder *ui.Ladder
 	// capture records the exchange for --capture.
 	capture *capture.Writer
+	// warned holds the profile deviations already reported as warnings.
+	warned map[string]bool
+	// pending holds the warnings that wait for the ladder to end, so they do not split it.
+	pending []string
 }
 
 // open prepares a session and registers it with p. Certificates after the first one in chain, the
 // chain of the signing certificate, are trusted as well, because the user named them.
 func (c *connection) open(p *printer, chain []*x509.Certificate) (*session, error) {
-	s := &session{conn: c, p: p, pool: x509.NewCertPool()}
+	s := &session{conn: c, p: p, pool: x509.NewCertPool(), warned: map[string]bool{}}
 	for _, path := range c.caCerts {
 		certs, err := pemfile.ReadCertificates(path)
 		if err != nil {
@@ -296,8 +308,42 @@ func (c *connection) open(p *printer, chain []*x509.Certificate) (*session, erro
 			s.ladder.Event(ev)
 		}
 	}
+	s.recorder.Inspect = s.inspect
 	s.http = &http.Client{Transport: s.recorder}
 	return s, nil
+}
+
+// inspect checks a response against the profile. A strict session stops a response that breaks a
+// rule before the client accepts it. A rejection is not stopped, because the reason the CA gives
+// matters more, so its deviations are reported as warnings like in a compatible session.
+func (s *session) inspect(request, response trace.Event) error {
+	req, err := pkicmp.ParsePKIMessage(request.DER)
+	if err != nil {
+		return nil
+	}
+	resp, err := pkicmp.ParsePKIMessage(response.DER)
+	if err != nil {
+		return nil
+	}
+	findings := profile.Check(req, resp)
+	if len(findings) == 0 {
+		return nil
+	}
+	if s.conn.profile == profile.Strict && response.Message.Status != pkicmp.StatusRejection.String() {
+		return &profileError{findings: findings}
+	}
+	for _, f := range findings {
+		text := f.String()
+		switch {
+		case s.warned[text]:
+		case s.ladder != nil:
+			s.pending = append(s.pending, text)
+		default:
+			s.p.warn(text)
+		}
+		s.warned[text] = true
+	}
+	return nil
 }
 
 // startLadder starts drawing the exchange in text output without --quiet.
@@ -307,11 +353,17 @@ func (s *session) startLadder() {
 	}
 }
 
-// endLadder separates the ladder from the report that follows it.
+// endLadder separates the ladder from the report that follows it and prints the warnings that
+// waited for it.
 func (s *session) endLadder() {
 	if s.ladder != nil && len(s.recorder.Events()) > 0 {
 		_, _ = fmt.Fprintln(s.p.stderr)
 	}
+	s.ladder = nil
+	for _, text := range s.pending {
+		s.p.warn(text)
+	}
+	s.pending = nil
 }
 
 // trustResponse adds the certificates of a response to the trust anchors. This trusts the CA the

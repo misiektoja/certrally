@@ -61,6 +61,7 @@ type jsonDocument struct {
 	OK         bool           `json:"ok"`
 	ExitStatus int            `json:"exitStatus"`
 	Server     string         `json:"server,omitempty"`
+	Profile    string         `json:"profile,omitempty"`
 	Exchange   []trace.Record `json:"exchange,omitempty"`
 	Result     any            `json:"result,omitempty"`
 	Error      *failure       `json:"error,omitempty"`
@@ -185,7 +186,7 @@ func (p *printer) finish(err error) error {
 	}
 	p.doc.Command, p.doc.OK, p.doc.ExitStatus = p.command, code == exitOK, code
 	if s := p.session; s != nil {
-		p.doc.Server = s.conn.redactedServer()
+		p.doc.Server, p.doc.Profile = s.conn.redactedServer(), s.conn.profile
 		events := s.recorder.Events()
 		p.doc.Exchange = make([]trace.Record, 0, len(events))
 		for _, ev := range events {

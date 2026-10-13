@@ -156,6 +156,9 @@ type Recorder struct {
 	Next http.RoundTripper
 	// OnEvent, when set, is called with each event as it is recorded.
 	OnEvent func(Event)
+	// Inspect, when set, is called with each request and its response after both are recorded, if
+	// the response holds a CMP message. An error stops the response from reaching the client.
+	Inspect func(request, response Event) error
 
 	mu     sync.Mutex
 	events []Event
@@ -175,7 +178,8 @@ func (r *Recorder) RoundTrip(req *http.Request) (*http.Response, error) {
 		req.Body = io.NopCloser(bytes.NewReader(reqBody))
 	}
 	start := time.Now()
-	r.add(Event{Kind: Request, Time: start, Size: len(reqBody), DER: reqBody, Message: Summarize(reqBody)})
+	reqEvent := Event{Kind: Request, Time: start, Size: len(reqBody), DER: reqBody, Message: Summarize(reqBody)}
+	r.add(reqEvent)
 
 	next := r.Next
 	if next == nil {
@@ -208,6 +212,12 @@ func (r *Recorder) RoundTrip(req *http.Request) (*http.Response, error) {
 		ev.Message = Summarize(body)
 	}
 	r.add(ev)
+	if r.Inspect != nil && ev.Transport == nil && ev.Message != nil {
+		if err := r.Inspect(reqEvent, ev); err != nil {
+			_ = resp.Body.Close()
+			return nil, err
+		}
+	}
 	// The client reads the same bytes, followed by whatever the limit left unread.
 	resp.Body = readCloser{io.MultiReader(bytes.NewReader(body), resp.Body), resp.Body}
 	return resp, nil

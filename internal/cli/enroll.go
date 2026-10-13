@@ -109,7 +109,8 @@ func newEnrollCommand() *cobra.Command {
 
 // exitStatusHelp documents the exit statuses of the commands that talk to a server.
 const exitStatusHelp = "Exit status: 0 success, 1 usage or local error, 2 server unreachable or not speaking CMP, " +
-	"3 rejected by the CA, 4 protocol or verification failure, 5 issued but the confirmation failed."
+	"3 rejected by the CA, 4 protocol or verification failure, 5 issued but the confirmation failed, " +
+	"6 a response broke the strict profile."
 
 // fixedCompletion offers a fixed list of flag values to shell completion.
 func fixedCompletion(values []string) cobra.CompletionFunc {

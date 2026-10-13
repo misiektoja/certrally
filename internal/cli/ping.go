@@ -37,7 +37,7 @@ func newPingCommand() *cobra.Command {
 			"including the error a server sends back for an unprotected message, so no credentials are needed.\n\n" +
 			"With --ca-cert every answer must also be signed by that CA.\n\n" +
 			"Exit status: 0 the server answered with CMP, 1 usage error, 2 no CMP answer, " +
-			"4 an answer failed verification against --ca-cert.",
+			"4 an answer failed verification against --ca-cert, 6 an answer broke the strict profile.",
 		Example: "  certrally ping --server https://ca.example.com/.well-known/cmp --count 5",
 		Args:    cobra.NoArgs,
 		RunE: runWith(&o.outputOptions, func(cmd *cobra.Command, _ []string, p *printer) error {
@@ -124,9 +124,12 @@ func (s *session) ping(ctx context.Context, recipient pkicmp.GeneralName) (pingR
 		return pingReply{}, err
 	}
 	req.Header.Set("Content-Type", "application/pkixcmp")
-	if resp, err := s.http.Do(req); err == nil {
+	resp, err := s.http.Do(req)
+	if err == nil {
 		_, _ = io.Copy(io.Discard, resp.Body)
 		_ = resp.Body.Close()
+	} else if _, ok := errors.AsType[*profileError](err); ok {
+		return pingReply{}, s.fail(err)
 	}
 
 	events := s.recorder.Events()
