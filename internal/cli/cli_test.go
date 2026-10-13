@@ -8,6 +8,11 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unicode"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+	"golang.org/x/term"
 
 	"github.com/misiektoja/certrally/internal/termcolor"
 )
@@ -190,6 +195,76 @@ func TestCommandHelp(t *testing.T) {
 		}
 		if len(c) == 1 && !strings.Contains(rootHelp, c[0]) {
 			t.Errorf("root help does not list %s", c[0])
+		}
+	}
+}
+
+// allCommands returns cmd and every command below it.
+func allCommands(cmd *cobra.Command) []*cobra.Command {
+	cmds := make([]*cobra.Command, 1, len(cmd.Commands())+1)
+	cmds[0] = cmd
+	for _, c := range cmd.Commands() {
+		cmds = append(cmds, allCommands(c)...)
+	}
+	return cmds
+}
+
+// keepsCase reports whether s survives fang's styling of descriptions. fang title-cases their first
+// word, which lowercases the rest of the word and capitalizes a letter after a hyphen, so that
+// "CMP-specific" would read "Cmp-Specific".
+func keepsCase(s string) bool {
+	word, _, _ := strings.Cut(s, " ")
+	for i, r := range word {
+		if i > 0 && unicode.IsUpper(r) || r == '-' {
+			return false
+		}
+	}
+	return true
+}
+
+// TestHelpDescriptions checks that every command summary and flag description keeps its case in help.
+func TestHelpDescriptions(t *testing.T) {
+	for _, cmd := range allCommands(newRootCommand()) {
+		if !keepsCase(cmd.Short) {
+			t.Errorf("%s: summary %q changes case in help", cmd.CommandPath(), cmd.Short)
+		}
+		cmd.Flags().VisitAll(func(f *pflag.Flag) {
+			if !keepsCase(f.Usage) {
+				t.Errorf("%s --%s: description %q changes case in help", cmd.CommandPath(), f.Name, f.Usage)
+			}
+		})
+	}
+}
+
+// TestHelpWrapping checks that help does not break a line inside a flag name. fang may wrap at a
+// hyphen. It wraps at 120 columns when standard output is not a terminal, as under go test ./...
+func TestHelpWrapping(t *testing.T) {
+	if term.IsTerminal(int(os.Stdout.Fd())) {
+		t.Skip("fang wraps help to the width of the terminal")
+	}
+	isolateColorEnv(t)
+	for _, cmd := range allCommands(newRootCommand()) {
+		args := slices.Concat(strings.Fields(cmd.CommandPath())[1:], []string{"--help"})
+		_, out, _ := run(t, args...)
+		lines := strings.Split(out, "\n")
+		for i := 0; i+1 < len(lines); i++ {
+			line, next := strings.TrimRight(lines[i], " "), strings.TrimSpace(lines[i+1])
+			// A lone -, as in "or - for standard input", may end a line.
+			if !strings.HasSuffix(line, "-") || strings.HasSuffix(line, " -") && !strings.HasPrefix(next, "-") {
+				continue
+			}
+			t.Errorf("%s --help breaks a word at a hyphen:\n%s\n%s", cmd.CommandPath(), line, next)
+		}
+	}
+}
+
+// TestExitStatusHelp checks that only enroll, which confirms certificates, documents exit status 5.
+func TestExitStatusHelp(t *testing.T) {
+	isolateColorEnv(t)
+	for _, args := range [][]string{{"enroll"}, {"revoke"}, {"cacerts"}, {"cmp", "genm", "crl"}} {
+		_, out, _ := run(t, append(args, "--help")...)
+		if got, want := strings.Contains(out, "5 issued"), args[0] == "enroll"; got != want {
+			t.Errorf("%q --help mentions exit status 5: %v, want %v", args, got, want)
 		}
 	}
 }
