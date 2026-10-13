@@ -75,8 +75,8 @@ func TestInspectCapture(t *testing.T) {
 		"0.header.sender":                  "CN=" + testRef,
 		"0.header.senderKid":               "6d792d646576696365",
 		"0.protection.algorithm":           "PBMAC1",
-		"0.protection.check":               "unchecked",
-		"0.protection.problem":             "it needs the shared secret",
+		"0.protection.check":               "valid",
+		"0.protection.problem":             nil,
 		"0.requests.0.certReqId":           float64(0),
 		"0.requests.0.subject":             "CN=" + testRef,
 		"0.requests.0.key":                 "ECDSA P-256",
@@ -106,7 +106,7 @@ func TestInspectCapture(t *testing.T) {
 	for _, want := range []string{
 		"→ ir  " + capture + ":2  PBMAC1",
 		"← kup",
-		"MAC        not checked, it needs the shared secret",
+		"MAC        valid",
 		"Signature  valid",
 		"Extra certificate 1 (signer)",
 		"Revocation request 1",
@@ -173,6 +173,95 @@ func TestInspectProtection(t *testing.T) {
 	}
 }
 
+// TestInspectMAC checks MACs with the shared secret from --secret-file and from the environment.
+func TestInspectMAC(t *testing.T) {
+	useSecret(t, testSecret)
+	ca := startCA(t, nil)
+	dir := t.TempDir()
+	capture := filepath.Join(dir, "run.jsonl")
+	enrollIR(t, ca, "--capture", capture, "-q")
+	enrollIR(t, ca, "--mac", "pbm", "--capture", capture, "-q")
+	secretFile, wrongFile := filepath.Join(dir, "secret.txt"), filepath.Join(dir, "wrong.txt")
+	writeFile(t, secretFile, []byte(testSecret+"\n"))
+	writeFile(t, wrongFile, []byte("wrong"))
+	// A sender may choose more iterations than go-pki-cmp computes by default.
+	slow := filepath.Join(dir, "slow.der")
+	iterations := pkicmp.DefaultMaxMACIterationCount + 1
+	writeFile(t, slow, protectWithMAC(t, readCapture(t, capture)[0].DER, pkicmp.WithPBM(),
+		pkicmp.WithMACIterationCount(iterations), pkicmp.WithMACIterationLimits(1, iterations)))
+
+	tests := []struct {
+		name    string
+		env     string
+		args    []string
+		check   string
+		problem string
+	}{
+		{"environment", testSecret, []string{capture}, "valid", ""},
+		{"--secret-file", "", []string{capture, "--secret-file", secretFile}, "valid", ""},
+		{"--secret-file before environment", testSecret, []string{capture, "--secret-file", wrongFile}, "invalid", "it does not match the shared secret from --secret-file"},
+		{"wrong secret in environment", "wrong", []string{capture}, "invalid", "it does not match the shared secret from CERTRALLY_SECRET"},
+		{"no secret", "", []string{capture}, "unchecked", "it needs the shared secret from --secret-file or CERTRALLY_SECRET"},
+		{"too many iterations", "", []string{slow, "--secret-file", secretFile}, "unchecked", "too large"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			useSecret(t, tt.env)
+			code, doc := runJSON(t, append([]string{"inspect"}, tt.args...)...)
+			if code != exitOK {
+				t.Fatalf("exited with %d: %v", code, doc)
+			}
+			msgs, _ := get(doc, "result.messages").([]any)
+			algorithms := map[any]bool{}
+			for i, m := range msgs {
+				alg := get(m, "protection.algorithm")
+				if alg != "PBM" && alg != "PBMAC1" {
+					continue
+				}
+				algorithms[alg] = true
+				problem, _ := get(m, "protection.problem").(string)
+				if get(m, "protection.check") != tt.check || !strings.Contains(problem, tt.problem) || tt.problem == "" && problem != "" {
+					t.Errorf("message %d: %v", i, get(m, "protection"))
+				}
+			}
+			if len(algorithms) == 0 || len(tt.args) > 0 && tt.args[0] == capture && len(algorithms) != 2 {
+				t.Errorf("MAC algorithms checked: %v", algorithms)
+			}
+		})
+	}
+}
+
+// protectWithMAC returns der protected anew with the test secret and the MAC options.
+func protectWithMAC(t *testing.T, der []byte, opts ...pkicmp.MACCredentialOption) []byte {
+	t.Helper()
+	msg, err := pkicmp.ParsePKIMessage(bytes.Clone(der))
+	if err != nil {
+		t.Fatal(err)
+	}
+	creds, err := pkicmp.NewMACCredentials([]byte(testSecret), opts...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := creds.Protect(msg); err != nil {
+		t.Fatal(err)
+	}
+	out, err := msg.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// TestInspectSecretFromStdin checks that --secret-file - reads the secret from standard input.
+func TestInspectSecretFromStdin(t *testing.T) {
+	useSecret(t, "other")
+	var a anchors
+	err := a.readSecret("-", strings.NewReader(testSecret+"\n"))
+	if err != nil || string(a.secret) != testSecret || a.secretSource != "--secret-file" {
+		t.Errorf("readSecret = %q from %q, %v", a.secret, a.secretSource, err)
+	}
+}
+
 // TestInspectErrors checks files that cannot be inspected.
 func TestInspectErrors(t *testing.T) {
 	useSecret(t, "")
@@ -191,6 +280,8 @@ func TestInspectErrors(t *testing.T) {
 		{"json output", []string{jsonOutput}, "record the run with --capture"},
 		{"certificate", []string{ca.caFile}, "not a CMP message"},
 		{"missing --ca-cert", []string{jsonOutput, "--ca-cert", filepath.Join(dir, "missing.pem")}, "no such file"},
+		{"missing --secret-file", []string{jsonOutput, "--secret-file", filepath.Join(dir, "missing.txt")}, "no such file"},
+		{"stdin for file and secret", []string{"-", "--secret-file", "-"}, "cannot both be -"},
 		{"no file", nil, "requires at least 1 arg"},
 	}
 	for _, tt := range tests {
