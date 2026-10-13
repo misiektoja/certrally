@@ -78,7 +78,7 @@ func newCACertsCommand(use string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   use + " --server URL [flags]",
 		Short: "Get the CA certificates from the server",
-		Long:  "Ask the server for its intermediate and issuing CA certificates (RFC 9483 §4.3.1)." + genmLong,
+		Long:  "Ask the server for its intermediate and issuing CA certificates (RFC 9483 section 4.3.1)." + genmLong,
 		Args:  cobra.NoArgs,
 		RunE: runWith(&o.outputOptions, func(cmd *cobra.Command, _ []string, p *printer) error {
 			return runCACerts(cmd.Context(), o, p, cmd.InOrStdin())
@@ -143,14 +143,14 @@ func caCertFields(cert *x509.Certificate) []ui.Field {
 func newCMPCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cmp",
-		Short: "CMP-specific operations",
+		Short: "Commands for individual CMP message types",
 		Args:  cobra.NoArgs,
 	}
 	genm := &cobra.Command{
 		Use:   "genm",
-		Short: "Send a general message (RFC 9483 §4.3)",
+		Short: "Send a general message (RFC 9483 section 4.3)",
 		Long: "Send a general message that asks the server for information rather than a certificate. " +
-			"Each subcommand sends one of the RFC 9483 §4.3 support messages, and raw sends any info type.",
+			"Each subcommand sends one of the RFC 9483 section 4.3 support messages. raw sends any info type.",
 		Args: cobra.NoArgs,
 	}
 	genm.AddCommand(
@@ -172,7 +172,7 @@ func newRootUpdateCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "rootupdate --server URL --old-root FILE [flags]",
 		Short: "Ask whether the root CA certificate has been replaced",
-		Long: "Ask for the replacement of a root CA certificate (RFC 9483 §4.3.2). The new root is accepted only " +
+		Long: "Ask for the replacement of a root CA certificate (RFC 9483 section 4.3.2). The new root is accepted only " +
 			"when the old root has certified it." + genmLong,
 		Args: cobra.NoArgs,
 		RunE: runWith(&o.outputOptions, func(cmd *cobra.Command, _ []string, p *printer) error {
@@ -236,7 +236,7 @@ func newTemplateCommand() *cobra.Command {
 		Use:   "template --server URL [flags]",
 		Short: "Get the certificate request template",
 		Long: "Ask which subject, extensions and key types the CA expects in a certificate request " +
-			"(RFC 9483 §4.3.3)." + genmLong,
+			"(RFC 9483 section 4.3.3)." + genmLong,
 		Args: cobra.NoArgs,
 		RunE: runWith(&o.outputOptions, func(cmd *cobra.Command, _ []string, p *printer) error {
 			if err := o.validate(p); err != nil {
@@ -394,7 +394,7 @@ func newCRLCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "crl --server URL [flags]",
 		Short: "Get the current CRL",
-		Long:  "Ask for the current certificate revocation list (RFC 9810 §5.3.19.6)." + genmLong,
+		Long:  "Ask for the current certificate revocation list (RFC 9810 section 5.3.19.6)." + genmLong,
 		Args:  cobra.NoArgs,
 		RunE: runWith(&o.outputOptions, func(cmd *cobra.Command, _ []string, p *printer) error {
 			if err := o.validate(p); err != nil {

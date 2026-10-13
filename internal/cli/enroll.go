@@ -71,7 +71,7 @@ func newEnrollCommand() *cobra.Command {
 			"prompt, never from the command line.\n\n" +
 			"Run without flags on a terminal, or with --interactive, to be asked for each setting. The " +
 			"equivalent command is printed before the request is sent.\n\n" +
-			exitStatusHelp,
+			enrollExitStatusHelp,
 		Example: "  certrally enroll --server https://ca.example.com/.well-known/cmp --ref device-42 \\\n" +
 			"    --secret-file secret.txt --subject CN=device-42 --san device-42.example.com \\\n" +
 			"    --cert-out device.pem --key-out device.key\n\n" +
@@ -115,10 +115,14 @@ func newEnrollCommand() *cobra.Command {
 	return cmd
 }
 
-// exitStatusHelp documents the exit statuses of the commands that talk to a server.
-const exitStatusHelp = "Exit status: 0 success, 1 usage or local error, 2 server unreachable or not speaking CMP, " +
-	"3 rejected by the CA, 4 protocol or verification failure, 5 issued but the confirmation failed, " +
-	"6 a response broke the strict profile."
+// Exit statuses of the commands that talk to a server. Only enroll confirms a certificate, so only
+// enroll can exit with status 5.
+const (
+	exitStatusStart = "Exit status: 0 success, 1 usage or local error, 2 server unreachable or not speaking CMP, " +
+		"3 rejected by the CA, 4 protocol or verification failure, "
+	exitStatusHelp       = exitStatusStart + "6 a response broke the strict profile."
+	enrollExitStatusHelp = exitStatusStart + "5 issued but the confirmation failed, 6 a response broke the strict profile."
+)
 
 // fixedCompletion offers a fixed list of flag values to shell completion.
 func fixedCompletion(values []string) cobra.CompletionFunc {

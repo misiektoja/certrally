@@ -49,9 +49,9 @@ func newRevokeCommand() *cobra.Command {
 		Use:   "revoke --server URL --cert FILE --key FILE [flags]",
 		Short: "Ask the CA to revoke a certificate",
 		Long: "Ask the CA to revoke a certificate.\n\n" +
-			"RFC 9483 signs the request with the certificate being revoked, so by default certrally revokes the " +
-			"certificate in --cert. An authority revoking for someone else names that certificate with " +
-			"--revoke-cert and signs with its own --cert or shared secret.\n\n" +
+			"By default certrally revokes the certificate in --cert and signs the request with it, as RFC 9483 " +
+			"asks. An authority revoking for someone else names that certificate with --revoke-cert and signs " +
+			"with its own --cert or shared secret.\n\n" +
 			"certificateHold suspends a certificate and removeFromCRL releases it, if the CA supports holds. " +
 			"On a terminal certrally asks before it sends the request, unless --yes is given.\n\n" +
 			exitStatusHelp,

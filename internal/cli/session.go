@@ -138,7 +138,7 @@ type protection struct {
 func (p *protection) addFlags(cmd *cobra.Command) {
 	f := cmd.Flags()
 	f.StringVar(&p.ref, flagRef, "", "reference that identifies the shared secret to the CA")
-	f.StringVar(&p.mac, "mac", "pbmac1", "shared-secret MAC algorithm: pbmac1 or pbm")
+	f.StringVar(&p.mac, "mac", "pbmac1", "algorithm of the shared-secret MAC: pbmac1 or pbm")
 	f.StringVar(&p.secretFile, "secret-file", "", "read the shared secret from a file, or - for standard input")
 	f.StringVar(&p.certFile, "cert", "", "sign the request with this certificate file, which may include the chain")
 	f.StringVar(&p.keyFile, "key", "", "private key for --cert")
