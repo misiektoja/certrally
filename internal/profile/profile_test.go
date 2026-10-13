@@ -234,3 +234,45 @@ func TestFindingString(t *testing.T) {
 		t.Errorf("String() = %q, want %q", got, want)
 	}
 }
+
+// TestCheckReply checks the transactionID and recipNonce of a response against its requests.
+func TestCheckReply(t *testing.T) {
+	device := pkix.Name{CommonName: "device"}
+	request := func(txID, nonce string) *pkicmp.PKIMessage {
+		m := message(pkicmp.NewIRBody(&pkicmp.CertReqMessages{}), device, oidPBMAC1)
+		m.Header.TransactionID, m.Header.SenderNonce = []byte(txID), []byte(nonce)
+		return m
+	}
+	response := func(txID, recipNonce string) *pkicmp.PKIMessage {
+		m := issuing(&x509.Certificate{}, nil, nil)
+		m.Header.TransactionID, m.Header.RecipNonce = []byte(txID), []byte(recipNonce)
+		return m
+	}
+	ir, pollReq := request("tx", "n1"), request("tx", "n2")
+	other := request("other", "n0")
+
+	tests := []struct {
+		name     string
+		requests []*pkicmp.PKIMessage
+		resp     *pkicmp.PKIMessage
+		want     []string
+	}{
+		{"answer", []*pkicmp.PKIMessage{ir}, response("tx", "n1"), nil},
+		{"after polling", []*pkicmp.PKIMessage{ir, pollReq}, response("tx", "n2"), nil},
+		{"delayed delivery", []*pkicmp.PKIMessage{ir, pollReq}, response("tx", "n1"), nil},
+		{"other transaction", []*pkicmp.PKIMessage{ir}, response("other", "n1"), []string{"has a different transactionID than the request"}},
+		{"no recipNonce", []*pkicmp.PKIMessage{ir}, response("tx", ""), []string{"has no recipNonce"}},
+		{"wrong recipNonce", []*pkicmp.PKIMessage{other, ir}, response("tx", "n0"), []string{"has a recipNonce that is not the senderNonce of the request"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got []string
+			for _, f := range CheckReply(tt.requests, tt.resp) {
+				got = append(got, strings.TrimPrefix(f.Text, "The ip response "))
+			}
+			if strings.Join(got, "; ") != strings.Join(tt.want, "; ") {
+				t.Errorf("findings = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

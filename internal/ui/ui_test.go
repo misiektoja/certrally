@@ -86,3 +86,13 @@ func TestSection(t *testing.T) {
 		t.Errorf("Section wrote %q, want %q", b.String(), want)
 	}
 }
+
+// TestHeading checks a heading with and without details.
+func TestHeading(t *testing.T) {
+	w, b := plain()
+	Heading(w, "→ ir", "run.jsonl:2  PBMAC1")
+	Heading(w, "← ip", "")
+	if want := "→ ir  run.jsonl:2  PBMAC1\n← ip\n"; b.String() != want {
+		t.Errorf("Heading wrote %q, want %q", b.String(), want)
+	}
+}
