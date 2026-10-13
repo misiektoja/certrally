@@ -64,17 +64,76 @@ func TestParseNameOrder(t *testing.T) {
 	}
 }
 
-// TestParseNameRoundTrip checks that parsing pkix.Name.String returns an equal name.
+// Attribute types used by the String and Format tests.
+var (
+	oidCN  = asn1.ObjectIdentifier{2, 5, 4, 3}
+	oidO   = asn1.ObjectIdentifier{2, 5, 4, 10}
+	oidUID = asn1.ObjectIdentifier{0, 9, 2342, 19200300, 100, 1, 1}
+	oidDC  = asn1.ObjectIdentifier{0, 9, 2342, 19200300, 100, 1, 25}
+)
+
+// atv returns an attribute with the given type and value.
+func atv(oid asn1.ObjectIdentifier, value any) pkix.AttributeTypeAndValue {
+	return pkix.AttributeTypeAndValue{Type: oid, Value: value}
+}
+
+// TestParseNameRoundTrip checks that parsing the output of String returns the same encoding.
 func TestParseNameRoundTrip(t *testing.T) {
-	orig := pkix.Name{CommonName: `a+b,"c" \ d#`, Organization: []string{" lead"}, Country: []string{"PL"}}
-	name, err := ParseName(orig.String())
+	rdns := pkix.RDNSequence{
+		{atv(oidUID, "u-1")},
+		{atv(oidCN, ` a+b,"c";<d>\e `)},
+		{atv(oidO, "#Zoë\tx")},
+		{atv(oidDC, "example")},
+	}
+	name, err := ParseName(String(rdns))
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, _ := asn1.Marshal(orig.ToRDNSequence())
+	a, _ := asn1.Marshal(rdns)
 	b, _ := asn1.Marshal(name.ToRDNSequence())
 	if string(a) != string(b) {
-		t.Errorf("round trip of %q gave %q", orig.String(), name.String())
+		t.Errorf("round trip of %q gave %q", String(rdns), String(name.ToRDNSequence()))
+	}
+}
+
+// TestString checks attribute order, keywords, multi-valued RDNs, escapes and values that are not
+// strings.
+func TestString(t *testing.T) {
+	tests := []struct {
+		name string
+		rdns pkix.RDNSequence
+		want string
+	}{
+		{"empty", nil, ""},
+		{"encoded order", pkix.RDNSequence{{atv(oidUID, "u-1")}, {atv(oidCN, "CA")}, {atv(oidO, "Org")}}, "O=Org,CN=CA,UID=u-1"},
+		{"multi-valued RDN", pkix.RDNSequence{{atv(oidO, "Org")}, {atv(oidCN, "a"), atv(oidUID, "b")}}, "CN=a+UID=b,O=Org"},
+		{"dotted OID", pkix.RDNSequence{{atv(oidDC, "example")}}, "0.9.2342.19200300.100.1.25=example"},
+		{"not a string", pkix.RDNSequence{{atv(oidDC, 5)}}, "0.9.2342.19200300.100.1.25=#020105"},
+		{"escapes", pkix.RDNSequence{{atv(oidCN, ` a+b,"c";<d>\e `)}}, `CN=\ a\+b\,\"c\"\;\<d\>\\e\ `},
+		{"leading hash", pkix.RDNSequence{{atv(oidCN, "#1#")}}, `CN=\#1#`},
+		{"control characters", pkix.RDNSequence{{atv(oidCN, "a\nb\x00\x7f")}}, `CN=a\0Ab\00\7F`},
+		{"UTF-8", pkix.RDNSequence{{atv(oidCN, "Zoë")}}, "CN=Zoë"},
+	}
+	for _, tt := range tests {
+		if got := String(tt.rdns); got != tt.want {
+			t.Errorf("%s: String = %q, want %q", tt.name, got, tt.want)
+		}
+	}
+}
+
+// TestFormat checks a DER-encoded name and input that is not a name.
+func TestFormat(t *testing.T) {
+	der, err := asn1.Marshal(pkix.RDNSequence{{atv(oidCN, "CA")}, {atv(oidO, "Org")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := Format(der); got != "O=Org,CN=CA" {
+		t.Errorf("Format = %q, want %q", got, "O=Org,CN=CA")
+	}
+	for _, bad := range [][]byte{nil, {0x30}, append(der, 0)} {
+		if got := Format(bad); got != "" {
+			t.Errorf("Format(%x) = %q, want \"\"", bad, got)
+		}
 	}
 }
 
