@@ -8,6 +8,7 @@ certrally is a command line client for certificate enrollment with the Certifica
 * Enrollment and key update over CMP (`ir`, `cr`, `kur`, `p10cr`) with a shared secret or a certificate
 * Revocation (`rr`) and the RFC 9483 support messages for CA certificates, root CA updates, request templates and CRLs
 * `ping` to check that a server answers CMP and `keygen` to create keys and requests offline
+* `mock` to run a CMP test CA on your machine, for trying certrally and testing scripts
 * ML-DSA and composite ML-DSA keys alongside RSA, ECDSA and Ed25519
 * No trust setup needed: certrally trusts the CA it talks to or the one you name with `--ca-cert`
 * A live diagram of every message in the exchange and plain explanations of failures
@@ -76,6 +77,16 @@ certrally --version
 ```
 
 `certrally completion bash|zsh|fish|powershell` prints a shell completion script. `certrally man` prints a man page.
+
+### Try it with a test CA
+
+`certrally mock` runs a CMP test CA on your machine and prints an `enroll` command that works against it:
+
+```bash
+certrally mock --ca-out ca.pem
+```
+
+Run the printed command in another terminal. The test CA listens on `127.0.0.1:8080` unless `--listen` names another address. It generates a shared secret for the reference `demo` unless `--ref` and `--secret-file` or `CERTRALLY_SECRET` provide one. It logs one line per request and keeps its key and certificates in memory, so every run starts empty. It does not sign composite ML-DSA keys.
 
 ### Enroll a certificate
 
