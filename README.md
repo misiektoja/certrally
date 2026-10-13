@@ -3,16 +3,19 @@
 certrally is a command line client for certificate enrollment with the Certificate Management Protocol (CMP, RFC 9810).
 
 > [!NOTE]
-> certrally is in early development. `certrally enroll` is the first command.
+> certrally is in early development and has not been released yet.
 
 * Enrollment and key update over CMP (`ir`, `cr`, `kur`, `p10cr`) with a shared secret or a certificate
+* Revocation (`rr`) and the RFC 9483 support messages for CA certificates, root CA updates, request templates and CRLs
+* `ping` to check that a server answers CMP and `keygen` to create keys and requests offline
 * ML-DSA and composite ML-DSA keys alongside RSA, ECDSA and Ed25519
+* No trust setup needed: certrally trusts the CA it talks to or the one you name with `--ca-cert`
 * A live diagram of every message in the exchange and plain explanations of failures
 * Exit statuses that tell scripts why a request failed
 
 Planned for the first releases:
 
-* Revocation (`rr`) and the RFC 9483 support messages
+* JSON output and saving the exchanged messages for later analysis
 * Prebuilt binaries for Linux, macOS and Windows
 
 EST support is planned after CMP.
@@ -43,7 +46,7 @@ A device that has a shared secret from its CA requests its first certificate wit
 certrally enroll --server https://ca.example.com/.well-known/cmp \
   --ref device-42 --secret-file secret.txt \
   --subject CN=device-42,O=Example --san device-42.example.com \
-  --trusted ca.pem --cert-out device.pem --key-out device.key
+  --cert-out device.pem --key-out device.key
 ```
 
 certrally draws each message as it is sent and received, then describes the certificate:
@@ -77,7 +80,7 @@ A certificate the device already has signs later requests. A key update (`kur`) 
 
 ```bash
 certrally enroll --server https://ca.example.com/.well-known/cmp --type kur \
-  --cert device.pem --key device.key --trusted ca.pem \
+  --cert device.pem --key device.key \
   --cert-out device-new.pem --key-out device-new.key
 ```
 
@@ -87,11 +90,84 @@ Notes:
 
 * The shared secret comes from `--secret-file` (`-` reads standard input), the `CERTRALLY_SECRET` environment variable or a prompt on a terminal, in that order. It is never accepted as a command line argument. One trailing line ending is removed.
 * With a shared secret, the request header names `CN=<ref>` as the sender and `<ref>` as the key identifier, as RFC 9483 asks. Without `--subject` or `--san` the certificate is requested for `CN=<ref>`.
-* `--trusted` names the CA certificate that responses and the issued certificate must chain to. It is required with `--cert`. Without it a shared-secret request trusts the CA certificate in the response on first use and cannot verify error messages.
 * certrally generates an `ecdsa-p256` key unless `--key-type`, `--new-key` or `--csr` says otherwise. Key types are `ecdsa-p256`, `ecdsa-p384`, `ecdsa-p521`, `ed25519`, `rsa-2048`, `rsa-3072`, `rsa-4096`, `ml-dsa-44`, `ml-dsa-65`, `ml-dsa-87` and the composite ML-DSA combinations such as `mldsa65-ecdsa-p256-sha512`. Shell completion lists them all.
-* Private keys are written as unencrypted PKCS#8 PEM with mode 0600. The key is written before the certificate. certrally refuses to replace an existing file unless `--force` is given, and checks this before sending anything.
+* Private keys are written as unencrypted PKCS#8 PEM with mode 0600. The key is written before the certificate. certrally refuses to replace an existing file unless `--force` is given. It checks this before sending anything.
 * `--chain-out` saves the issuing CA certificates from the response, issuer first.
 * `--timeout` (default 5 minutes) bounds the whole exchange, including polling while the CA prepares the certificate.
+
+### Trust the CA
+
+certrally needs no trust setup. It trusts the CA certificates in the first response from the server and the CA certificates in the `--cert` file, then checks every response against them.
+
+To make sure you talk to a particular CA, name its certificate with `--ca-cert ca.pem` (repeatable). certrally then trusts nothing the server sends. Signed responses and issued certificates must chain to a CA certificate from `--ca-cert` or `--cert`.
+
+Over HTTPS the server is checked against the system roots or against the CA certificates in `--tls-ca-cert`. Over plain HTTP nothing authenticates the first response, so use `--ca-cert` there unless you trust the network.
+
+### Revoke a certificate
+
+RFC 9483 signs a revocation request with the certificate being revoked:
+
+```bash
+certrally revoke --server https://ca.example.com/.well-known/cmp \
+  --cert device.pem --key device.key --reason keyCompromise
+```
+
+`--reason` takes an RFC 5280 reason name and defaults to `unspecified`. `certificateHold` suspends a certificate and `removeFromCRL` releases it, if the CA supports holds. An authority that revokes for someone else names the certificate with `--revoke-cert` and signs with its own `--cert` or a shared secret. On a terminal certrally asks before it sends the request. `--yes` skips the question.
+
+### Ask the CA for information
+
+`cacerts` and the `cmp genm` commands send the RFC 9483 support messages. They are protected like enroll requests:
+
+```bash
+certrally cacerts --server https://ca.example.com/.well-known/cmp --ref device-42 --out ca-certs.pem
+```
+
+| Command | Answer |
+|---|---|
+| `cacerts` or `cmp genm cacerts` | The CA certificates. `--out` saves them |
+| `cmp genm rootupdate --old-root root.pem` | The new root CA certificate, if the root has been replaced. It is accepted only when the old root certifies it |
+| `cmp genm template` | The subject, extensions and key types the CA expects. `--cert-profile` selects a profile |
+| `cmp genm crl` | The current CRL. Its signature is checked against the trusted CA certificates |
+| `cmp genm crlupdate --crl ca.crl` | A CRL newer than `ca.crl`. `--crl-issuer ca.pem` asks for any CRL from that CA instead |
+| `cmp genm raw caCerts` | The answer to any info types, given by name or as dotted OIDs |
+
+`--out -` writes the certificates or the CRL to standard output and moves the summary to standard error.
+
+### Check a server
+
+`ping` sends an unprotected general message and reports who answers and how fast. It needs no credentials, because any CMP answer counts, including the error a CA sends back for an unprotected request:
+
+```bash
+certrally ping --server https://ca.example.com/.well-known/cmp --count 3
+```
+
+```text
+  1  error rejection badMessageCheck  ECDSA SHA-256  690 B  12.4 ms
+  2  error rejection badMessageCheck  ECDSA SHA-256  689 B  9.8 ms
+  3  error rejection badMessageCheck  ECDSA SHA-256  688 B  10.1 ms
+✓ The server answers CMP
+  Server      https://ca.example.com/.well-known/cmp
+  Answer      error rejection badMessageCheck
+  CA says     "message not protected"
+  Sender      CN=Example CA
+  Protection  ECDSA SHA-256
+  Round trip  min 9.8 ms, avg 10.8 ms, max 12.4 ms
+  Replies     3 of 3
+  Note        An error is the expected answer, because the request carries no protection.
+```
+
+With `--ca-cert` the answer must also be signed by that CA. `ping` exits with 0 when the server answers with CMP, 2 when it does not and 4 when the answer fails the `--ca-cert` check.
+
+### Generate a key
+
+`keygen` creates a key without contacting a CA, for example to send a PKCS#10 request through another channel:
+
+```bash
+certrally keygen --key-type ml-dsa-65 --out device.key \
+  --csr-out device.csr --subject CN=device-42 --san device-42.example.com
+```
+
+`--pub-out` also saves the public key. `--list` prints the key types. The key is saved like enroll keys, as unencrypted PKCS#8 PEM with mode 0600.
 
 ### Colour
 
