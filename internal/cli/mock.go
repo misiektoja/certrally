@@ -19,9 +19,7 @@ import (
 	"syscall"
 	"time"
 
-	compositemldsa "github.com/misiektoja/go-composite-mldsa"
 	"github.com/misiektoja/go-pki-cmp/examples/mockserver"
-	"github.com/misiektoja/go-pki-cmp/pkicmp"
 	"github.com/misiektoja/go-pki-cmp/server"
 	"github.com/spf13/cobra"
 
@@ -55,8 +53,7 @@ func newMockCommand() *cobra.Command {
 		Short: "Run a local CMP test CA",
 		Long: "Run a CMP test CA on this machine, to try certrally or test scripts without a real CA. It issues, " +
 			"confirms and revokes certificates and answers the requests for CA certificates, a request template " +
-			"and CRLs. It accepts the shared secret for --ref and signatures made with certificates it issued. " +
-			"It does not sign composite ML-DSA keys.\n\n" +
+			"and CRLs. It accepts the shared secret for --ref and signatures made with certificates it issued.\n\n" +
 			"The shared secret comes from --secret-file or " + secret.EnvVar + ". Without either, a random secret " +
 			"is generated and printed. The CA key and everything it issued live in memory and are lost when it " +
 			"stops. Stop it with Ctrl-C.",
@@ -125,7 +122,7 @@ func runMock(cmd *cobra.Command, o *mockOptions) error {
 	if err != nil {
 		return err
 	}
-	srv := server.NewCAServer(mockCA{ca},
+	srv := server.NewCAServer(ca,
 		server.LightweightPolicy(),
 		server.WithSigner(ca.Key(), ca.Cert()),
 		server.WithExtraCerts([]*x509.Certificate{ca.Cert()}),
@@ -245,24 +242,6 @@ func (o *mockOptions) report(p *printer, url string, caCert *x509.Certificate, s
 		command = secret.EnvVar + "=" + string(sec.value) + " " + command
 	}
 	p.line("\nEnroll a certificate from another terminal:\n  " + command + "\n\nPress Ctrl-C to stop.\n")
-}
-
-// mockCA is the go-pki-cmp example CA with a clear rejection for composite ML-DSA keys, which it
-// cannot sign.
-type mockCA struct {
-	*mockserver.MockCA
-}
-
-// IssueCertificate rejects composite ML-DSA keys and lets the example CA issue the rest.
-func (c mockCA) IssueCertificate(ctx context.Context, reqType server.RequestType, tmpl *x509.Certificate, sender *server.SenderIdentity) (*server.Response, error) {
-	if _, ok := tmpl.PublicKey.(*compositemldsa.PublicKey); ok {
-		return nil, &server.Error{
-			Status:      pkicmp.StatusRejection,
-			FailureInfo: pkicmp.FailBadAlg,
-			StatusText:  "the mock CA does not sign composite ML-DSA keys",
-		}
-	}
-	return c.MockCA.IssueCertificate(ctx, reqType, tmpl, sender)
 }
 
 // mockLog prints one line for every request the mock CA answers.
