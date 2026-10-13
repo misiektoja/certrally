@@ -344,7 +344,7 @@ func (s *session) inspect(request, response trace.Event) error {
 	if err != nil {
 		return nil
 	}
-	findings := profile.Check(req, resp)
+	findings := profile.Check(req, resp, s.anchors)
 	if len(findings) == 0 {
 		return nil
 	}

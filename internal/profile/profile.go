@@ -52,9 +52,10 @@ var (
 // minNonceBytes is the shortest senderNonce RFC 9483 section 3.5 accepts.
 const minNonceBytes = 16
 
-// Check returns the rules that resp breaks as the answer to req.
-func Check(req, resp *pkicmp.PKIMessage) []Finding {
-	c := &checker{req: req, resp: resp, body: resp.Body.Type.String()}
+// Check returns the rules that resp breaks as the answer to req. trusted are the certificates the
+// client trusts. A new certificate issued by a self-signed certificate in trusted or caPubs needs no chain.
+func Check(req, resp *pkicmp.PKIMessage, trusted []*x509.Certificate) []Finding {
+	c := &checker{req: req, resp: resp, body: resp.Body.Type.String(), trusted: trusted}
 	c.header()
 	c.generalInfo()
 	c.protection()
@@ -67,7 +68,9 @@ func Check(req, resp *pkicmp.PKIMessage) []Finding {
 type checker struct {
 	req, resp *pkicmp.PKIMessage
 	// body is the response body type, such as "ip".
-	body     string
+	body string
+	// trusted are the certificates the client trusts.
+	trusted  []*x509.Certificate
 	findings []Finding
 }
 
@@ -148,7 +151,7 @@ func (c *checker) extraCerts() {
 	first := c.req.Body.Type != pkicmp.BodyTypeCertConf && c.req.Body.Type != pkicmp.BodyTypePollReq &&
 		c.resp.Body.Type != pkicmp.BodyTypeError
 	switch {
-	case len(c.resp.ExtraCerts) == 0 && issued(c.resp.Body):
+	case len(c.resp.ExtraCerts) == 0 && c.needsChain():
 		c.add(rfc9483("3.3"), "carries no extraCerts, so the chain of the new certificate is missing")
 	case len(c.resp.ExtraCerts) == 0 && signed && first:
 		c.add(rfc9483("3.3"), "carries no extraCerts, so its protection certificate is missing")
@@ -236,14 +239,45 @@ func certRep(body *pkicmp.PKIBody) *pkicmp.CertRepMessage {
 	return rep
 }
 
-// issued reports whether an ip, cp or kup body delivers a certificate.
-func issued(body *pkicmp.PKIBody) bool {
-	rep := certRep(body)
+// needsChain reports whether an ip, cp or kup delivers a certificate whose chain belongs in
+// extraCerts. RFC 9483 section 3.3 leaves self-signed certificates out of extraCerts, so a
+// certificate issued by a self-signed CA that the client knows from caPubs or trusts has no chain to
+// send. A certificate that does not parse counts as needing one.
+func (c *checker) needsChain() bool {
+	rep := certRep(c.resp.Body)
 	if rep == nil {
 		return false
 	}
+	roots := slices.Clone(c.trusted)
+	for _, pub := range rep.CAPubs {
+		if cert, err := pub.Parse(); err == nil {
+			roots = append(roots, cert)
+		}
+	}
 	return slices.ContainsFunc(rep.Response, func(r pkicmp.CertResponse) bool {
 		s := r.Status.Status
-		return r.CertifiedKeyPair != nil && (s == pkicmp.StatusAccepted || s == pkicmp.StatusGrantedWithMods)
+		if r.CertifiedKeyPair == nil || (s != pkicmp.StatusAccepted && s != pkicmp.StatusGrantedWithMods) {
+			return false
+		}
+		pub := r.CertifiedKeyPair.CertOrEncCert.Certificate
+		if pub == nil {
+			// An encrypted certificate cannot be inspected.
+			return true
+		}
+		cert, err := pub.Parse()
+		if err != nil {
+			return true
+		}
+		return !slices.ContainsFunc(roots, func(root *x509.Certificate) bool { return issuedByRoot(cert, root) })
 	})
+}
+
+// issuedByRoot reports whether root is self-signed and issued cert, judged by names and key
+// identifiers. The client verifies the signature, so the check need not.
+func issuedByRoot(cert, root *x509.Certificate) bool {
+	if !bytes.Equal(root.RawSubject, root.RawIssuer) || !bytes.Equal(cert.RawIssuer, root.RawSubject) {
+		return false
+	}
+	return len(cert.AuthorityKeyId) == 0 || len(root.SubjectKeyId) == 0 ||
+		bytes.Equal(cert.AuthorityKeyId, root.SubjectKeyId)
 }
