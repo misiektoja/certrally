@@ -1,0 +1,110 @@
+# Release configuration for GoReleaser v2. The release workflow runs it on a stable version tag.
+# `make release-snapshot` runs it locally without publishing.
+version: 2
+
+project_name: certrally
+
+builds:
+  - id: certrally
+    main: ./cmd/certrally
+    binary: certrally
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    # certrally reads its version from the build information Go records from the Git checkout, so
+    # the linker flags only strip debugging symbols.
+    flags: [-trimpath]
+    ldflags: [-s -w]
+    # A fixed timestamp keeps the binaries reproducible from the tagged commit.
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: certrally
+    ids: [certrally]
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+      - RELEASE_NOTES.md
+    builds_info:
+      mtime: "{{ .CommitDate }}"
+
+checksum:
+  name_template: checksums.txt
+
+# One SPDX SBOM per archive, written by syft.
+sboms:
+  - artifacts: archive
+
+# Keyless cosign signature of the checksum file. It covers every archive listed in it.
+signs:
+  - cmd: cosign
+    artifacts: checksum
+    signature: "${artifact}.sigstore.json"
+    args: [sign-blob, "--bundle=${signature}", "${artifact}", --yes]
+
+dockers_v2:
+  - ids: [certrally]
+    images: [ghcr.io/misiektoja/certrally]
+    tags:
+      - "{{ .Version }}"
+      - "{{ .Major }}.{{ .Minor }}"
+      - latest
+    platforms: [linux/amd64, linux/arm64]
+    labels:
+      org.opencontainers.image.title: "{{ .ProjectName }}"
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.created: "{{ .CommitDate }}"
+      org.opencontainers.image.source: https://github.com/misiektoja/certrally
+      org.opencontainers.image.licenses: Apache-2.0
+    annotations:
+      "index,manifest:org.opencontainers.image.description": Command line client for certificate enrollment with CMP
+      "index,manifest:org.opencontainers.image.source": https://github.com/misiektoja/certrally
+      "index,manifest:org.opencontainers.image.licenses": Apache-2.0
+      "index,manifest:org.opencontainers.image.version": "{{ .Version }}"
+      "index,manifest:org.opencontainers.image.revision": "{{ .FullCommit }}"
+
+docker_digest:
+  name_template: digests.txt
+
+homebrew_casks:
+  - name: certrally
+    ids: [certrally]
+    binaries: [certrally]
+    homepage: https://github.com/misiektoja/certrally
+    description: Command line client for certificate enrollment with CMP
+    repository:
+      owner: misiektoja
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Casks
+    commit_msg_template: "feat: update {{ .ProjectName }} to {{ .Tag }}"
+    generate_completions_from_executable:
+      args: [completion]
+      shell_parameter_format: cobra
+    # The binaries are not notarized, so macOS would refuse to run a downloaded copy.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/certrally"]
+          end
+
+# The release workflow passes the RELEASE_NOTES.md section of the version as the release notes.
+changelog:
+  disable: true
+
+release:
+  github:
+    owner: misiektoja
+    name: certrally
+  name_template: "{{ .Tag }}"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot"
