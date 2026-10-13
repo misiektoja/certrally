@@ -113,7 +113,7 @@ func enrollIR(t *testing.T, ca *testCA, extra ...string) (certOut, keyOut string
 	dir := t.TempDir()
 	certOut, keyOut = filepath.Join(dir, "cert.pem"), filepath.Join(dir, "key.pem")
 	args := append([]string{
-		"enroll", "--server", ca.url, "--ref", testRef, "--trusted", ca.caFile,
+		"enroll", "--server", ca.url, "--ref", testRef,
 		"--cert-out", certOut, "--key-out", keyOut,
 	}, extra...)
 	code, _, errOut := run(t, args...)
@@ -131,7 +131,7 @@ func TestEnrollIR(t *testing.T) {
 		t.Run(keyType, func(t *testing.T) {
 			dir := t.TempDir()
 			certOut, keyOut, chainOut := filepath.Join(dir, "c.pem"), filepath.Join(dir, "k.pem"), filepath.Join(dir, "chain.pem")
-			code, out, errOut := run(t, "enroll", "--server", ca.url, "--ref", testRef, "--trusted", ca.caFile,
+			code, out, errOut := run(t, "enroll", "--server", ca.url, "--ref", testRef,
 				"--subject", "CN=device-42,O=Example", "--san", "device-42.example.com", "--san", "ip:192.0.2.7",
 				"--key-type", keyType, "--cert-out", certOut, "--key-out", keyOut, "--chain-out", chainOut)
 			if code != exitOK {
@@ -198,7 +198,8 @@ func TestEnrollSecretFile(t *testing.T) {
 	enrollIR(t, ca, "--secret-file", file, "--quiet")
 }
 
-// TestEnrollSigned checks cr, kur and p10cr requests signed with a certificate from an earlier IR.
+// TestEnrollSigned checks cr, kur and p10cr requests signed with a certificate from an earlier IR,
+// trusting the CA either from its responses or from --ca-cert.
 func TestEnrollSigned(t *testing.T) {
 	useSecret(t, testSecret)
 	ca := startCA(t, nil)
@@ -224,12 +225,13 @@ func TestEnrollSigned(t *testing.T) {
 		{"kur", []string{"--type", "kur", "--key-type", "ml-dsa-44", "--key-out", "KEY"}, "CN=device-42"},
 		{"p10cr generated", []string{"--type", "p10cr", "--subject", "CN=p10", "--key-out", "KEY"}, "CN=p10"},
 		{"p10cr file", []string{"--type", "p10cr", "--csr", csrFile}, "CN=from-csr"},
+		{"kur pinned", []string{"--type", "kur", "--ca-cert", ca.caFile, "--key-out", "KEY"}, "CN=device-42"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
 			certOut := filepath.Join(dir, "cert.pem")
-			args := []string{"enroll", "--server", ca.url, "--cert", certFile, "--key", keyFile, "--trusted", ca.caFile, "--cert-out", certOut}
+			args := []string{"enroll", "--server", ca.url, "--cert", certFile, "--key", keyFile, "--cert-out", certOut}
 			for _, a := range tt.args {
 				args = append(args, strings.ReplaceAll(a, "KEY", filepath.Join(dir, "key.pem")))
 			}
@@ -312,6 +314,7 @@ func TestEnrollFailures(t *testing.T) {
 	closed := httptest.NewServer(http.NotFoundHandler())
 	closed.Close()
 	unconfirming := startCA(t, func(m *mockserver.MockCA) server.CA { return unconfirmingCA{m} })
+	other := startCA(t, nil)
 
 	tests := []struct {
 		name     string
@@ -321,12 +324,13 @@ func TestEnrollFailures(t *testing.T) {
 		wantCode int
 		want     string
 	}{
-		{"wrong secret", "wrong", ca.url, []string{"--trusted", ca.caFile}, exitRejected, "badMessageCheck"},
-		{"wrong secret unverified", "wrong", ca.url, nil, exitRejected, "not authenticated"},
+		{"wrong secret", "wrong", ca.url, nil, exitRejected, "badMessageCheck"},
+		{"wrong secret pinned", "wrong", ca.url, []string{"--ca-cert", ca.caFile}, exitRejected, "badMessageCheck"},
+		{"wrong secret other CA", "wrong", ca.url, []string{"--ca-cert", other.caFile}, exitRejected, "not authenticated"},
 		{"not found", testSecret, notFound.URL, nil, exitTransport, "HTTP 404"},
 		{"not CMP", testSecret, html.URL, nil, exitTransport, "text/html"},
 		{"connection refused", testSecret, closed.URL, nil, exitTransport, "Check the host and port"},
-		{"unconfirmed", testSecret, unconfirming.url, []string{"--trusted", unconfirming.caFile}, exitUnconfirmed, "confirmation failed"},
+		{"unconfirmed", testSecret, unconfirming.url, nil, exitUnconfirmed, "confirmation failed"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -362,7 +366,7 @@ func TestEnrollUsage(t *testing.T) {
 		want string
 	}{
 		{"no protection", []string{"--cert-out", out, "--key-out", key}, "choose a protection"},
-		{"both protections", []string{"--ref", testRef, "--cert", existing, "--key", existing, "--trusted", ca.caFile, "--cert-out", out}, "choose one protection"},
+		{"both protections", []string{"--ref", testRef, "--cert", existing, "--key", existing, "--cert-out", out}, "choose one protection"},
 		{"kur without cert", []string{"--type", "kur", "--ref", testRef, "--cert-out", out, "--key-out", key}, "kur"},
 		{"no key output", []string{"--ref", testRef, "--cert-out", out}, "--key-out"},
 		{"existing output", []string{"--ref", testRef, "--cert-out", existing, "--key-out", key}, "already exists"},
