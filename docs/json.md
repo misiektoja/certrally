@@ -9,7 +9,7 @@ Later versions may add fields. Existing fields keep their names and meaning.
 
 ## Conventions
 
-* Names are RFC 4514 strings, such as `CN=device-42,O=Example`.
+* Names are RFC 4514 strings, such as `CN=device-42,O=Example`, with the attributes in their encoded order. Attribute types other than CN, O, OU, C, L, ST, STREET, POSTALCODE, SERIALNUMBER and UID appear as dotted OIDs.
 * Times are RFC 3339 in UTC.
 * Message bytes and info type values are base64. Transaction IDs, key identifiers and SHA-256 fingerprints are lower-case hex. Certificate serial numbers are upper-case hex.
 * Certificates, CRLs, public keys and requests are PEM strings. Private keys never appear in JSON output or capture files.
