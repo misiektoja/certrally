@@ -17,7 +17,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	compositemldsa "github.com/misiektoja/go-composite-mldsa"
 	"github.com/misiektoja/go-composite-mldsa/compositex509"
@@ -247,48 +246,33 @@ func TestEnrollSigned(t *testing.T) {
 	}
 }
 
-// compositeCA issues certificates with compositex509, which composite ML-DSA keys require.
-type compositeCA struct {
-	*mockserver.MockCA
-}
-
-// IssueCertificate signs the template like the mock CA, through compositex509.
-func (c compositeCA) IssueCertificate(_ context.Context, reqType server.RequestType, tmpl *x509.Certificate, _ *server.SenderIdentity) (*server.Response, error) {
-	serial, err := server.GenerateSerial()
-	if err != nil {
-		return nil, err
-	}
-	tmpl.SerialNumber = serial
-	tmpl.NotBefore = time.Now().Add(-time.Minute)
-	tmpl.NotAfter = time.Now().Add(time.Hour)
-	der, err := compositex509.CreateCertificate(rand.Reader, tmpl, c.Cert(), tmpl.PublicKey, c.Key())
-	if err != nil {
-		return nil, err
-	}
-	cert, err := x509.ParseCertificate(der)
-	if err != nil {
-		return nil, err
-	}
-	resp := &server.Response{Certificate: cert}
-	if reqType == server.RequestIR {
-		resp.CACerts = []*x509.Certificate{c.Cert()}
-	}
-	return resp, nil
-}
-
-// TestEnrollComposite checks enrollment of a composite ML-DSA key.
+// TestEnrollComposite checks enrollment of a composite ML-DSA key and that the certificate signs a key
+// update and a revocation.
 func TestEnrollComposite(t *testing.T) {
 	useSecret(t, testSecret)
-	ca := startCA(t, func(m *mockserver.MockCA) server.CA { return compositeCA{m} })
+	ca := startCA(t, nil)
 	alg := compositemldsa.Algorithms()[0]
 	name := strings.ToLower(alg.String())
-	certOut, _ := enrollIR(t, ca, "--key-type", name)
+	certOut, keyOut := enrollIR(t, ca, "--key-type", name)
 	pub, err := keys.CertificateKey(readCert(t, certOut))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := keys.Describe(pub); got != alg.String() {
 		t.Errorf("key = %q, want %q", got, alg.String())
+	}
+
+	dir := t.TempDir()
+	newCert, newKey := filepath.Join(dir, "new.pem"), filepath.Join(dir, "new.key")
+	steps := [][]string{
+		{"enroll", "--server", ca.url, "--type", typeKUR, "--cert", certOut, "--key", keyOut,
+			"--key-type", name, "--cert-out", newCert, "--key-out", newKey},
+		{"revoke", "--server", ca.url, "--cert", newCert, "--key", newKey, "--yes"},
+	}
+	for _, args := range steps {
+		if code, _, errOut := run(t, args...); code != exitOK {
+			t.Fatalf("%s exited with %d:\n%s", args[0], code, errOut)
+		}
 	}
 }
 

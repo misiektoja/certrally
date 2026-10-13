@@ -126,8 +126,8 @@ func TestMock(t *testing.T) {
 	name := strings.ToLower(compositemldsa.Algorithms()[0].String())
 	code, _, errOut := run(t, append([]string{"enroll", "--key-type", name,
 		"--cert-out", filepath.Join(dir, "c.pem"), "--key-out", filepath.Join(dir, "k.pem")}, connection...)...)
-	if code != exitRejected || !strings.Contains(errOut, "badAlg") || !strings.Contains(errOut, "composite ML-DSA") {
-		t.Errorf("composite enroll exited with %d, want %d with badAlg:\n%s", code, exitRejected, errOut)
+	if code != exitOK {
+		t.Errorf("composite enroll exited with %d:\n%s", code, errOut)
 	}
 
 	resp, err := http.Get(strings.TrimSuffix(m.url, mockPath) + "/elsewhere")
@@ -148,7 +148,6 @@ func TestMock(t *testing.T) {
 		"certConf  PBMAC1",
 		"genm  PBMAC1",
 		"rr  ",
-		"rejection  badAlg",
 		"GET /elsewhere  ->  HTTP 404",
 		"Mock CA stopped",
 	} {
