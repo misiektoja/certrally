@@ -17,6 +17,7 @@ certrally is a command line client for certificate enrollment with the Certifica
 * A live diagram of every message in the exchange and plain explanations of failures
 * Warnings about responses that break RFC 9483 and a strict profile that rejects them
 * JSON output for scripts and capture files that record every message of a run
+* `inspect` and `lint` to decode recorded messages and check them against RFC 9483
 * Exit statuses that tell scripts why a request failed
 
 EST support is planned after CMP.
