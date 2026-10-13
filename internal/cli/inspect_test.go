@@ -2,13 +2,22 @@ package cli
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/json"
+	"math/big"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/misiektoja/go-pki-cmp/pkicmp"
 
 	"github.com/misiektoja/certrally/internal/cmpfile"
+	"github.com/misiektoja/certrally/internal/pemfile"
 )
 
 // recordCapture enrolls, updates and revokes a certificate and asks for a request template,
@@ -171,6 +180,92 @@ func TestInspectProtection(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestInspectExpiredSigner checks a message whose signer expired after the capture recorded it. The signature
+// verifies either way. The chain is checked at the capture time, or at the current time for a message file.
+func TestInspectExpiredSigner(t *testing.T) {
+	now := time.Now()
+	caKey, caCert := testCertificate(t, &x509.Certificate{
+		Subject:               pkix.Name{CommonName: "Old CA"},
+		NotBefore:             now.Add(-4 * time.Hour),
+		NotAfter:              now.Add(time.Hour),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign,
+	}, nil, nil)
+	signerKey, signer := testCertificate(t, &x509.Certificate{
+		Subject:      pkix.Name{CommonName: "Old signer"},
+		NotBefore:    now.Add(-3 * time.Hour),
+		NotAfter:     now.Add(-time.Hour),
+		SubjectKeyId: []byte{1, 2, 3},
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+	}, caCert, caKey)
+	msg := pkicmp.NewPKIMessage(pkicmp.NewPKIConfBody(), pkicmp.MessageOptions{
+		Sender: pkicmp.NewDirectoryNameFromRawDER(signer.RawSubject),
+	})
+	creds, err := pkicmp.NewSignatureCredentials(signerKey, signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := creds.Protect(msg); err != nil {
+		t.Fatal(err)
+	}
+	der, err := msg.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dir := t.TempDir()
+	caFile, derFile, capture := filepath.Join(dir, "ca.pem"), filepath.Join(dir, "pkiconf.der"), filepath.Join(dir, "run.jsonl")
+	writeFile(t, caFile, pemfile.EncodeCertificates([]*x509.Certificate{caCert}))
+	writeFile(t, derFile, der)
+	recorded := now.Add(-2 * time.Hour)
+	var lines []byte
+	for _, line := range []map[string]any{
+		{"kind": "start", "format": 1, "server": "http://ca.example/cmp", "time": recorded},
+		{"kind": "response", "time": recorded, "body": "pkiconf", "der": der},
+	} {
+		b, err := json.Marshal(line)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines = append(append(lines, b...), '\n')
+	}
+	writeFile(t, capture, lines)
+
+	for file, trusted := range map[string]bool{capture: true, derFile: false} {
+		code, doc := runJSON(t, "inspect", file, "--ca-cert", caFile)
+		p := "result.messages.0.protection."
+		if code != exitOK || get(doc, p+"check") != "valid" || get(doc, p+"signer") != "CN=Old signer" ||
+			get(doc, p+"trusted") != trusted {
+			t.Errorf("%s: exited with %d, want a valid signature and trusted %v: %v",
+				filepath.Base(file), code, trusted, get(doc, "result.messages.0.protection"))
+		}
+	}
+}
+
+// testCertificate certifies a new key with template, signed by issuerKey under issuer or self-signed when
+// issuer is nil.
+func testCertificate(t *testing.T, template, issuer *x509.Certificate, issuerKey *ecdsa.PrivateKey) (*ecdsa.PrivateKey, *x509.Certificate) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template.SerialNumber = big.NewInt(time.Now().UnixNano())
+	if issuer == nil {
+		issuer, issuerKey = template, key
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, issuer, &key.PublicKey, issuerKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return key, cert
 }
 
 // TestInspectMAC checks MACs with the shared secret from --secret-file and from the environment.
