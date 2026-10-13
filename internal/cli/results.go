@@ -246,7 +246,7 @@ type protectionJSON struct {
 	// Algorithm is the protection algorithm. It is "none" for an unprotected message.
 	Algorithm string `json:"algorithm"`
 	// Check is "valid", "invalid" or "unchecked". It is absent for an unprotected message. A MAC
-	// is unchecked.
+	// is unchecked without the shared secret.
 	Check string `json:"check,omitempty"`
 	// Signer is the subject of the certificate whose signature verifies.
 	Signer string `json:"signer,omitempty"`

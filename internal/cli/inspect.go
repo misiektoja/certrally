@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -22,6 +23,7 @@ import (
 	"github.com/misiektoja/certrally/internal/dn"
 	"github.com/misiektoja/certrally/internal/keys"
 	"github.com/misiektoja/certrally/internal/pemfile"
+	"github.com/misiektoja/certrally/internal/secret"
 	"github.com/misiektoja/certrally/internal/trace"
 	"github.com/misiektoja/certrally/internal/ui"
 )
@@ -29,7 +31,8 @@ import (
 // inspectOptions holds the inspect command line.
 type inspectOptions struct {
 	outputOptions
-	caCerts []string
+	caCerts    []string
+	secretFile string
 }
 
 // fileArgsHelp describes the FILE arguments of inspect and lint.
@@ -45,7 +48,8 @@ func newInspectCommand() *cobra.Command {
 		Long: "Decode CMP messages and show their header, protection, body and extra certificates.\n\n" +
 			fileArgsHelp + "\n\n" +
 			"certrally checks a signature with the certificates the message carries and those in --ca-cert. " +
-			"With --ca-cert it also checks that the signer chains to those certificates. A MAC is not checked. " +
+			"With --ca-cert it also checks that the signer chains to those certificates. It checks a MAC with " +
+			"the shared secret from --secret-file or the " + secret.EnvVar + " environment variable. " +
 			"inspect does not judge the messages. lint checks them against RFC 9483.\n\n" +
 			"Exit status: 0 success, 1 a file cannot be read or holds no CMP message.",
 		Example: "  certrally enroll --server https://ca.example.com/.well-known/cmp --ref device-42 \\\n" +
@@ -58,14 +62,23 @@ func newInspectCommand() *cobra.Command {
 	}
 	f := cmd.Flags()
 	f.StringArrayVar(&o.caCerts, "ca-cert", nil, "check signatures with the CA certificates in this file (repeatable)")
+	f.StringVar(&o.secretFile, "secret-file", "",
+		"check MACs with the shared secret in this file, or - for standard input")
 	f.BoolVar(&o.json, "json", false, "print the messages as one JSON document on standard output")
 	return cmd
 }
 
 // runInspect performs the inspect command.
 func runInspect(o *inspectOptions, p *printer, paths []string, stdin io.Reader) error {
+	if o.secretFile == stdoutPath && slices.Contains(paths, stdoutPath) {
+		return errors.New("standard input can be read only once, so --secret-file and FILE cannot both be -")
+	}
 	caCerts, err := readCACerts(o.caCerts)
 	if err != nil {
+		return err
+	}
+	a := &anchors{caCerts: caCerts}
+	if err := a.readSecret(o.secretFile, stdin); err != nil {
 		return err
 	}
 	msgs, err := readMessages(paths, stdin)
@@ -75,7 +88,7 @@ func runInspect(o *inspectOptions, p *printer, paths []string, stdin io.Reader) 
 	result := &inspectJSON{Messages: make([]messageJSON, 0, len(msgs))}
 	w := p.reportWriter()
 	for i, m := range msgs {
-		r := describeMessage(m, caCerts)
+		r := describeMessage(m, a)
 		result.Messages = append(result.Messages, r.json)
 		if !p.text() {
 			continue
@@ -128,7 +141,39 @@ func readCACerts(paths []string) ([]*x509.Certificate, error) {
 	return certs, nil
 }
 
-// Outcomes of a signature check, as in the JSON result.
+// anchors holds what inspect checks protection with.
+type anchors struct {
+	// caCerts are the --ca-cert certificates.
+	caCerts []*x509.Certificate
+	// secret is the shared secret for MACs. It is nil when none was given.
+	secret []byte
+	// secretSource names where the secret came from, for the report.
+	secretSource string
+}
+
+// readSecret reads the shared secret from file or, when file is empty, from the environment. A file
+// of - reads stdin. Without a secret MACs are not checked. inspect never prompts because it often
+// runs on files that need no secret.
+func (a *anchors) readSecret(file string, stdin io.Reader) error {
+	src := secret.Source{File: file, LookupEnv: os.LookupEnv}
+	if file == stdoutPath {
+		src.Stdin = stdin
+	}
+	value, err := src.Read()
+	switch {
+	case errors.Is(err, secret.ErrMissing):
+		return nil
+	case err != nil:
+		return err
+	}
+	a.secret, a.secretSource = value, secret.EnvVar
+	if file != "" {
+		a.secretSource = "--secret-file"
+	}
+	return nil
+}
+
+// Outcomes of a protection check, as in the JSON result.
 const (
 	checkValid     = "valid"
 	checkInvalid   = "invalid"
@@ -163,8 +208,8 @@ func (r *messageReport) problem(format string, args ...any) {
 	r.json.Problems = append(r.json.Problems, fmt.Sprintf(format, args...))
 }
 
-// describeMessage describes m. caCerts are the --ca-cert certificates.
-func describeMessage(m cmpfile.Message, caCerts []*x509.Certificate) *messageReport {
+// describeMessage describes m and checks its protection with a.
+func describeMessage(m cmpfile.Message, a *anchors) *messageReport {
 	msg := m.Msg
 	r := &messageReport{json: messageJSON{
 		Source:    m.Source,
@@ -182,7 +227,7 @@ func describeMessage(m cmpfile.Message, caCerts []*x509.Certificate) *messageRep
 	}
 	extra := r.parseExtraCerts(msg)
 	r.header(&msg.Header)
-	signer := r.protection(msg, extra, caCerts)
+	signer := r.protection(msg, extra, a)
 	r.body(msg.Body)
 	for i, cert := range extra {
 		if cert == nil {
@@ -307,9 +352,9 @@ func keyID(b []byte) string {
 	return fmt.Sprintf("%s %q", hexBytes(b), string(b))
 }
 
-// protection describes the protection of msg and checks a signature. extra are the parsed
-// extraCerts. It returns the certificate whose signature verifies, if any.
-func (r *messageReport) protection(msg *pkicmp.PKIMessage, extra, caCerts []*x509.Certificate) *x509.Certificate {
+// protection describes the protection of msg and checks it. extra are the parsed extraCerts. It
+// returns the certificate whose signature verifies, if any.
+func (r *messageReport) protection(msg *pkicmp.PKIMessage, extra []*x509.Certificate, a *anchors) *x509.Certificate {
 	alg := msg.Header.ProtectionAlg
 	if alg == nil {
 		r.json.Protection = protectionJSON{Algorithm: valueNone}
@@ -320,15 +365,16 @@ func (r *messageReport) protection(msg *pkicmp.PKIMessage, extra, caCerts []*x50
 	var signer *x509.Certificate
 	kind := "Signature"
 	if alg.Algorithm.Equal(oidPBM) || alg.Algorithm.Equal(oidPBMAC1) {
-		kind, j.Problem = "MAC", "it needs the shared secret"
+		kind = "MAC"
+		j.Check, j.Problem = checkMAC(msg, a)
 	} else {
-		signer, j.Check, j.Problem = checkSignature(msg, slices.Concat(extra, caCerts))
+		signer, j.Check, j.Problem = checkSignature(msg, slices.Concat(extra, a.caCerts))
 	}
 	trust := ""
 	if signer != nil {
 		j.Signer = dn.Format(signer.RawSubject)
-		if len(caCerts) > 0 {
-			trusted := chainsTo(msg, caCerts)
+		if len(a.caCerts) > 0 {
+			trusted := chainsTo(msg, a.caCerts)
 			j.Trusted = &trusted
 			trust = "does not chain to --ca-cert"
 			if trusted {
@@ -398,6 +444,24 @@ func checkSignature(msg *pkicmp.PKIMessage, candidates []*x509.Certificate) (sig
 	return nil, checkInvalid, "no certificate in extraCerts or --ca-cert verifies it"
 }
 
+// checkMAC checks the MAC of msg with the shared secret of a. It returns the outcome and why the
+// outcome is not valid. A wrong secret and a changed message fail the same way.
+func checkMAC(msg *pkicmp.PKIMessage, a *anchors) (outcome, problem string) {
+	if a.secret == nil {
+		return checkUnchecked, "it needs the shared secret from --secret-file or " + secret.EnvVar
+	}
+	_, err := msg.Verify(pkicmp.VerifyOptions{RequiredProtection: pkicmp.ProtectionMAC, SharedSecret: a.secret})
+	if err == nil {
+		return checkValid, ""
+	}
+	if verifyErr, ok := errors.AsType[*pkicmp.VerificationError](err); ok && verifyErr.Reason == pkicmp.ReasonBadMAC {
+		return checkInvalid, "it does not match the shared secret from " + a.secretSource
+	}
+	// go-pki-cmp refuses unsupported algorithms and parameters outside its limits, such as an
+	// iteration count that would take too long, before it computes the MAC.
+	return checkUnchecked, err.Error()
+}
+
 // chainsTo reports whether msg is signed with a certificate that chains to caCerts.
 func chainsTo(msg *pkicmp.PKIMessage, caCerts []*x509.Certificate) bool {
 	pool := x509.NewCertPool()
@@ -415,7 +479,7 @@ func chainsTo(msg *pkicmp.PKIMessage, caCerts []*x509.Certificate) bool {
 	return err == nil
 }
 
-// checkText shows the outcome of a signature check and its reason.
+// checkText shows the outcome of a protection check and its reason.
 func checkText(outcome, problem string) string {
 	text := outcome
 	if outcome == checkUnchecked {
