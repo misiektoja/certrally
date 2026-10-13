@@ -149,10 +149,13 @@ func (s *session) ping(ctx context.Context, recipient pkicmp.GeneralName) (pingR
 	return r, nil
 }
 
+// errUnprotectedAnswer reports an answer without protection, which no --ca-cert can confirm.
+var errUnprotectedAnswer = errors.New("the answer is not protected")
+
 // verify checks that an answer is signed by the CA named with --ca-cert.
 func (s *session) verify(msg *pkicmp.PKIMessage) error {
 	if msg.Header.ProtectionAlg == nil {
-		return errors.New("the answer is not protected")
+		return errUnprotectedAnswer
 	}
 	candidates := append([]pkicmp.CMPCertificate(nil), msg.ExtraCerts...)
 	for _, cert := range s.caCerts {
@@ -258,6 +261,13 @@ func report(s *session, replies []pingReply) error {
 			code:    exitProtocol,
 			Title:   "The server answers CMP, but not as the CA in --ca-cert",
 			Message: unverified.Error(),
+		}
+		if errors.Is(unverified, errUnprotectedAnswer) {
+			// Some CAs, such as EJBCA, leave errors unprotected, so nothing here points at another CA.
+			f.Title = "The server answers CMP, but its answer cannot be checked against --ca-cert"
+			f.Hint = "The CA does not protect its answer to an unprotected request. " +
+				"Commands that send credentials check the CA against --ca-cert."
+			fields = append(fields, hintField(f.Hint))
 		}
 		return s.p.fail(f, unverified, fields...)
 	}
