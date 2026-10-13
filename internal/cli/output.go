@@ -27,6 +27,7 @@ const (
 	fieldSubject = "Subject"
 	fieldIssuer  = "Issuer"
 	fieldKey     = "Key"
+	fieldServer  = "Server"
 )
 
 // outputOptions holds the flags that choose how a command reports its outcome.

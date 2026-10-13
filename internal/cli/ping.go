@@ -233,7 +233,7 @@ func report(s *session, replies []pingReply) error {
 		rtt = fmt.Sprintf("min %s, avg %s, max %s", formatRTT(lo), formatRTT(avg), formatRTT(hi))
 	}
 	fields := []ui.Field{
-		{Name: "Server", Value: s.conn.redactedServer()},
+		{Name: fieldServer, Value: s.conn.redactedServer()},
 		{Name: "Answer", Value: first.answer()},
 		{Name: "CA says", Value: quoteText(m.StatusText)},
 		{Name: "Sender", Value: ui.Sanitize(m.Sender)},

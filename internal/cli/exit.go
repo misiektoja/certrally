@@ -99,7 +99,7 @@ func (f *failure) fields(s *session) []ui.Field {
 			ui.Field{Name: "CA says", Value: quoteText(f.StatusText)},
 		)
 	case f.code == exitTransport && s != nil:
-		fields = append(fields, ui.Field{Name: "Server", Value: s.conn.redactedServer()}, errorField(f.Message))
+		fields = append(fields, ui.Field{Name: fieldServer, Value: s.conn.redactedServer()}, errorField(f.Message))
 	default:
 		fields = append(fields, errorField(f.Message))
 	}

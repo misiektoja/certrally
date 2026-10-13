@@ -16,6 +16,9 @@ import (
 	"github.com/misiektoja/certrally/internal/termcolor"
 )
 
+// programName is the name of the command and of the client in ladders and capture files.
+const programName = "certrally"
+
 // Run executes the command line in args and returns the process exit status.
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	// Help and usage errors are rendered before any command hook runs, so the colour mode has to be
@@ -86,7 +89,7 @@ func handleError(w io.Writer, styles fang.Styles, err error) {
 // newRootCommand returns the certrally command with its global flags.
 func newRootCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "certrally",
+		Use:   programName,
 		Short: "Certificate enrollment client for CMP",
 		Long: "certrally is a certificate enrollment client for the Certificate Management Protocol (CMP).\n\n" +
 			"It shows each exchange as a ladder diagram and explains failures. It trusts the CA that answers " +
@@ -99,6 +102,7 @@ func newRootCommand() *cobra.Command {
 		newCMPCommand(),
 		newPingCommand(),
 		newKeygenCommand(),
+		newMockCommand(),
 	)
 
 	// Run applies the colour mode before parsing. The flag is still defined here so that help lists
@@ -140,7 +144,7 @@ func jsonFromArgs(args []string) bool {
 // earlyFlagSet returns a flag set for reading single flags before cobra parses the command line.
 // It ignores the flags it does not define.
 func earlyFlagSet() *pflag.FlagSet {
-	fs := pflag.NewFlagSet("certrally", pflag.ContinueOnError)
+	fs := pflag.NewFlagSet(programName, pflag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	fs.ParseErrorsAllowlist.UnknownFlags = true
 	// Without its own help flag, pflag stops at --help and ignores the flags that follow it.

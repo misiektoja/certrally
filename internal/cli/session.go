@@ -279,7 +279,7 @@ func (c *connection) open(p *printer, chain []*x509.Certificate) (*session, erro
 	}
 	if c.capture != "" {
 		w, err := capture.Open(c.capture, capture.Start{
-			Tool:    "certrally",
+			Tool:    programName,
 			Version: toolVersion(),
 			Command: p.command,
 			Server:  c.redactedServer(),
@@ -349,7 +349,7 @@ func (s *session) inspect(request, response trace.Event) error {
 // startLadder starts drawing the exchange in text output without --quiet.
 func (s *session) startLadder() {
 	if s.p.showProgress() {
-		s.ladder = ui.NewLadder(s.p.stderr, "certrally", s.conn.host())
+		s.ladder = ui.NewLadder(s.p.stderr, programName, s.conn.host())
 	}
 }
 
