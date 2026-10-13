@@ -35,5 +35,5 @@ When `strict` stops an `ip`, `cp` or `kup` response, certrally neither confirms 
 | A signed response has a `senderKID` when its protection certificate has a subject key identifier | RFC 9483 section 3.1 |
 | The first signed response of an operation starts `extraCerts` with its protection certificate. Error messages are exempt | RFC 9483 section 3.3 |
 | An `ip`, `cp` or `kup` that issues a certificate carries `extraCerts` with the chain of the new certificate | RFC 9483 section 3.3 |
-| An `error` message has the status `rejection`, or `waiting` while the CA prepares a certificate | RFC 9483 section 3.6.4 |
+| An `error` message has the status `rejection`. While the CA prepares a certificate the status may be `waiting` | RFC 9483 section 3.6.4 |
 | A `pkiconf` holds an ASN.1 NULL rather than nothing | RFC 9810 section 5.3.17 |
