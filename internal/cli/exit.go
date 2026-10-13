@@ -309,15 +309,21 @@ func issuedTrustHint(err error, pinned bool) string {
 		"Pass it with --ca-cert."
 }
 
-// verificationHint names the flag that would let a failed response verify. It returns "" when it has none.
+// verificationHint explains why a response failed verification and names the flag that would let it verify
+// when there is one. It returns "" when it has no explanation.
 func verificationHint(err error) string {
 	verifyErr, ok := errors.AsType[*pkicmp.VerificationError](err)
 	if !ok {
 		return ""
 	}
 	switch verifyErr.Reason {
-	case pkicmp.ReasonMissingTrustAnchors, pkicmp.ReasonSignatureFailed:
+	case pkicmp.ReasonMissingTrustAnchors, pkicmp.ReasonUntrustedSigner:
 		return "The response is not signed by the CA in --ca-cert."
+	case pkicmp.ReasonSignatureFailed:
+		// go-pki-cmp checks a signature only with a trusted certificate of the sender. Such a certificate
+		// from --ca-cert with another key is what a CA that changed its key leaves behind.
+		return "The response signature does not verify with the trusted certificate of its sender. " +
+			"--ca-cert may hold an older certificate of the CA, or the response was changed on the way."
 	case pkicmp.ReasonNoCandidateSigner:
 		return "The response does not carry the certificate it was signed with. Pass it with --ca-cert."
 	case pkicmp.ReasonBadMAC:
