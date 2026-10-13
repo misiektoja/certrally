@@ -22,6 +22,7 @@ import (
 	compositemldsa "github.com/misiektoja/go-composite-mldsa"
 	"github.com/misiektoja/go-composite-mldsa/compositex509"
 	"github.com/misiektoja/go-pki-cmp/examples/mockserver"
+	"github.com/misiektoja/go-pki-cmp/pkicmp"
 	"github.com/misiektoja/go-pki-cmp/server"
 
 	"github.com/misiektoja/certrally/internal/keys"
@@ -435,12 +436,28 @@ func TestEnrollHints(t *testing.T) {
 	}
 
 	const pbm = "Try --mac pbm."
-	rejecting := rejectingServer(t)
-	if code, errOut := enroll(rejecting); code != exitRejected || !strings.Contains(errOut, pbm) {
-		t.Errorf("a rejected PBMAC1 request exited with %d:\n%s", code, errOut)
+	rejection := func(info pkicmp.PKIFailureInfo, text ...string) pkicmp.PKIStatusInfo {
+		return pkicmp.PKIStatusInfo{Status: pkicmp.StatusRejection, FailInfo: info, StatusString: text}
 	}
-	if code, errOut := enroll(rejecting, "--mac", "pbm"); code != exitRejected || strings.Contains(errOut, pbm) {
-		t.Errorf("a rejected PasswordBasedMac request exited with %d:\n%s", code, errOut)
+	rejections := []struct {
+		name    string
+		status  pkicmp.PKIStatusInfo
+		mac     string
+		want    string
+		wantPBM bool
+	}{
+		{"no signer for PBMAC1", rejection(pkicmp.FailBadRequest, "no suitable sender cert"), "pbmac1", "does not accept", true},
+		{"no signer for PBM", rejection(pkicmp.FailBadRequest, "no suitable sender cert"), "pbm", "does not accept", false},
+		{"other bad request", rejection(pkicmp.FailBadRequest, "Illegal key algorithm"), "pbmac1", "does not accept", false},
+		{"bad message check", rejection(pkicmp.FailBadMessageCheck), "pbmac1", "Check the shared secret", true},
+		{"wrong integrity", rejection(pkicmp.FailWrongIntegrity), "pbmac1", "other kind of protection", true},
+	}
+	for _, tt := range rejections {
+		code, errOut := enroll(rejectingServer(t, tt.status), "--mac", tt.mac)
+		if code != exitRejected || !strings.Contains(errOut, tt.want) || strings.Contains(errOut, pbm) != tt.wantPBM {
+			t.Errorf("%s: exited with %d, want %d with %q and the --mac pbm hint %v:\n%s",
+				tt.name, code, exitRejected, tt.want, tt.wantPBM, errOut)
+		}
 	}
 
 	// The CA issues from an intermediate CA that no response carries.

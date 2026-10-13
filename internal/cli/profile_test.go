@@ -235,8 +235,12 @@ func TestProfileDeviation(t *testing.T) {
 	})
 }
 
-// rejectingServer answers every request with an unprotected rejection whose senderNonce is too short.
-func rejectingServer(t *testing.T) string {
+// badRequest is a rejection without a reason the client could act on.
+var badRequest = pkicmp.PKIStatusInfo{Status: pkicmp.StatusRejection, FailInfo: pkicmp.FailBadRequest}
+
+// rejectingServer answers every request with an unprotected rejection with status whose senderNonce is
+// too short.
+func rejectingServer(t *testing.T, status pkicmp.PKIStatusInfo) string {
 	t.Helper()
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		der, err := io.ReadAll(r.Body)
@@ -249,7 +253,6 @@ func rejectingServer(t *testing.T) string {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		status := pkicmp.PKIStatusInfo{Status: pkicmp.StatusRejection, FailInfo: pkicmp.FailBadRequest}
 		resp := pkicmp.NewPKIMessage(pkicmp.NewErrorBody(&pkicmp.ErrorMsgContent{PKIStatusInfo: status}), pkicmp.MessageOptions{
 			Sender:        pkicmp.NewDirectoryName(pkix.Name{CommonName: "Test CA"}),
 			Recipient:     req.Header.Sender,
@@ -273,7 +276,7 @@ func rejectingServer(t *testing.T) string {
 // breaks as warnings, because the reason the CA gives matters more.
 func TestProfileRejection(t *testing.T) {
 	useSecret(t, testSecret)
-	code, doc := runJSON(t, "cacerts", "--server", rejectingServer(t), "--ref", testRef, "--profile", "strict")
+	code, doc := runJSON(t, "cacerts", "--server", rejectingServer(t, badRequest), "--ref", testRef, "--profile", "strict")
 	want := "The error response has a senderNonce of 64 bits instead of at least 128 (RFC 9483 section 3.5)."
 	if code != exitRejected || get(doc, "error.status") != "rejection" || get(doc, "warnings.0") != want {
 		t.Errorf("exited with %d: %v", code, doc)

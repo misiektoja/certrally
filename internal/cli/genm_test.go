@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/misiektoja/go-pki-cmp/pkicmp"
 )
 
 // TestCACerts checks cacerts and cmp genm cacerts with file and standard output.
@@ -143,5 +145,25 @@ func TestParseInfoType(t *testing.T) {
 	}
 	if got := infoTypeName(asn1.ObjectIdentifier{1, 2, 3}); got != "1.2.3" {
 		t.Errorf("infoTypeName = %q", got)
+	}
+}
+
+// TestGenMRejected checks that a general message rejected with badRequest alone suggests missing support.
+func TestGenMRejected(t *testing.T) {
+	useSecret(t, testSecret)
+	const unsupported = "may not support general messages"
+	tests := []struct {
+		name   string
+		status pkicmp.PKIStatusInfo
+		want   bool
+	}{
+		{"bad request", badRequest, true},
+		{"bad message check", pkicmp.PKIStatusInfo{Status: pkicmp.StatusRejection, FailInfo: pkicmp.FailBadMessageCheck}, false},
+	}
+	for _, tt := range tests {
+		code, _, errOut := run(t, "cacerts", "--server", rejectingServer(t, tt.status), "--ref", testRef)
+		if code != exitRejected || strings.Contains(errOut, unsupported) != tt.want {
+			t.Errorf("%s: exited with %d, want %d with the hint %v:\n%s", tt.name, code, exitRejected, tt.want, errOut)
+		}
 	}
 }
