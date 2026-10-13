@@ -112,6 +112,15 @@ func newRootCommand() *cobra.Command {
 	mode := colorFlag(termcolor.Auto)
 	cmd.PersistentFlags().Var(&mode, "color", "when to colour output: auto, always or never")
 	_ = cmd.RegisterFlagCompletionFunc("color", completeColorMode)
+
+	// cobra defines --help and --version only after it has looked up the command to run. Until then
+	// it assumes that an unknown flag takes a value, so "--help --color never" would make "never" an
+	// unknown command. Only the root command rejects unknown commands, so only it needs the flags
+	// early. cobra defines --version only for a command with a version, and fang replaces this
+	// placeholder with the version of the build.
+	cmd.Version = "unknown"
+	cmd.InitDefaultHelpFlag()
+	cmd.InitDefaultVersionFlag()
 	return cmd
 }
 
