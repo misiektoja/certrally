@@ -220,7 +220,7 @@ certrally ping --server https://ca.example.com/.well-known/cmp --count 3
   Note        An error is the expected answer, because the request carries no protection.
 ```
 
-With `--ca-cert` the answer must also be signed by that CA. `ping` exits with 0 when the server answers with CMP, 2 when it does not, 4 when the answer fails the `--ca-cert` check and 6 when it breaks `--profile strict`.
+With `--ca-cert` the answer must also be signed by that CA. A CA that leaves its errors unprotected fails this check. `ping` exits with 0 when the server answers with CMP, 2 when it does not, 4 when the answer fails the `--ca-cert` check and 6 when it breaks `--profile strict`.
 
 ### Generate a key
 
@@ -235,7 +235,7 @@ certrally keygen --key-type ml-dsa-65 --out device.key \
 
 ### Check responses against RFC 9483
 
-certrally warns when a response breaks a rule of the Lightweight CMP Profile (RFC 9483) that some CAs do not follow, such as a missing chain for the new certificate. `--profile strict` rejects such responses instead and exits with status 6. [docs/profiles.md](docs/profiles.md) lists the rules.
+certrally warns when a response breaks a rule of the Lightweight CMP Profile (RFC 9483) that some CAs do not follow, such as a missing chain for the new certificate. `--profile strict` rejects such responses instead and exits with status 6. [docs/profiles.md](docs/profiles.md) lists the rules. [docs/interop.md](docs/interop.md) describes how tested CAs behave.
 
 ### Use certrally in scripts
 
