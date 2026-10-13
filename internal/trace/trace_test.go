@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"crypto/x509/pkix"
 	"encoding/asn1"
+	"encoding/hex"
 	"errors"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	compositemldsa "github.com/misiektoja/go-composite-mldsa"
 	"github.com/misiektoja/go-pki-cmp/pkicmp"
@@ -89,7 +91,7 @@ func TestRecorderCMP(t *testing.T) {
 		t.Errorf("request summary = %+v", m)
 	}
 	m := events[1].Message
-	if m == nil || m.Body != "error" || m.Status != "rejection" || m.FailInfo != "badMessageCheck" || m.StatusText[0] != "no" {
+	if m == nil || m.Body != "error" || m.Status != "rejection" || m.FailInfo != pkicmp.FailBadMessageCheck || m.StatusText[0] != "no" {
 		t.Errorf("response summary = %+v", m)
 	}
 	if r.TransportError() != nil {
@@ -150,7 +152,45 @@ func TestSummarizeRevocation(t *testing.T) {
 	m := Summarize(message(t, pkicmp.NewRPBody(&pkicmp.RevRepContent{Status: []pkicmp.PKIStatusInfo{{
 		Status: pkicmp.StatusRejection, FailInfo: pkicmp.FailCertRevoked,
 	}}})))
-	if m == nil || m.Body != "rp" || m.Status != "rejection" || m.FailInfo != "certRevoked" {
+	if m == nil || m.Body != "rp" || m.Status != "rejection" || m.FailInfo != pkicmp.FailCertRevoked {
 		t.Errorf("summary = %+v", m)
+	}
+}
+
+// TestRecord checks the JSON form of a CMP response and of a failure.
+func TestRecord(t *testing.T) {
+	der := message(t, pkicmp.NewErrorBody(&pkicmp.ErrorMsgContent{PKIStatusInfo: pkicmp.PKIStatusInfo{
+		Status:       pkicmp.StatusRejection,
+		FailInfo:     pkicmp.FailBadMessageCheck | pkicmp.FailBadRequest,
+		StatusString: pkicmp.PKIFreeText{"no"},
+	}}))
+	ev := Event{Kind: Response, Elapsed: 1500 * time.Microsecond, HTTPStatus: 400, Size: len(der), DER: der, Message: Summarize(der)}
+	rec := ev.Record(false)
+	if rec.Kind != "response" || rec.ElapsedMS != 1.5 || rec.Body != "error" || rec.Sender != "CN=a" || rec.DER != nil {
+		t.Errorf("record = %+v", rec)
+	}
+	if strings.Join(rec.FailInfo, ",") != "badMessageCheck,badRequest" || rec.StatusText[0] != "no" {
+		t.Errorf("status = %v %v", rec.FailInfo, rec.StatusText)
+	}
+	if want := hex.EncodeToString(ev.Message.TransactionID); rec.TransactionID != want || len(want) != 32 {
+		t.Errorf("transactionId = %q", rec.TransactionID)
+	}
+	if !bytes.Equal(ev.Record(true).DER, der) {
+		t.Error("withDER left out the message")
+	}
+	failure := Event{Kind: Failure, Transport: errors.New("refused")}.Record(true)
+	if failure.Kind != "failure" || failure.Problem != "refused" || failure.Body != "" {
+		t.Errorf("failure record = %+v", failure)
+	}
+}
+
+// TestFailureNames checks bit order and the name of a bit that RFC 9810 does not define.
+func TestFailureNames(t *testing.T) {
+	got := FailureNames(pkicmp.FailBadAlg | pkicmp.FailSystemFailure | pkicmp.PKIFailureInfo(1))
+	if strings.Join(got, ",") != "badAlg,systemFailure,unknown(31)" {
+		t.Errorf("FailureNames = %v", got)
+	}
+	if FailureNames(0) != nil {
+		t.Error("no bits should give no names")
 	}
 }
