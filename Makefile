@@ -25,6 +25,14 @@ help: ## Display this help.
 build: | $(LOCALBIN) ## Build the certrally binary into bin/.
 	CGO_ENABLED=0 go build -trimpath -o "$(LOCALBIN)/certrally" ./cmd/certrally
 
+# DEMO_DIR receives the files that the demo recording writes, such as the test CA certificate.
+DEMO_DIR ?= .cache/demo
+
+.PHONY: demo
+demo: build ## Record docs/demo.gif with VHS. Needs vhs, ttyd and ffmpeg.
+	mkdir -p "$(DEMO_DIR)"
+	PATH="$(LOCALBIN):$$PATH" DEMO_DIR="$(abspath $(DEMO_DIR))" vhs docs/demo.tape
+
 .PHONY: fmt
 fmt: ## Format the Go sources.
 	go fmt ./...
