@@ -405,13 +405,14 @@ var (
 // candidates are skipped. It returns the signer, the outcome and why the outcome is not valid.
 //
 // Each candidate is tried directly, without building a chain and at the start of its validity period,
-// so that the signature check depends on neither trust nor time. go-pki-cmp checks the sender name
-// before the signature, so a candidate that does not name the sender may still be the signer and the
-// outcome is then unchecked.
+// so that the signature check depends on neither trust nor time. A signature that fails with a
+// certificate of the sender is invalid, even when the message also carries its CA chain. go-pki-cmp
+// checks the sender name before the signature, so without such a certificate a candidate of another
+// name may still be the signer and the outcome is unchecked.
 func checkSignature(msg *pkicmp.PKIMessage, candidates []*x509.Certificate) (signer *x509.Certificate, outcome, problem string) {
 	kid := msg.Header.SenderKID
 	var skipped string
-	available, tried := 0, 0
+	available, tried, checked := 0, 0, 0
 	for _, cand := range candidates {
 		if cand == nil {
 			continue
@@ -434,6 +435,8 @@ func checkSignature(msg *pkicmp.PKIMessage, candidates []*x509.Certificate) (sig
 		switch {
 		case !ok || verifyErr.Reason == pkicmp.ReasonUnsupportedAlgorithm:
 			return nil, checkUnchecked, err.Error()
+		case verifyErr.Reason == pkicmp.ReasonSignatureFailed:
+			checked++
 		case skipped != "":
 		case verifyErr.Reason == pkicmp.ReasonCertificateExpired:
 			// Only a certificate that ends before it starts is invalid at its own start.
@@ -447,7 +450,7 @@ func checkSignature(msg *pkicmp.PKIMessage, candidates []*x509.Certificate) (sig
 		return nil, checkUnchecked, "the message carries no certificate and --ca-cert names none"
 	case tried == 0:
 		return nil, checkUnchecked, "no certificate in extraCerts or --ca-cert matches senderKID"
-	case skipped != "":
+	case checked == 0 && skipped != "":
 		return nil, checkUnchecked, skipped
 	}
 	return nil, checkInvalid, "no certificate in extraCerts or --ca-cert verifies it"
