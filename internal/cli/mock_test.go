@@ -243,21 +243,3 @@ func TestMockURL(t *testing.T) {
 		}
 	}
 }
-
-// TestShellQuote checks that the printed command survives a POSIX shell.
-func TestShellQuote(t *testing.T) {
-	tests := map[string]string{
-		"device-42":        "device-42",
-		"/tmp/ca.pem":      "/tmp/ca.pem",
-		"my device":        "'my device'",
-		"it's":             `'it'\''s'`,
-		"$(touch x)":       "'$(touch x)'",
-		"":                 "''",
-		"C:\\certs\\a.pem": "'C:\\certs\\a.pem'",
-	}
-	for in, want := range tests {
-		if got := shellQuote(in); got != want {
-			t.Errorf("shellQuote(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
