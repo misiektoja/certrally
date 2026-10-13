@@ -58,9 +58,9 @@ func exitCode(err error, r *trace.Recorder) int {
 	return exitProtocol
 }
 
-// errorField shows an error, which can quote the peer, safely.
-func errorField(err error) ui.Field {
-	return ui.Field{Name: "Error", Value: ui.Sanitize(err.Error())}
+// errorField shows an error message, which can quote the peer, safely.
+func errorField(message string) ui.Field {
+	return ui.Field{Name: "Error", Value: ui.Sanitize(message)}
 }
 
 // hintField suggests what to change.
@@ -68,51 +68,93 @@ func hintField(hint string) ui.Field {
 	return ui.Field{Name: "Hint", Value: hint}
 }
 
-// fail explains a failed exchange and returns the error that carries the exit status.
-func (s *session) fail(err error) error {
-	code := exitCode(err, s.recorder)
-	var title string
-	var fields []ui.Field
-	switch code {
-	case exitRejected:
-		title, fields = "The CA rejected the request", s.rejectionFields(err)
-	case exitTransport:
-		title, fields = "No CMP answer from the server", s.transportFields(err)
-	case exitLocal:
-		title, fields = "The request was not completed", []ui.Field{errorField(err)}
-	default:
-		title, fields = "The exchange failed", []ui.Field{errorField(err), hintField(verificationHint(err))}
-	}
-	ui.Report(s.errOut, false, title, fields)
-	return &exitError{code: code, err: err}
+// failure describes why a command failed. It is the error member of the JSON document.
+type failure struct {
+	code    int
+	Title   string `json:"title"`
+	Message string `json:"message"`
+	// Status, FailInfo and StatusText repeat the PKIStatusInfo of a CA rejection.
+	Status     string   `json:"status,omitempty"`
+	FailInfo   []string `json:"failInfo,omitempty"`
+	StatusText []string `json:"statusText,omitempty"`
+	// Unauthenticated marks a CA status that the client could not verify.
+	Unauthenticated bool   `json:"unauthenticated,omitempty"`
+	Hint            string `json:"hint,omitempty"`
+	Note            string `json:"note,omitempty"`
 }
 
-// rejectionFields describes a rejection. A status the client could not verify is marked as such,
-// because any peer on the path could have sent it.
-func (s *session) rejectionFields(err error) []ui.Field {
+// fields returns the text form of f. s is the session of the command. It is nil when there is none.
+func (f *failure) fields(s *session) []ui.Field {
+	var fields []ui.Field
+	switch {
+	case f.Status != "":
+		fields = append(fields,
+			ui.Field{Name: "Status", Value: f.Status},
+			ui.Field{Name: "Fail info", Value: strings.Join(f.FailInfo, ", ")},
+			ui.Field{Name: "CA says", Value: quoteText(f.StatusText)},
+		)
+	case f.code == exitTransport && s != nil:
+		fields = append(fields, ui.Field{Name: "Server", Value: s.conn.redactedServer()}, errorField(f.Message))
+	default:
+		fields = append(fields, errorField(f.Message))
+	}
+	return append(fields, hintField(f.Hint), ui.Field{Name: fieldNote, Value: f.Note})
+}
+
+// quoteText joins and quotes peer-supplied text for display. It returns "" when there is none.
+func quoteText(text []string) string {
+	if len(text) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%q", ui.Sanitize(strings.Join(text, " ")))
+}
+
+// fail explains a failed exchange and returns the error that carries the exit status.
+func (s *session) fail(err error) error {
+	return s.p.fail(s.failure(err), err)
+}
+
+// failure describes a failed exchange.
+func (s *session) failure(err error) *failure {
+	code := exitCode(err, s.recorder)
+	switch code {
+	case exitRejected:
+		return s.rejection(err)
+	case exitTransport:
+		return s.transportFailure(err)
+	case exitLocal:
+		return &failure{code: code, Title: "The request was not completed", Message: err.Error()}
+	default:
+		return &failure{code: code, Title: "The exchange failed", Message: err.Error(), Hint: verificationHint(err)}
+	}
+}
+
+// rejection describes a rejection. A status the client could not verify is marked as such, because
+// any peer on the path could have sent it.
+func (s *session) rejection(err error) *failure {
+	f := &failure{code: exitRejected, Title: "The CA rejected the request", Message: err.Error()}
 	if errors.Is(err, client.ErrInfoTypeNotSupported) {
-		return []ui.Field{hintField("The CA does not offer this information.")}
+		f.Hint = "The CA does not offer this information."
+		return f
 	}
 	var status pkicmp.PKIStatus
 	var failInfo pkicmp.PKIFailureInfo
-	var text, note string
+	var text string
 	if statusErr, ok := errors.AsType[*pkicmp.PKIStatusError](err); ok {
 		status, failInfo, text = statusErr.Status, statusErr.FailInfo, statusErr.StatusString
 	} else if unverified, ok := errors.AsType[*client.UnverifiedStatusError](err); ok {
 		status, failInfo, text = unverified.Status, unverified.FailInfo, unverified.StatusString
-		note = "This answer is not authenticated, so treat it as a hint."
+		f.Unauthenticated = true
+		f.Note = "This answer is not authenticated, so treat it as a hint."
 		if !s.pinned {
-			note += " Pass the CA certificate with --ca-cert to verify it."
+			f.Note += " Pass the CA certificate with --ca-cert to verify it."
 		}
 	}
-	fields := []ui.Field{
-		{Name: "Status", Value: status.String()},
-		{Name: "Fail info", Value: failInfo.String()},
-	}
+	f.Status, f.FailInfo, f.Hint = status.String(), trace.FailureNames(failInfo), failureHint(failInfo)
 	if text != "" {
-		fields = append(fields, ui.Field{Name: "CA says", Value: fmt.Sprintf("%q", ui.Sanitize(text))})
+		f.StatusText = []string{text}
 	}
-	return append(fields, hintField(failureHint(failInfo)), ui.Field{Name: fieldNote, Value: note})
+	return f
 }
 
 // failureHints suggests what to change for the common failure bits, most specific first.
@@ -148,16 +190,17 @@ func failureHint(info pkicmp.PKIFailureInfo) string {
 	return ""
 }
 
-// transportFields describes a failure to get a CMP answer.
-func (s *session) transportFields(err error) []ui.Field {
+// transportFailure describes a failure to get a CMP answer.
+func (s *session) transportFailure(err error) *failure {
 	problem := s.recorder.TransportError()
 	if problem == nil {
 		problem = err
 	}
-	return []ui.Field{
-		{Name: "Server", Value: s.conn.redactedServer()},
-		errorField(problem),
-		hintField(s.conn.transportHint(err, problem)),
+	return &failure{
+		code:    exitTransport,
+		Title:   "No CMP answer from the server",
+		Message: problem.Error(),
+		Hint:    s.conn.transportHint(err, problem),
 	}
 }
 
@@ -181,7 +224,7 @@ func (c *connection) transportHint(err, problem error) string {
 	return ""
 }
 
-// verificationHint names the flag that would let a failed response verify, or returns "".
+// verificationHint names the flag that would let a failed response verify. It returns "" when it has none.
 func verificationHint(err error) string {
 	verifyErr, ok := errors.AsType[*pkicmp.VerificationError](err)
 	if !ok {

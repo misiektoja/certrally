@@ -22,6 +22,7 @@ import (
 // pingOptions holds the ping command line.
 type pingOptions struct {
 	connection
+	outputOptions
 	count    int
 	interval time.Duration
 }
@@ -39,11 +40,12 @@ func newPingCommand() *cobra.Command {
 			"4 an answer failed verification against --ca-cert.",
 		Example: "  certrally ping --server https://ca.example.com/.well-known/cmp --count 5",
 		Args:    cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runPing(cmd.Context(), o, cmd.OutOrStdout(), cmd.ErrOrStderr())
-		},
+		RunE: runWith(&o.outputOptions, func(cmd *cobra.Command, _ []string, p *printer) error {
+			return runPing(cmd.Context(), o, p)
+		}),
 	}
 	o.connection.addFlags(cmd, 10*time.Second, "limit for each request")
+	o.outputOptions.addFlags(cmd)
 	cmd.Flags().IntVarP(&o.count, "count", "c", 1, "number of requests to send")
 	cmd.Flags().DurationVarP(&o.interval, "interval", "i", time.Second, "wait between requests")
 	return cmd
@@ -51,7 +53,7 @@ func newPingCommand() *cobra.Command {
 
 // pingReply is the outcome of one ping.
 type pingReply struct {
-	// event is the recorded response, or the failure when there was none.
+	// event is the recorded response. It is the failure when there was no response.
 	event trace.Event
 	// answered is set when the response is a CMP message.
 	answered bool
@@ -62,7 +64,7 @@ type pingReply struct {
 }
 
 // runPing performs the ping command.
-func runPing(ctx context.Context, o *pingOptions, stdout, stderr io.Writer) error {
+func runPing(ctx context.Context, o *pingOptions, p *printer) error {
 	if err := o.validate(); err != nil {
 		return err
 	}
@@ -77,12 +79,11 @@ func runPing(ctx context.Context, o *pingOptions, stdout, stderr io.Writer) erro
 		}
 		recipient = pkicmp.NewDirectoryName(name)
 	}
-	s, err := o.open(stderr, nil)
+	s, err := o.open(p, nil)
 	if err != nil {
 		return err
 	}
 
-	w := reportWriter(stdout, stderr)
 	var replies []pingReply
 	for i := range o.count {
 		if i > 0 {
@@ -99,11 +100,11 @@ func runPing(ctx context.Context, o *pingOptions, stdout, stderr io.Writer) erro
 			return err
 		}
 		replies = append(replies, r)
-		if o.count > 1 && !o.quiet {
-			_, _ = fmt.Fprintf(w, "  %d  %s\n", i+1, r.line())
+		if o.count > 1 {
+			p.line(fmt.Sprintf("  %d  %s", i+1, r.line()))
 		}
 	}
-	return o.report(s, w, replies)
+	return report(s, replies)
 }
 
 // ping sends one unprotected general message and records the answer.
@@ -167,10 +168,11 @@ func (s *session) verify(msg *pkicmp.PKIMessage) error {
 func (r pingReply) answer() string {
 	m := r.event.Message
 	parts := []string{m.Body}
-	for _, p := range []string{m.Status, m.FailInfo} {
-		if p != "" {
-			parts = append(parts, p)
-		}
+	if m.Status != "" {
+		parts = append(parts, m.Status)
+	}
+	if m.FailInfo != 0 {
+		parts = append(parts, m.FailInfo.String())
 	}
 	return strings.Join(parts, " ")
 }
@@ -193,7 +195,7 @@ func (r pingReply) line() string {
 }
 
 // report summarizes the replies and returns the error that sets the exit status.
-func (o *pingOptions) report(s *session, w io.Writer, replies []pingReply) error {
+func report(s *session, replies []pingReply) error {
 	var answered []pingReply
 	var unverified error
 	for _, r := range replies {
@@ -204,24 +206,36 @@ func (o *pingOptions) report(s *session, w io.Writer, replies []pingReply) error
 			}
 		}
 	}
+	result := &pingJSON{Sent: len(replies), Answered: len(answered)}
 	if len(answered) == 0 {
+		s.p.doc.Result = result
 		last := replies[len(replies)-1].event.Transport
 		if last == nil {
 			last = errors.New("the server sent no CMP message")
 		}
-		ui.Report(s.errOut, false, "No CMP answer from the server", s.transportFields(last))
-		return &exitError{code: exitTransport, err: last}
+		return s.p.fail(s.transportFailure(last), last)
 	}
 
 	first := answered[0]
 	m := first.event.Message
+	lo, avg, hi := roundTrips(answered)
+	result.Sender, result.Protection = m.Sender, m.Protection
+	result.RTTMS = &rttJSON{Min: milliseconds(lo), Avg: milliseconds(avg), Max: milliseconds(hi)}
+	if s.pinned {
+		verified := unverified == nil
+		result.Verified = &verified
+	}
+	rtt := formatRTT(lo)
+	if len(answered) > 1 {
+		rtt = fmt.Sprintf("min %s, avg %s, max %s", formatRTT(lo), formatRTT(avg), formatRTT(hi))
+	}
 	fields := []ui.Field{
 		{Name: "Server", Value: s.conn.redactedServer()},
 		{Name: "Answer", Value: first.answer()},
 		{Name: "CA says", Value: quoteText(m.StatusText)},
 		{Name: "Sender", Value: ui.Sanitize(m.Sender)},
 		{Name: "Protection", Value: m.Protection},
-		{Name: "Round trip", Value: roundTrips(answered)},
+		{Name: "Round trip", Value: rtt},
 	}
 	if len(replies) > 1 {
 		fields = append(fields, ui.Field{Name: "Replies", Value: fmt.Sprintf("%d of %d", len(answered), len(replies))})
@@ -235,41 +249,38 @@ func (o *pingOptions) report(s *session, w io.Writer, replies []pingReply) error
 	}
 	fields = append(fields, ui.Field{Name: fieldNote, Value: strings.Join(notes, " ")})
 	if unverified != nil {
+		s.p.doc.Result = result
 		fields = append(fields, ui.Field{Name: "Verified", Value: "no, " + ui.Sanitize(unverified.Error())})
-		ui.Report(s.errOut, false, "The server answers CMP, but not as the CA in --ca-cert", fields)
-		return &exitError{code: exitProtocol, err: unverified}
+		f := &failure{
+			code:    exitProtocol,
+			Title:   "The server answers CMP, but not as the CA in --ca-cert",
+			Message: unverified.Error(),
+		}
+		return s.p.fail(f, unverified, fields...)
 	}
 	if s.pinned {
 		fields = append(fields, ui.Field{Name: "Verified", Value: "signed by the CA in --ca-cert"})
 	}
-	if !o.quiet {
-		ui.Report(w, true, "The server answers CMP", fields)
-	}
+	s.p.result("The server answers CMP", fields, result)
 	return nil
 }
 
-// quoteText joins and quotes peer-supplied text for display, or returns "" when there is none.
-func quoteText(text []string) string {
-	if len(text) == 0 {
-		return ""
-	}
-	return fmt.Sprintf("%q", ui.Sanitize(strings.Join(text, " ")))
-}
-
-// roundTrips summarizes the round-trip times of the answered pings.
-func roundTrips(replies []pingReply) string {
-	if len(replies) == 1 {
-		return formatRTT(replies[0].event.Elapsed)
-	}
-	lo, hi, sum := replies[0].event.Elapsed, replies[0].event.Elapsed, time.Duration(0)
+// roundTrips returns the shortest, average and longest round-trip times of the answered pings.
+func roundTrips(replies []pingReply) (lo, avg, hi time.Duration) {
+	lo, hi = replies[0].event.Elapsed, replies[0].event.Elapsed
+	var sum time.Duration
 	for _, r := range replies {
 		lo, hi, sum = min(lo, r.event.Elapsed), max(hi, r.event.Elapsed), sum+r.event.Elapsed
 	}
-	avg := sum / time.Duration(len(replies))
-	return fmt.Sprintf("min %s, avg %s, max %s", formatRTT(lo), formatRTT(avg), formatRTT(hi))
+	return lo, sum / time.Duration(len(replies)), hi
+}
+
+// milliseconds returns d in milliseconds, to the microsecond.
+func milliseconds(d time.Duration) float64 {
+	return float64(d.Microseconds()) / 1000
 }
 
 // formatRTT returns a round-trip time in milliseconds with one decimal.
 func formatRTT(d time.Duration) string {
-	return fmt.Sprintf("%.1f ms", float64(d.Microseconds())/1000)
+	return fmt.Sprintf("%.1f ms", milliseconds(d))
 }

@@ -24,6 +24,7 @@ import (
 type revokeOptions struct {
 	connection
 	protection
+	outputOptions
 	revokeCert string
 	reason     string
 	yes        bool
@@ -56,12 +57,13 @@ func newRevokeCommand() *cobra.Command {
 		Example: "  certrally revoke --server https://ca.example.com/.well-known/cmp \\\n" +
 			"    --cert device.pem --key device.key --reason keyCompromise",
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runRevoke(cmd.Context(), o, cmd.OutOrStdout(), cmd.ErrOrStderr(), cmd.InOrStdin())
-		},
+		RunE: runWith(&o.outputOptions, func(cmd *cobra.Command, _ []string, p *printer) error {
+			return runRevoke(cmd.Context(), o, p, cmd.InOrStdin())
+		}),
 	}
 	o.connection.addFlags(cmd, 5*time.Minute, "limit for the whole exchange, including polling")
 	o.protection.addFlags(cmd)
+	o.outputOptions.addFlags(cmd)
 	f := cmd.Flags()
 	f.StringVar(&o.revokeCert, "revoke-cert", "", "revoke the certificate in this file instead of --cert")
 	f.StringVar(&o.reason, "reason", "unspecified", "revocation reason, such as keyCompromise or superseded")
@@ -81,7 +83,7 @@ func parseReason(s string) (pkicmp.CRLReason, error) {
 }
 
 // runRevoke performs the revoke command.
-func runRevoke(ctx context.Context, o *revokeOptions, stdout, stderr io.Writer, stdin io.Reader) error {
+func runRevoke(ctx context.Context, o *revokeOptions, p *printer, stdin io.Reader) error {
 	if err := o.connection.validate(); err != nil {
 		return err
 	}
@@ -108,7 +110,7 @@ func runRevoke(ctx context.Context, o *revokeOptions, stdout, stderr io.Writer, 
 	if !o.yes {
 		question := fmt.Sprintf("Revoke %s, serial %s, for %s?",
 			ui.Sanitize(target.Subject.String()), formatSerial(target), reason)
-		ok, err := confirm(stdin, stderr, question)
+		ok, err := confirm(stdin, p.stderr, question)
 		if err != nil {
 			return err
 		}
@@ -117,16 +119,17 @@ func runRevoke(ctx context.Context, o *revokeOptions, stdout, stderr io.Writer, 
 		}
 	}
 
-	_, _, err = exchange(ctx, &o.connection, &o.protection, stdin, stderr,
+	_, _, err = exchange(ctx, &o.connection, &o.protection, stdin, p,
 		func(ctx context.Context, c *client.Client, pr *protected) (struct{}, error) {
 			return struct{}{}, c.SendRR(ctx, target, reason, pr.creds, pr.reqOpts...)
 		})
 	if err != nil {
 		return err
 	}
-	if !o.quiet {
-		ui.Report(reportWriter(stdout, stderr), true, revokeTitle(reason), revokeFields(target, reason))
-	}
+	p.result(revokeTitle(reason), revokeFields(target, reason), &revokeJSON{
+		Certificate: certificateResult(target),
+		Reason:      reason.String(),
+	})
 	return nil
 }
 

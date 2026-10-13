@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"crypto/x509/pkix"
 	"encoding/asn1"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"mime"
@@ -46,7 +47,7 @@ type Event struct {
 	DER []byte
 	// Message summarizes the body when it parses as a PKIMessage.
 	Message *Summary
-	// Transport is set when a response cannot carry CMP, such as a 404 page, or when Kind is Failure.
+	// Transport is set when Kind is Failure or when a response cannot carry CMP, such as a 404 page.
 	Transport error
 }
 
@@ -54,7 +55,7 @@ type Event struct {
 type Summary struct {
 	// Body is the body type, such as "ir", "ip" or "error".
 	Body string
-	// Protection names the protection algorithm, or "none".
+	// Protection names the protection algorithm. It is "none" for an unprotected message.
 	Protection string
 	// Sender is the sender name in the header. It is peer-controlled text.
 	Sender        string
@@ -63,12 +64,86 @@ type Summary struct {
 	// Status, FailInfo and StatusText come from the first status in ip, cp, kup, rp or error bodies.
 	// They are peer-controlled text and must be sanitized before display.
 	Status     string
-	FailInfo   string
+	FailInfo   pkicmp.PKIFailureInfo
 	StatusText []string
 	// CheckAfter is the wait in seconds a pollRep asks for.
 	CheckAfter int64
 	// ExtraCerts counts the certificates in the extraCerts field.
 	ExtraCerts int
+}
+
+// Record is the JSON form of an Event, shared by JSON output and capture files. Byte strings in the
+// header are hex. Peer-controlled text is kept as sent, because JSON escaping makes it safe.
+type Record struct {
+	// Kind is "request", "response" or "failure".
+	Kind      string    `json:"kind"`
+	Time      time.Time `json:"time"`
+	ElapsedMS float64   `json:"elapsedMs,omitempty"`
+	// HTTPStatus and ContentType describe a response.
+	HTTPStatus  int    `json:"httpStatus,omitempty"`
+	ContentType string `json:"contentType,omitempty"`
+	Size        int    `json:"size"`
+	// The following fields are set when the body parses as a PKIMessage.
+	Body          string   `json:"body,omitempty"`
+	Protection    string   `json:"protection,omitempty"`
+	Sender        string   `json:"sender,omitempty"`
+	TransactionID string   `json:"transactionId,omitempty"`
+	SenderKID     string   `json:"senderKid,omitempty"`
+	Status        string   `json:"status,omitempty"`
+	FailInfo      []string `json:"failInfo,omitempty"`
+	StatusText    []string `json:"statusText,omitempty"`
+	CheckAfter    int64    `json:"checkAfter,omitempty"`
+	ExtraCerts    int      `json:"extraCerts,omitempty"`
+	// Problem says why a response cannot be a CMP answer or why a request got no response.
+	Problem string `json:"problem,omitempty"`
+	// DER is the body, encoded as base64. Capture files include it and JSON output leaves it out.
+	DER []byte `json:"der,omitempty"`
+}
+
+// kindNames are the Record kinds of the event kinds.
+var kindNames = map[Kind]string{Request: "request", Response: "response", Failure: "failure"}
+
+// Record returns the JSON form of ev. withDER includes the message bytes.
+func (ev Event) Record(withDER bool) Record {
+	rec := Record{
+		Kind:        kindNames[ev.Kind],
+		Time:        ev.Time.UTC(),
+		ElapsedMS:   float64(ev.Elapsed.Microseconds()) / 1000,
+		HTTPStatus:  ev.HTTPStatus,
+		ContentType: ev.ContentType,
+		Size:        ev.Size,
+	}
+	if ev.Transport != nil {
+		rec.Problem = ev.Transport.Error()
+	}
+	if withDER {
+		rec.DER = ev.DER
+	}
+	if m := ev.Message; m != nil {
+		rec.Body, rec.Protection, rec.Sender = m.Body, m.Protection, m.Sender
+		rec.TransactionID, rec.SenderKID = hex.EncodeToString(m.TransactionID), hex.EncodeToString(m.SenderKID)
+		rec.Status, rec.StatusText, rec.CheckAfter, rec.ExtraCerts = m.Status, m.StatusText, m.CheckAfter, m.ExtraCerts
+		rec.FailInfo = FailureNames(m.FailInfo)
+	}
+	return rec
+}
+
+// FailureNames lists the names of the failure bits set in f, in bit order.
+func FailureNames(f pkicmp.PKIFailureInfo) []string {
+	var names []string
+	// Bit 0 of the ASN.1 BIT STRING is the most significant bit of PKIFailureInfo.
+	for i := range 32 {
+		bit := pkicmp.PKIFailureInfo(1) << (31 - i)
+		if f&bit == 0 {
+			continue
+		}
+		name := bit.String()
+		if name == "" {
+			name = fmt.Sprintf("unknown(%d)", i)
+		}
+		names = append(names, name)
+	}
+	return names
 }
 
 // maxBody matches the response size limit of the go-pki-cmp client, so the recorder never holds
@@ -144,8 +219,8 @@ type readCloser struct {
 	io.Closer
 }
 
-// transportProblem returns why a response cannot be a CMP answer, following the checks RFC 9811
-// requires and the go-pki-cmp client applies, or nil if it can be one.
+// transportProblem returns why a response cannot be a CMP answer. It follows the checks RFC 9811
+// requires and the go-pki-cmp client applies. It returns nil if the response can be an answer.
 func transportProblem(status int, contentType string, size int) error {
 	class := status / 100
 	if class != 2 && class != 4 && class != 5 {
@@ -181,8 +256,8 @@ func (r *Recorder) Events() []Event {
 	return append([]Event(nil), r.events...)
 }
 
-// TransportError returns the transport problem of the last event, or nil if the last exchange
-// delivered a CMP message or nothing was sent.
+// TransportError returns the transport problem of the last event. It returns nil if the last
+// exchange delivered a CMP message or nothing was sent.
 func (r *Recorder) TransportError() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -192,7 +267,7 @@ func (r *Recorder) TransportError() error {
 	return r.events[len(r.events)-1].Transport
 }
 
-// Summarize parses der as a PKIMessage and returns its summary, or nil if it does not parse.
+// Summarize parses der as a PKIMessage and returns its summary. It returns nil if der does not parse.
 func Summarize(der []byte) *Summary {
 	if len(der) == 0 {
 		return nil
@@ -218,10 +293,7 @@ func Summarize(der []byte) *Summary {
 	}
 	if info, ok := statusOf(msg.Body); ok {
 		s.Status = info.Status.String()
-		if info.FailInfo != 0 {
-			s.FailInfo = info.FailInfo.String()
-		}
-		s.StatusText = info.StatusString
+		s.FailInfo, s.StatusText = info.FailInfo, info.StatusString
 	}
 	if msg.Body.Type == pkicmp.BodyTypePollRep {
 		if rep, err := msg.Body.PollRep(); err == nil && len(*rep) > 0 {
@@ -283,7 +355,7 @@ var algorithmNames = map[string]string{
 	"2.16.840.1.101.3.4.3.19": "ML-DSA-87",
 }
 
-// AlgorithmName returns a display name for a protection algorithm, or its dotted OID.
+// AlgorithmName returns a display name for a protection algorithm. Unknown algorithms keep their dotted OID.
 func AlgorithmName(oid asn1.ObjectIdentifier) string {
 	if name, ok := algorithmNames[oid.String()]; ok {
 		return name

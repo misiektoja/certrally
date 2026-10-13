@@ -41,9 +41,36 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		if ee, ok := errors.AsType[*exitError](err); ok {
 			return ee.code
 		}
+		// cobra rejected the command line before the command ran. A script that asked for JSON
+		// still gets its document. fang has already printed the error for a person.
+		if jsonFromArgs(args) {
+			writeUsageJSON(stdout, root, args, err)
+		}
 		return exitLocal
 	}
 	return exitOK
+}
+
+// writeUsageJSON writes the JSON document for a command line that cobra rejected.
+func writeUsageJSON(w io.Writer, root *cobra.Command, args []string, err error) {
+	doc := jsonDocument{
+		ExitStatus: exitLocal,
+		Error:      &failure{code: exitLocal, Title: "Invalid command line", Message: err.Error()},
+	}
+	if cmd, _, findErr := root.Find(args); findErr == nil && cmd != root {
+		doc.Command = commandName(cmd)
+	}
+	_ = writeJSON(w, doc)
+}
+
+// toolVersion returns the version stamped into the binary. It returns "" when there is none.
+func toolVersion() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return ""
+	}
+	version, _ := buildVersion(info)
+	return version
 }
 
 // handleError prints errors that a command has not already reported. fang capitalizes the first
@@ -94,17 +121,31 @@ func completeColorMode(*cobra.Command, []string, string) ([]string, cobra.ShellC
 // colorModeFromArgs returns the --color value in args. It returns Auto when the flag is absent or invalid. An
 // invalid value is reported later by cobra, with the rest of the command line.
 func colorModeFromArgs(args []string) termcolor.Mode {
-	fs := pflag.NewFlagSet("certrally", pflag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	fs.ParseErrorsAllowlist.UnknownFlags = true
-	// Without its own help flag, pflag stops at --help and ignores a --color that follows it.
-	fs.BoolP("help", "h", false, "")
+	fs := earlyFlagSet()
 	mode := colorFlag(termcolor.Auto)
 	fs.Var(&mode, "color", "")
 	if err := fs.Parse(args); err != nil {
 		return termcolor.Auto
 	}
 	return termcolor.Mode(mode)
+}
+
+// jsonFromArgs reports whether args ask for JSON output.
+func jsonFromArgs(args []string) bool {
+	fs := earlyFlagSet()
+	asJSON := fs.Bool("json", false, "")
+	return fs.Parse(args) == nil && *asJSON
+}
+
+// earlyFlagSet returns a flag set for reading single flags before cobra parses the command line.
+// It ignores the flags it does not define.
+func earlyFlagSet() *pflag.FlagSet {
+	fs := pflag.NewFlagSet("certrally", pflag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	fs.ParseErrorsAllowlist.UnknownFlags = true
+	// Without its own help flag, pflag stops at --help and ignores the flags that follow it.
+	fs.BoolP("help", "h", false, "")
+	return fs
 }
 
 // colorFlag is a pflag.Value that accepts only the termcolor modes.

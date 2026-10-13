@@ -32,6 +32,7 @@ import (
 type genmOptions struct {
 	connection
 	protection
+	outputOptions
 	out   string
 	force bool
 }
@@ -41,20 +42,28 @@ type genmOptions struct {
 func (o *genmOptions) addFlags(cmd *cobra.Command, outHelp string) {
 	o.connection.addFlags(cmd, 2*time.Minute, "limit for the whole exchange")
 	o.protection.addFlags(cmd)
+	o.outputOptions.addFlags(cmd)
 	if outHelp != "" {
 		cmd.Flags().StringVar(&o.out, "out", "", outHelp+", or - for standard output")
 		cmd.Flags().BoolVar(&o.force, "force", false, "replace an existing output file")
 	}
 }
 
-// validate checks the shared flags.
-func (o *genmOptions) validate() error {
+// validate checks the shared flags and prepares p for data on standard output.
+func (o *genmOptions) validate(p *printer) error {
 	if err := o.connection.validate(); err != nil {
 		return err
 	}
 	if err := o.protection.validate(); err != nil {
 		return err
 	}
+	if err := o.checkStdout(o.out); err != nil {
+		return err
+	}
+	if err := o.checkCapture(o.out); err != nil {
+		return err
+	}
+	p.dataOnStdout = o.out == stdoutPath
 	return checkOutputs(o.force, o.out)
 }
 
@@ -70,43 +79,42 @@ func newCACertsCommand(use string) *cobra.Command {
 		Short: "Get the CA certificates from the server",
 		Long:  "Ask the server for its intermediate and issuing CA certificates (RFC 9483 §4.3.1)." + genmLong,
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runCACerts(cmd.Context(), o, cmd.OutOrStdout(), cmd.ErrOrStderr(), cmd.InOrStdin())
-		},
+		RunE: runWith(&o.outputOptions, func(cmd *cobra.Command, _ []string, p *printer) error {
+			return runCACerts(cmd.Context(), o, p, cmd.InOrStdin())
+		}),
 	}
 	o.addFlags(cmd, "write the certificates to this file")
 	return cmd
 }
 
 // runCACerts performs the cacerts command.
-func runCACerts(ctx context.Context, o *genmOptions, stdout, stderr io.Writer, stdin io.Reader) error {
-	if err := o.validate(); err != nil {
+func runCACerts(ctx context.Context, o *genmOptions, p *printer, stdin io.Reader) error {
+	if err := o.validate(p); err != nil {
 		return err
 	}
-	certs, _, err := exchange(ctx, &o.connection, &o.protection, stdin, stderr,
+	certs, _, err := exchange(ctx, &o.connection, &o.protection, stdin, p,
 		func(ctx context.Context, c *client.Client, pr *protected) ([]*x509.Certificate, error) {
 			return c.GetCACertificates(ctx, pr.creds, pr.reqOpts...)
 		})
 	if err != nil {
 		return err
 	}
+	saved := []string{}
 	if o.out != "" && len(certs) > 0 {
-		if err := writeData(o.out, pemfile.EncodeCertificates(certs), 0o644, o.force, stdout); err != nil {
+		if err := writeData(o.out, pemfile.EncodeCertificates(certs), 0o644, o.force, p.stdout); err != nil {
 			return err
 		}
+		saved = savedPaths(o.out)
 	}
-	if o.quiet {
-		return nil
-	}
-	w := reportWriter(stdout, stderr, o.out)
+	result := &caCertsJSON{Certificates: certificatesResult(certs), Saved: saved}
 	if len(certs) == 0 {
-		ui.Report(w, true, "The CA has no CA certificates to send", nil)
+		p.result("The CA has no CA certificates to send", nil, result)
 		return nil
 	}
 	title := "Received " + count(len(certs), "CA certificate", "CA certificates")
-	ui.Report(w, true, title, []ui.Field{{Name: fieldSaved, Value: strings.Join(savedPaths(o.out), ", ")}})
+	p.result(title, []ui.Field{{Name: fieldSaved, Value: strings.Join(saved, ", ")}}, result)
 	for _, cert := range certs {
-		ui.Section(w, ui.Sanitize(cert.Subject.String()), caCertFields(cert))
+		p.section(ui.Sanitize(cert.Subject.String()), caCertFields(cert))
 	}
 	return nil
 }
@@ -166,26 +174,26 @@ func newRootUpdateCommand() *cobra.Command {
 		Long: "Ask for the replacement of a root CA certificate (RFC 9483 §4.3.2). The new root is accepted only " +
 			"when the old root has certified it." + genmLong,
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: runWith(&o.outputOptions, func(cmd *cobra.Command, _ []string, p *printer) error {
 			if oldRoot == "" {
 				return errors.New("--old-root is required")
 			}
-			if err := o.validate(); err != nil {
+			if err := o.validate(p); err != nil {
 				return err
 			}
 			certs, err := pemfile.ReadCertificates(oldRoot)
 			if err != nil {
 				return err
 			}
-			update, _, err := exchange(cmd.Context(), &o.connection, &o.protection, cmd.InOrStdin(), cmd.ErrOrStderr(),
+			update, _, err := exchange(cmd.Context(), &o.connection, &o.protection, cmd.InOrStdin(), p,
 				func(ctx context.Context, c *client.Client, pr *protected) (*pkicmp.RootCAKeyUpdate, error) {
 					return c.GetRootCAUpdate(ctx, certs[0], pr.creds, pr.reqOpts...)
 				})
 			if err != nil {
 				return err
 			}
-			return reportRootUpdate(o, update, cmd.OutOrStdout(), cmd.ErrOrStderr())
-		},
+			return reportRootUpdate(o, p, update)
+		}),
 	}
 	o.addFlags(cmd, "write the new root CA certificate to this file")
 	cmd.Flags().StringVar(&oldRoot, "old-root", "", "the root CA certificate the update replaces")
@@ -193,28 +201,29 @@ func newRootUpdateCommand() *cobra.Command {
 }
 
 // reportRootUpdate saves and describes a root CA update.
-func reportRootUpdate(o *genmOptions, update *pkicmp.RootCAKeyUpdate, stdout, stderr io.Writer) error {
-	w := reportWriter(stdout, stderr, o.out)
+func reportRootUpdate(o *genmOptions, p *printer, update *pkicmp.RootCAKeyUpdate) error {
+	result := &rootUpdateJSON{Saved: []string{}}
 	if update == nil {
-		if !o.quiet {
-			ui.Report(w, true, "No root CA update is available", nil)
-		}
+		p.result("No root CA update is available", nil, result)
 		return nil
 	}
 	if o.out != "" {
 		data := pemfile.EncodeCertificates([]*x509.Certificate{update.NewWithNew})
-		if err := writeData(o.out, data, 0o644, o.force, stdout); err != nil {
+		if err := writeData(o.out, data, 0o644, o.force, p.stdout); err != nil {
 			return err
 		}
+		result.Saved = savedPaths(o.out)
 	}
-	if o.quiet {
-		return nil
+	result.Update = &rootUpdateCertsJSON{
+		NewWithNew: certificateResult(update.NewWithNew),
+		NewWithOld: certificateResult(update.NewWithOld),
+		OldWithNew: certificateResult(update.OldWithNew),
 	}
 	fields := append(describeCertificate(update.NewWithNew),
 		ui.Field{Name: "Old root", Value: "certifies the new root"},
-		ui.Field{Name: fieldSaved, Value: strings.Join(savedPaths(o.out), ", ")},
+		ui.Field{Name: fieldSaved, Value: strings.Join(result.Saved, ", ")},
 	)
-	ui.Report(w, true, "A new root CA certificate is available", fields)
+	p.result("A new root CA certificate is available", fields, result)
 	return nil
 }
 
@@ -228,11 +237,11 @@ func newTemplateCommand() *cobra.Command {
 		Long: "Ask which subject, extensions and key types the CA expects in a certificate request " +
 			"(RFC 9483 §4.3.3)." + genmLong,
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := o.validate(); err != nil {
+		RunE: runWith(&o.outputOptions, func(cmd *cobra.Command, _ []string, p *printer) error {
+			if err := o.validate(p); err != nil {
 				return err
 			}
-			tmpl, _, err := exchange(cmd.Context(), &o.connection, &o.protection, cmd.InOrStdin(), cmd.ErrOrStderr(),
+			tmpl, _, err := exchange(cmd.Context(), &o.connection, &o.protection, cmd.InOrStdin(), p,
 				func(ctx context.Context, c *client.Client, pr *protected) (*pkicmp.CertReqTemplate, error) {
 					opts := pr.reqOpts
 					if profile != "" {
@@ -240,29 +249,30 @@ func newTemplateCommand() *cobra.Command {
 					}
 					return c.GetCertReqTemplate(ctx, pr.creds, opts...)
 				})
-			if err != nil || o.quiet {
+			if err != nil {
 				return err
 			}
-			w := reportWriter(cmd.OutOrStdout(), cmd.ErrOrStderr())
 			if tmpl == nil {
-				ui.Report(w, true, "The CA imposes no requirements", nil)
+				p.result("The CA imposes no requirements", nil, &templateJSON{})
 				return nil
 			}
-			ui.Report(w, true, "Certificate request template", templateFields(tmpl))
+			content, fields := describeTemplate(tmpl)
+			p.result("Certificate request template", fields, &templateJSON{Template: content})
 			return nil
-		},
+		}),
 	}
 	o.addFlags(cmd, "")
 	cmd.Flags().StringVar(&profile, "cert-profile", "", "certificate profile to get the template for")
 	return cmd
 }
 
-// templateFields describes a certificate request template.
-func templateFields(tmpl *pkicmp.CertReqTemplate) []ui.Field {
+// describeTemplate describes a certificate request template for JSON and for text.
+func describeTemplate(tmpl *pkicmp.CertReqTemplate) (*templateContentJSON, []ui.Field) {
 	// pkix.Name drops attributes with empty values, which are the ones the requester fills in, so the
 	// subject is formatted from the RDN sequence.
 	rdns := tmpl.Template.Subject.DirectoryName
-	subject, note := ui.Sanitize(rdns.String()), ""
+	content := &templateContentJSON{Subject: rdns.String()}
+	note := ""
 	for _, rdn := range rdns {
 		for _, atv := range rdn {
 			if s, ok := atv.Value.(string); ok && s == "" {
@@ -278,20 +288,24 @@ func templateFields(tmpl *pkicmp.CertReqTemplate) []ui.Field {
 		}
 	}
 	for _, e := range parsed {
+		content.Extensions = append(content.Extensions, extensionJSON{
+			OID:      e.Id.String(),
+			Name:     extensionNames[e.Id.String()],
+			Critical: e.Critical,
+		})
 		name := extensionName(e.Id)
 		if e.Critical {
 			name += " (critical)"
 		}
 		exts = append(exts, name)
 	}
-	keyTypes := make([]string, 0, len(tmpl.KeySpec))
 	for _, spec := range tmpl.KeySpec {
-		keyTypes = append(keyTypes, keySpecName(spec))
+		content.KeyTypes = append(content.KeyTypes, keySpecName(spec))
 	}
-	return []ui.Field{
-		{Name: fieldSubject, Value: subject},
+	return content, []ui.Field{
+		{Name: fieldSubject, Value: ui.Sanitize(content.Subject)},
 		{Name: "Extensions", Value: strings.Join(exts, ", ")},
-		{Name: "Key types", Value: strings.Join(keyTypes, ", ")},
+		{Name: "Key types", Value: strings.Join(content.KeyTypes, ", ")},
 		{Name: fieldNote, Value: note},
 	}
 }
@@ -309,7 +323,7 @@ var extensionNames = map[string]string{
 	"1.3.6.1.5.5.7.1.1": "authorityInfoAccess",
 }
 
-// extensionName returns a display name for an extension, or its dotted OID.
+// extensionName returns a display name for an extension. Unknown extensions keep their dotted OID.
 func extensionName(oid asn1.ObjectIdentifier) string {
 	if name, ok := extensionNames[oid.String()]; ok {
 		return name
@@ -381,19 +395,19 @@ func newCRLCommand() *cobra.Command {
 		Short: "Get the current CRL",
 		Long:  "Ask for the current certificate revocation list (RFC 9810 §5.3.19.6)." + genmLong,
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := o.validate(); err != nil {
+		RunE: runWith(&o.outputOptions, func(cmd *cobra.Command, _ []string, p *printer) error {
+			if err := o.validate(p); err != nil {
 				return err
 			}
-			crl, s, err := exchange(cmd.Context(), &o.connection, &o.protection, cmd.InOrStdin(), cmd.ErrOrStderr(),
+			crl, s, err := exchange(cmd.Context(), &o.connection, &o.protection, cmd.InOrStdin(), p,
 				func(ctx context.Context, c *client.Client, pr *protected) (*x509.RevocationList, error) {
 					return c.GetCurrentCRL(ctx, pr.creds, pr.reqOpts...)
 				})
 			if err != nil {
 				return err
 			}
-			return reportCRL(o, s, crl, "The CA has no CRL", cmd.OutOrStdout(), cmd.ErrOrStderr())
-		},
+			return reportCRL(o, s, crl, "The CA has no CRL")
+		}),
 	}
 	o.addFlags(cmd, "write the CRL to this file")
 	return cmd
@@ -409,23 +423,23 @@ func newCRLUpdateCommand() *cobra.Command {
 		Long: "Ask for a CRL newer than the one in --crl, or for any CRL from the CA in --crl-issuer " +
 			"(RFC 9483 §4.3.4)." + genmLong,
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := o.validate(); err != nil {
+		RunE: runWith(&o.outputOptions, func(cmd *cobra.Command, _ []string, p *printer) error {
+			if err := o.validate(p); err != nil {
 				return err
 			}
 			status, err := crlStatus(crlFile, issuerFile)
 			if err != nil {
 				return err
 			}
-			crl, s, err := exchange(cmd.Context(), &o.connection, &o.protection, cmd.InOrStdin(), cmd.ErrOrStderr(),
+			crl, s, err := exchange(cmd.Context(), &o.connection, &o.protection, cmd.InOrStdin(), p,
 				func(ctx context.Context, c *client.Client, pr *protected) (*x509.RevocationList, error) {
 					return c.GetCRLUpdate(ctx, status, pr.creds, pr.reqOpts...)
 				})
 			if err != nil {
 				return err
 			}
-			return reportCRL(o, s, crl, "No newer CRL is available", cmd.OutOrStdout(), cmd.ErrOrStderr())
-		},
+			return reportCRL(o, s, crl, "No newer CRL is available")
+		}),
 	}
 	o.addFlags(cmd, "write the CRL to this file")
 	cmd.Flags().StringVar(&crlFile, "crl", "", "the newest CRL you have")
@@ -453,19 +467,33 @@ func crlStatus(crlFile, issuerFile string) (pkicmp.CRLStatus, error) {
 
 // reportCRL saves and describes a CRL. Its signature is checked against the trusted CA certificates,
 // because the CMP protection covers only the transfer.
-func reportCRL(o *genmOptions, s *session, crl *x509.RevocationList, none string, stdout, stderr io.Writer) error {
-	w := reportWriter(stdout, stderr, o.out)
+func reportCRL(o *genmOptions, s *session, crl *x509.RevocationList, none string) error {
+	p := s.p
+	result := &crlJSON{Saved: []string{}}
 	if crl == nil {
-		if !o.quiet {
-			ui.Report(w, true, none, nil)
-		}
+		p.result(none, nil, result)
 		return nil
 	}
+	data := pem.EncodeToMemory(&pem.Block{Type: "X509 CRL", Bytes: crl.Raw})
 	if o.out != "" {
-		data := pem.EncodeToMemory(&pem.Block{Type: "X509 CRL", Bytes: crl.Raw})
-		if err := writeData(o.out, data, 0o644, o.force, stdout); err != nil {
+		if err := writeData(o.out, data, 0o644, o.force, p.stdout); err != nil {
 			return err
 		}
+		result.Saved = savedPaths(o.out)
+	}
+	content := &crlContentJSON{
+		Issuer:     crl.Issuer.String(),
+		ThisUpdate: crl.ThisUpdate.UTC(),
+		Revoked:    len(crl.RevokedCertificateEntries),
+		Signature:  "unchecked",
+		PEM:        string(data),
+	}
+	if !crl.NextUpdate.IsZero() {
+		next := crl.NextUpdate.UTC()
+		content.NextUpdate = &next
+	}
+	if crl.Number != nil {
+		content.Number = crl.Number.String()
 	}
 	signature := "not checked, the issuer certificate is unknown"
 	for _, cert := range s.anchors {
@@ -473,33 +501,27 @@ func reportCRL(o *genmOptions, s *session, crl *x509.RevocationList, none string
 			continue
 		}
 		if err := compositex509.CheckRevocationListSignatureFrom(crl, cert); err != nil {
-			signature = "invalid: " + err.Error()
-			ui.Warning(s.errOut, "The CRL signature does not verify against "+ui.Sanitize(cert.Subject.String())+".")
+			content.Signature, signature = "invalid", "invalid: "+err.Error()
+			p.warn("The CRL signature does not verify against " + ui.Sanitize(cert.Subject.String()) + ".")
 			continue
 		}
-		signature = "valid"
+		content.Signature, signature = "valid", "valid"
 		break
 	}
-	if o.quiet {
-		return nil
-	}
-	number := ""
-	if crl.Number != nil {
-		number = crl.Number.String()
-	}
-	ui.Report(w, true, "Received a CRL", []ui.Field{
-		{Name: fieldIssuer, Value: ui.Sanitize(crl.Issuer.String())},
+	result.CRL = content
+	p.result("Received a CRL", []ui.Field{
+		{Name: fieldIssuer, Value: ui.Sanitize(content.Issuer)},
 		{Name: "This update", Value: crl.ThisUpdate.UTC().Format(timeLayout)},
 		{Name: "Next update", Value: formatOptionalTime(crl.NextUpdate)},
-		{Name: "Number", Value: number},
-		{Name: "Revoked", Value: strconv.Itoa(len(crl.RevokedCertificateEntries))},
+		{Name: "Number", Value: content.Number},
+		{Name: "Revoked", Value: strconv.Itoa(content.Revoked)},
 		{Name: "Signature", Value: signature},
-		{Name: fieldSaved, Value: strings.Join(savedPaths(o.out), ", ")},
-	})
+		{Name: fieldSaved, Value: strings.Join(result.Saved, ", ")},
+	}, result)
 	return nil
 }
 
-// formatOptionalTime formats t, or returns "" for the zero time.
+// formatOptionalTime formats t. It returns "" for the zero time.
 func formatOptionalTime(t time.Time) string {
 	if t.IsZero() {
 		return ""
@@ -533,7 +555,7 @@ var infoTypeNames = map[string]asn1.ObjectIdentifier{
 	"kemCiphertextInfo": {1, 3, 6, 1, 5, 5, 7, 4, 24},
 }
 
-// infoTypeName returns the name of an info type, or its dotted OID.
+// infoTypeName returns the name of an info type. Unknown info types keep their dotted OID.
 func infoTypeName(oid asn1.ObjectIdentifier) string {
 	for name, o := range infoTypeNames {
 		if o.Equal(oid) {
@@ -574,8 +596,8 @@ func newRawGenMCommand() *cobra.Command {
 			"OIDs, without a value, and list the items of the answer. RFC 9483 profiles one info type per message, " +
 			"so some servers refuse more." + genmLong,
 		Args: cobra.MinimumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := o.validate(); err != nil {
+		RunE: runWith(&o.outputOptions, func(cmd *cobra.Command, args []string, p *printer) error {
+			if err := o.validate(p); err != nil {
 				return err
 			}
 			items := make([]pkicmp.InfoTypeAndValue, 0, len(args))
@@ -586,23 +608,30 @@ func newRawGenMCommand() *cobra.Command {
 				}
 				items = append(items, pkicmp.InfoTypeAndValue{InfoType: oid})
 			}
-			answer, _, err := exchange(cmd.Context(), &o.connection, &o.protection, cmd.InOrStdin(), cmd.ErrOrStderr(),
+			answer, _, err := exchange(cmd.Context(), &o.connection, &o.protection, cmd.InOrStdin(), p,
 				func(ctx context.Context, c *client.Client, pr *protected) ([]pkicmp.InfoTypeAndValue, error) {
 					return c.SendGenM(ctx, items, pr.creds, pr.reqOpts...)
 				})
-			if err != nil || o.quiet {
+			if err != nil {
 				return err
 			}
-			w := reportWriter(cmd.OutOrStdout(), cmd.ErrOrStderr())
-			ui.Report(w, true, "The answer holds "+count(len(answer), "item", "items"), nil)
+			result := &rawGenMJSON{Items: make([]infoItemJSON, 0, len(answer))}
 			for _, item := range answer {
-				ui.Section(w, infoTypeName(item.InfoType), []ui.Field{
+				result.Items = append(result.Items, infoItemJSON{
+					InfoType: infoTypeName(item.InfoType),
+					OID:      item.InfoType.String(),
+					Value:    item.InfoValue,
+				})
+			}
+			p.result("The answer holds "+count(len(answer), "item", "items"), nil, result)
+			for _, item := range answer {
+				p.section(infoTypeName(item.InfoType), []ui.Field{
 					{Name: "OID", Value: item.InfoType.String()},
 					{Name: "Value", Value: describeValue(item.InfoValue)},
 				})
 			}
 			return nil
-		},
+		}),
 	}
 	o.addFlags(cmd, "")
 	return cmd

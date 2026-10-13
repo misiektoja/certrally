@@ -90,8 +90,8 @@ func responseLabel(ev trace.Event) (string, lipgloss.Style) {
 	if m.Status != "" {
 		parts = append(parts, m.Status)
 	}
-	if m.FailInfo != "" {
-		parts = append(parts, m.FailInfo)
+	if m.FailInfo != 0 {
+		parts = append(parts, m.FailInfo.String())
 	}
 	if m.Body == "pollRep" {
 		parts = append(parts, fmt.Sprintf("checkAfter %ds", m.CheckAfter))
@@ -125,7 +125,7 @@ func (l *Ladder) line(text string, right bool) {
 	_, _ = fmt.Fprintf(l.w, "  %s %s %s\n", faint.Render("│"), body, faint.Render("│"))
 }
 
-// arrow writes an arrow from client to server, or back when back is set.
+// arrow writes an arrow from client to server. With back set it points from server to client.
 func (l *Ladder) arrow(style lipgloss.Style, back bool) {
 	shaft := strings.Repeat("─", ladderWidth-3)
 	var a string

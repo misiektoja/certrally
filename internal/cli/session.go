@@ -11,14 +11,15 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"slices"
 	"time"
 
-	"github.com/charmbracelet/colorprofile"
 	"github.com/misiektoja/go-pki-cmp/client"
 	"github.com/misiektoja/go-pki-cmp/pkicmp"
 	"github.com/spf13/cobra"
 
+	"github.com/misiektoja/certrally/internal/capture"
 	"github.com/misiektoja/certrally/internal/dn"
 	"github.com/misiektoja/certrally/internal/keys"
 	"github.com/misiektoja/certrally/internal/pemfile"
@@ -37,7 +38,7 @@ type connection struct {
 	tlsCACert string
 	recipient string
 	timeout   time.Duration
-	quiet     bool
+	capture   string
 }
 
 // addFlags registers the connection flags with the given default timeout.
@@ -49,7 +50,7 @@ func (c *connection) addFlags(cmd *cobra.Command, timeout time.Duration, timeout
 	f.StringVar(&c.tlsCACert, "tls-ca-cert", "", "verify HTTPS with these CA certificates instead of the system roots")
 	f.StringVar(&c.recipient, "recipient", "", "name of the CA in the request header")
 	f.DurationVar(&c.timeout, "timeout", timeout, timeoutHelp)
-	f.BoolVarP(&c.quiet, "quiet", "q", false, "print only warnings and errors")
+	f.StringVar(&c.capture, "capture", "", "append the exchanged messages to this file as JSON Lines")
 	_ = cmd.MarkFlagRequired("server")
 	for _, name := range []string{"server", "recipient", "timeout"} {
 		_ = cmd.RegisterFlagCompletionFunc(name, cobra.NoFileCompletions)
@@ -64,6 +65,19 @@ func (c *connection) validate() error {
 	}
 	if c.timeout <= 0 {
 		return errors.New("--timeout must be positive")
+	}
+	return nil
+}
+
+// checkCapture rejects a --capture file that is also an output of the command.
+func (c *connection) checkCapture(outputs ...string) error {
+	if c.capture == "" {
+		return nil
+	}
+	for _, out := range outputs {
+		if out != "" && out != stdoutPath && filepath.Clean(out) == filepath.Clean(c.capture) {
+			return fmt.Errorf("%s is given for --capture and for an output", c.capture)
+		}
 	}
 	return nil
 }
@@ -133,7 +147,7 @@ func (p *protection) validate() error {
 // protected is the loaded protection of a request.
 type protected struct {
 	creds pkicmp.Credentials
-	// chain is the signing certificate followed by its chain, or nil for a shared secret.
+	// chain is the signing certificate followed by its chain. It is nil for a shared secret.
 	chain      []*x509.Certificate
 	reqOpts    []client.RequestOption
 	clientOpts []client.Option
@@ -200,7 +214,7 @@ func (p *protection) load(stdin io.Reader, prompt io.Writer) (*protected, error)
 // session is an open connection: an HTTP client that records every exchange and the trust state.
 type session struct {
 	conn     *connection
-	errOut   io.Writer
+	p        *printer
 	recorder *trace.Recorder
 	http     *http.Client
 	// pool holds the trust anchors. Without --ca-cert it fills from the first response.
@@ -210,14 +224,16 @@ type session struct {
 	// pinned is set when --ca-cert names the CA, so nothing the server sends is trusted by itself.
 	pinned  bool
 	caCerts []*x509.Certificate
-	// ladder draws the exchange unless --quiet is set.
+	// ladder draws the exchange in text output without --quiet.
 	ladder *ui.Ladder
+	// capture records the exchange for --capture.
+	capture *capture.Writer
 }
 
-// open prepares a session. Certificates after the first one in chain, the chain of the signing
-// certificate, are trusted as well, because the user named them.
-func (c *connection) open(stderr io.Writer, chain []*x509.Certificate) (*session, error) {
-	s := &session{conn: c, errOut: colorprofile.NewWriter(stderr, os.Environ()), pool: x509.NewCertPool()}
+// open prepares a session and registers it with p. Certificates after the first one in chain, the
+// chain of the signing certificate, are trusted as well, because the user named them.
+func (c *connection) open(p *printer, chain []*x509.Certificate) (*session, error) {
+	s := &session{conn: c, p: p, pool: x509.NewCertPool()}
 	for _, path := range c.caCerts {
 		certs, err := pemfile.ReadCertificates(path)
 		if err != nil {
@@ -249,6 +265,21 @@ func (c *connection) open(stderr io.Writer, chain []*x509.Certificate) (*session
 		t.TLSClientConfig = &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}
 		next = t
 	}
+	if c.capture != "" {
+		w, err := capture.Open(c.capture, capture.Start{
+			Tool:    "certrally",
+			Version: toolVersion(),
+			Command: p.command,
+			Server:  c.redactedServer(),
+			Time:    time.Now().UTC(),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("--capture: %w", err)
+		}
+		s.capture = w
+	}
+	p.session = s
+
 	s.recorder = &trace.Recorder{Next: next}
 	trustFirst := !s.pinned
 	s.recorder.OnEvent = func(ev trace.Event) {
@@ -258,6 +289,9 @@ func (c *connection) open(stderr io.Writer, chain []*x509.Certificate) (*session
 			trustFirst = false
 			s.trustResponse(ev.DER)
 		}
+		if s.capture != nil {
+			s.capture.Event(ev)
+		}
 		if s.ladder != nil {
 			s.ladder.Event(ev)
 		}
@@ -266,17 +300,17 @@ func (c *connection) open(stderr io.Writer, chain []*x509.Certificate) (*session
 	return s, nil
 }
 
-// startLadder starts drawing the exchange unless --quiet is set.
+// startLadder starts drawing the exchange in text output without --quiet.
 func (s *session) startLadder() {
-	if !s.conn.quiet {
-		s.ladder = ui.NewLadder(s.errOut, "certrally", s.conn.host())
+	if s.p.showProgress() {
+		s.ladder = ui.NewLadder(s.p.stderr, "certrally", s.conn.host())
 	}
 }
 
 // endLadder separates the ladder from the report that follows it.
 func (s *session) endLadder() {
 	if s.ladder != nil && len(s.recorder.Events()) > 0 {
-		_, _ = fmt.Fprintln(s.errOut)
+		_, _ = fmt.Fprintln(s.p.stderr)
 	}
 }
 
@@ -304,7 +338,7 @@ func (s *session) trust(cert *x509.Certificate) {
 	s.anchors = append(s.anchors, cert)
 }
 
-// certRep returns the content of an ip, cp or kup body, or nil for other bodies.
+// certRep returns the content of an ip, cp or kup body. It returns nil for other bodies.
 func certRep(body *pkicmp.PKIBody) *pkicmp.CertRepMessage {
 	var rep *pkicmp.CertRepMessage
 	var err error
@@ -344,13 +378,13 @@ func (s *session) client(extra ...client.Option) (*client.Client, error) {
 
 // exchange runs one operation against the server. It loads the credentials, opens a session and
 // draws the ladder around op. A failure is reported before the error is returned.
-func exchange[T any](ctx context.Context, conn *connection, prot *protection, stdin io.Reader, stderr io.Writer, op func(context.Context, *client.Client, *protected) (T, error)) (T, *session, error) {
+func exchange[T any](ctx context.Context, conn *connection, prot *protection, stdin io.Reader, p *printer, op func(context.Context, *client.Client, *protected) (T, error)) (T, *session, error) {
 	var zero T
-	pr, err := prot.load(stdin, stderr)
+	pr, err := prot.load(stdin, p.stderr)
 	if err != nil {
 		return zero, nil, err
 	}
-	s, err := conn.open(stderr, pr.chain)
+	s, err := conn.open(p, pr.chain)
 	if err != nil {
 		return zero, nil, err
 	}

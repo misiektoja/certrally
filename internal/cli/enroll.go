@@ -16,7 +16,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/colorprofile"
 	"github.com/misiektoja/go-composite-mldsa/compositex509"
 	"github.com/misiektoja/go-pki-cmp/client"
 	"github.com/spf13/cobra"
@@ -43,6 +42,7 @@ var requestTypes = []string{typeIR, typeCR, typeKUR, typeP10CR}
 type enrollOptions struct {
 	connection
 	protection
+	outputOptions
 	reqType     string
 	subject     string
 	sans        []string
@@ -75,12 +75,13 @@ func newEnrollCommand() *cobra.Command {
 			"  certrally enroll --server https://ca.example.com/.well-known/cmp --type kur \\\n" +
 			"    --cert device.pem --key device.key --cert-out device-new.pem --key-out device-new.key",
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runEnroll(cmd.Context(), o, cmd.OutOrStdout(), cmd.ErrOrStderr(), cmd.InOrStdin())
-		},
+		RunE: runWith(&o.outputOptions, func(cmd *cobra.Command, _ []string, p *printer) error {
+			return runEnroll(cmd.Context(), o, p, cmd.InOrStdin())
+		}),
 	}
 	o.connection.addFlags(cmd, 5*time.Minute, "limit for the whole exchange, including polling")
 	o.protection.addFlags(cmd)
+	o.outputOptions.addFlags(cmd)
 
 	f := cmd.Flags()
 	f.StringVar(&o.reqType, "type", typeIR, "request type: ir, cr, kur or p10cr")
@@ -143,6 +144,9 @@ func (o *enrollOptions) validate() error {
 	case !generated && o.keyOut != "":
 		return errors.New("--key-out is only used with a generated key")
 	}
+	if err := o.checkCapture(o.certOut, o.keyOut, o.chainOut); err != nil {
+		return err
+	}
 	return checkOutputs(o.force, o.certOut, o.keyOut, o.chainOut)
 }
 
@@ -173,11 +177,11 @@ type enrollment struct {
 }
 
 // runEnroll performs the enroll command.
-func runEnroll(ctx context.Context, o *enrollOptions, stdout, stderr io.Writer, stdin io.Reader) error {
+func runEnroll(ctx context.Context, o *enrollOptions, p *printer, stdin io.Reader) error {
 	if err := o.validate(); err != nil {
 		return err
 	}
-	pr, err := o.load(stdin, stderr)
+	pr, err := o.load(stdin, p.stderr)
 	if err != nil {
 		return err
 	}
@@ -192,7 +196,7 @@ func runEnroll(ctx context.Context, o *enrollOptions, stdout, stderr io.Writer, 
 		e.reqOpts = append(e.reqOpts, client.WithCertProfile(o.certProfile))
 	}
 
-	s, err := o.open(stderr, e.chain)
+	s, err := o.open(p, e.chain)
 	if err != nil {
 		return err
 	}
@@ -219,12 +223,16 @@ func runEnroll(ctx context.Context, o *enrollOptions, stdout, stderr io.Writer, 
 		return fmt.Errorf("the certificate was issued but could not be saved: %w", err)
 	}
 	if o.chainOut != "" && len(chain) == 0 {
-		ui.Warning(s.errOut, "The response carried no issuing CA certificates, so --chain-out was not written.")
+		p.warn("The response carried no issuing CA certificates, so --chain-out was not written.")
 	}
-	if !o.quiet {
-		fields := certificateFields(cert, lastStatus(s.recorder), saved)
-		ui.Report(colorprofile.NewWriter(stdout, os.Environ()), true, "Certificate issued", fields)
-	}
+	status := lastStatus(s.recorder)
+	p.result("Certificate issued", certificateFields(cert, status, saved), &enrollJSON{
+		Status:      status,
+		Confirmed:   true,
+		Certificate: certificateResult(cert),
+		Chain:       certificatesResult(chain),
+		Saved:       saved,
+	})
 	return nil
 }
 
@@ -232,17 +240,29 @@ func runEnroll(ctx context.Context, o *enrollOptions, stdout, stderr io.Writer, 
 // certificate is kept because retrying could issue a second one.
 func (o *enrollOptions) reportUnconfirmed(s *session, confErr *client.ConfirmationError, key crypto.Signer) error {
 	saved, saveErr := o.save(confErr.Certificate, key, nil)
+	f := &failure{
+		code:    exitUnconfirmed,
+		Title:   "The certificate was issued but the confirmation failed",
+		Message: confErr.Err.Error(),
+		Note: "The CA may keep or revoke this certificate. " +
+			"Check with the CA before retrying, because a retry can issue a second certificate.",
+	}
 	fields := []ui.Field{
-		errorField(confErr.Err),
+		errorField(f.Message),
 		{Name: fieldSaved, Value: strings.Join(saved, ", ")},
-		{Name: fieldNote, Value: "The CA may keep or revoke this certificate. " +
-			"Check with the CA before retrying, because a retry can issue a second certificate."},
+		{Name: fieldNote, Value: f.Note},
 	}
 	if saveErr != nil {
 		fields = append(fields, ui.Field{Name: "Save error", Value: saveErr.Error()})
+		s.p.doc.Warnings = append(s.p.doc.Warnings, "The certificate could not be saved: "+saveErr.Error())
 	}
-	ui.Report(s.errOut, false, "The certificate was issued but the confirmation failed", fields)
-	return &exitError{code: exitUnconfirmed, err: confErr}
+	s.p.doc.Result = &enrollJSON{
+		Status:      lastStatus(s.recorder),
+		Certificate: certificateResult(confErr.Certificate),
+		Chain:       []*certificateJSON{},
+		Saved:       saved,
+	}
+	return s.p.fail(f, confErr, fields...)
 }
 
 // prepareKey loads or generates the key to certify. With --csr it loads the request that carries the key.
@@ -355,7 +375,7 @@ func (o *enrollOptions) send(ctx context.Context, c *client.Client, e *enrollmen
 // save writes the key, then the certificate and the chain. It returns the paths written. The key
 // comes first so that a certificate file never exists without its key.
 func (o *enrollOptions) save(cert *x509.Certificate, key crypto.Signer, chain []*x509.Certificate) ([]string, error) {
-	var saved []string
+	saved := []string{}
 	if o.keyOut != "" && key != nil {
 		data, err := keys.MarshalPEM(key)
 		if err != nil {
@@ -434,7 +454,7 @@ func describeCertificate(cert *x509.Certificate) []ui.Field {
 	}
 	return []ui.Field{
 		{Name: fieldSubject, Value: ui.Sanitize(cert.Subject.String())},
-		{Name: "Alt names", Value: ui.Sanitize(altNames(cert))},
+		{Name: "Alt names", Value: ui.Sanitize(strings.Join(altNames(cert), ", "))},
 		{Name: fieldIssuer, Value: ui.Sanitize(cert.Issuer.String())},
 		{Name: "Serial", Value: formatSerial(cert)},
 		{Name: "Valid", Value: cert.NotBefore.UTC().Format(timeLayout) + " to " + cert.NotAfter.UTC().Format(timeLayout)},
@@ -446,7 +466,7 @@ func describeCertificate(cert *x509.Certificate) []ui.Field {
 const timeLayout = "2006-01-02 15:04 UTC"
 
 // altNames lists the subject alternative names of cert.
-func altNames(cert *x509.Certificate) string {
+func altNames(cert *x509.Certificate) []string {
 	names := make([]string, 0, len(cert.DNSNames)+len(cert.IPAddresses)+len(cert.EmailAddresses)+len(cert.URIs))
 	names = append(names, cert.DNSNames...)
 	for _, ip := range cert.IPAddresses {
@@ -456,7 +476,7 @@ func altNames(cert *x509.Certificate) string {
 	for _, u := range cert.URIs {
 		names = append(names, u.String())
 	}
-	return strings.Join(names, ", ")
+	return names
 }
 
 // formatSerial returns the serial number as colon-separated hex bytes.

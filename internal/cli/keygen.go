@@ -2,11 +2,10 @@ package cli
 
 import (
 	"crypto/x509/pkix"
-	"encoding/pem"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
+	"slices"
 	"strings"
 
 	"github.com/misiektoja/go-composite-mldsa/compositex509"
@@ -19,6 +18,7 @@ import (
 
 // keygenOptions holds the keygen command line.
 type keygenOptions struct {
+	outputOptions
 	keyType string
 	out     string
 	pubOut  string
@@ -27,7 +27,6 @@ type keygenOptions struct {
 	sans    []string
 	force   bool
 	list    bool
-	quiet   bool
 }
 
 // newKeygenCommand returns the keygen command.
@@ -42,9 +41,9 @@ func newKeygenCommand() *cobra.Command {
 		Example: "  certrally keygen --key-type ml-dsa-65 --out device.key\n" +
 			"  certrally keygen --out device.key --csr-out device.csr --subject CN=device-42",
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runKeygen(o, cmd.OutOrStdout(), cmd.ErrOrStderr())
-		},
+		RunE: runWith(&o.outputOptions, func(_ *cobra.Command, _ []string, p *printer) error {
+			return runKeygen(o, p)
+		}),
 	}
 	f := cmd.Flags()
 	f.StringVar(&o.keyType, "key-type", keys.DefaultType,
@@ -56,7 +55,7 @@ func newKeygenCommand() *cobra.Command {
 	f.StringArrayVar(&o.sans, "san", nil, "subject alternative name of the request (repeatable)")
 	f.BoolVar(&o.force, "force", false, "replace existing output files")
 	f.BoolVar(&o.list, "list", false, "list the key types and exit")
-	f.BoolVarP(&o.quiet, "quiet", "q", false, "print only warnings and errors")
+	o.outputOptions.addFlags(cmd)
 	_ = cmd.RegisterFlagCompletionFunc("key-type", fixedCompletion(keys.TypeNames()))
 	for _, name := range []string{"subject", "san"} {
 		_ = cmd.RegisterFlagCompletionFunc(name, cobra.NoFileCompletions)
@@ -65,14 +64,19 @@ func newKeygenCommand() *cobra.Command {
 }
 
 // runKeygen performs the keygen command.
-func runKeygen(o *keygenOptions, stdout, stderr io.Writer) error {
+func runKeygen(o *keygenOptions, p *printer) error {
 	if o.list {
-		_, err := fmt.Fprintln(stdout, strings.Join(keys.TypeNames(), "\n"))
-		return err
+		if p.text() {
+			_, err := fmt.Fprintln(p.stdout, strings.Join(keys.TypeNames(), "\n"))
+			return err
+		}
+		p.result("", nil, &keyTypesJSON{KeyTypes: keys.TypeNames()})
+		return nil
 	}
 	if err := o.validate(); err != nil {
 		return err
 	}
+	p.dataOnStdout = slices.Contains([]string{o.out, o.pubOut, o.csrOut}, stdoutPath)
 	var subject pkix.Name
 	if o.subject != "" {
 		var err error
@@ -92,20 +96,17 @@ func runKeygen(o *keygenOptions, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	var csrPEM, pubPEM []byte
+	pubDER, err := compositex509.MarshalPKIXPublicKey(key.Public())
+	if err != nil {
+		return fmt.Errorf("encode public key: %w", err)
+	}
+	result := &keygenJSON{KeyType: o.keyType, Key: keys.Describe(key.Public()), PublicKey: pemString("PUBLIC KEY", pubDER)}
 	if o.csrOut != "" {
 		der, err := createCSR(subject, extensions, key)
 		if err != nil {
 			return err
 		}
-		csrPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: der})
-	}
-	if o.pubOut != "" {
-		der, err := compositex509.MarshalPKIXPublicKey(key.Public())
-		if err != nil {
-			return fmt.Errorf("encode public key: %w", err)
-		}
-		pubPEM = pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})
+		result.CSR = pemString("CERTIFICATE REQUEST", der)
 	}
 
 	// The private key is written first, so that no request or public key exists without it.
@@ -113,21 +114,20 @@ func runKeygen(o *keygenOptions, stdout, stderr io.Writer) error {
 		path string
 		data []byte
 		perm fs.FileMode
-	}{{o.out, keyPEM, 0o600}, {o.pubOut, pubPEM, 0o644}, {o.csrOut, csrPEM, 0o644}}
+	}{{o.out, keyPEM, 0o600}, {o.pubOut, []byte(result.PublicKey), 0o644}, {o.csrOut, []byte(result.CSR), 0o644}}
 	for _, out := range outputs {
 		if out.path == "" {
 			continue
 		}
-		if err := writeData(out.path, out.data, out.perm, o.force, stdout); err != nil {
+		if err := writeData(out.path, out.data, out.perm, o.force, p.stdout); err != nil {
 			return err
 		}
 	}
-	if !o.quiet {
-		ui.Report(reportWriter(stdout, stderr, o.out, o.pubOut, o.csrOut), true, "Key generated", []ui.Field{
-			{Name: fieldKey, Value: keys.Describe(key.Public())},
-			{Name: fieldSaved, Value: strings.Join(savedPaths(o.out, o.pubOut, o.csrOut), ", ")},
-		})
-	}
+	result.Saved = savedPaths(o.out, o.pubOut, o.csrOut)
+	p.result("Key generated", []ui.Field{
+		{Name: fieldKey, Value: result.Key},
+		{Name: fieldSaved, Value: strings.Join(result.Saved, ", ")},
+	}, result)
 	return nil
 }
 
@@ -149,6 +149,9 @@ func (o *keygenOptions) validate() error {
 	}
 	if stdoutUses > 1 {
 		return errors.New("only one output can go to standard output")
+	}
+	if err := o.checkStdout(o.out, o.pubOut, o.csrOut); err != nil {
+		return err
 	}
 	return checkOutputs(o.force, o.out, o.pubOut, o.csrOut)
 }
