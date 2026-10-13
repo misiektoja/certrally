@@ -288,7 +288,7 @@ certrally inspect run.jsonl --ca-cert ca.pem
     ...
 ```
 
-certrally checks a signature with the certificates in the message and in `--ca-cert`. With `--ca-cert` it also checks that the signer chains to those certificates. It checks a MAC with the shared secret from `--secret-file` or `CERTRALLY_SECRET` and leaves it unchecked without one.
+certrally checks a signature with the certificates in the message and in `--ca-cert`, even when the signer certificate has expired. With `--ca-cert` it also checks that the signer chains to those certificates. It checks the chain at the time the capture recorded the message, or at the current time for other files. It checks a MAC with the shared secret from `--secret-file` or `CERTRALLY_SECRET` and leaves it unchecked without one.
 
 `lint` checks recorded responses against the [profile rules](docs/profiles.md) and exits with status 6 when a response breaks one:
 
