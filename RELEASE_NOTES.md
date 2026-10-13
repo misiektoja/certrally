@@ -4,7 +4,7 @@ Notable changes to certrally. Versions follow the `vMAJOR.MINOR.PATCH` tags publ
 
 ## v0.1.0 - TBD
 
-The first version requests and revokes certificates over CMP, asks the CA for its certificates, request template and CRLs, checks that a server answers and generates keys, including ML-DSA and composite ML-DSA keys. Each exchange is shown as a live message diagram and needs no trust setup.
+The first version requests and revokes certificates over CMP, asks the CA for its certificates, request template and CRLs, checks that a server answers and generates keys, including ML-DSA and composite ML-DSA keys. Each exchange is shown as a live message diagram and needs no trust setup. Scripts get the outcome as JSON. Every message of a run can be recorded to a file.
 
 ### Enrollment
 
@@ -26,6 +26,11 @@ The first version requests and revokes certificates over CMP, asks the CA for it
 
 * **`certrally ping`** checks that a server answers CMP without any credentials and reports the CA name, protection and round-trip time. `--count` repeats the check. With `--ca-cert` the answer must also be signed by that CA.
 * **`certrally keygen`** generates any supported key type without contacting a CA. `--pub-out` saves the public key and `--csr-out` a PKCS#10 request for `--subject` and `--san`. `--list` prints the key types.
+
+### Scripts and records
+
+* **`--json`** prints the outcome of `enroll`, `revoke`, `cacerts`, `cmp genm`, `ping` and `keygen` as one JSON document on standard output. It holds the exit status, every message of the exchange, the result of the command and any error. [docs/json.md](docs/json.md) describes the fields.
+* **`--capture FILE`** appends every message of a run, with its bytes and timing, to a JSON Lines file. Several runs can share one file. New files get mode 0600, because the messages of a shared-secret exchange allow offline guessing of the secret.
 
 ### Command line
 
