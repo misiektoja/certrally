@@ -151,6 +151,7 @@ Notes:
 
 * The shared secret comes from `--secret-file` (`-` reads standard input), the `CERTRALLY_SECRET` environment variable or a prompt on a terminal, in that order. It is never accepted as a command line argument. One trailing line ending is removed.
 * With a shared secret, the request header names `CN=<ref>` as the sender and `<ref>` as the key identifier, as RFC 9483 asks. Without `--subject` or `--san` the certificate is requested for `CN=<ref>`.
+* Shared-secret requests are protected with PBMAC1. `--mac pbm` selects PasswordBasedMac for CAs that accept only that, such as the `openssl cmp` mock server.
 * certrally generates an `ecdsa-p256` key unless `--key-type`, `--new-key` or `--csr` says otherwise. Key types are `ecdsa-p256`, `ecdsa-p384`, `ecdsa-p521`, `ed25519`, `rsa-2048`, `rsa-3072`, `rsa-4096`, `ml-dsa-44`, `ml-dsa-65`, `ml-dsa-87` and the composite ML-DSA combinations such as `mldsa65-ecdsa-p256-sha512`. Shell completion lists them all.
 * Private keys are written as unencrypted PKCS#8 PEM with mode 0600. The key is written before the certificate. certrally refuses to replace an existing file unless `--force` is given. It checks this before sending anything.
 * `--chain-out` saves the issuing CA certificates from the response, issuer first.
@@ -158,7 +159,7 @@ Notes:
 
 ### Trust the CA
 
-certrally needs no trust setup. It trusts the CA certificates in the first response from the server and the CA certificates in the `--cert` file, then checks every response against them.
+certrally needs no trust setup. It trusts the CA certificates in the first response from the server and the CA certificates in the `--cert` file, then checks every response against them. If a response does not carry the CA certificate that issued the new certificate, pass that certificate with `--ca-cert`.
 
 To make sure you talk to a particular CA, name its certificate with `--ca-cert ca.pem` (repeatable). certrally then trusts nothing the server sends. Signed responses and issued certificates must chain to a CA certificate from `--ca-cert` or `--cert`.
 
