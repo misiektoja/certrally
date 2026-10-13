@@ -5,6 +5,8 @@ certrally is a command line client for certificate enrollment with the Certifica
 > [!NOTE]
 > certrally is in early development and has not been released yet.
 
+![certrally enrolls an ML-DSA-65 certificate from the test CA and revokes it](docs/demo.gif)
+
 * Enrollment and key update over CMP (`ir`, `cr`, `kur`, `p10cr`) with a shared secret or a certificate
 * A step-by-step `enroll` on a terminal that prints the matching command for scripts
 * Revocation (`rr`) and the RFC 9483 support messages for CA certificates, root CA updates, request templates and CRLs
