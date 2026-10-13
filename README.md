@@ -11,11 +11,11 @@ certrally is a command line client for certificate enrollment with the Certifica
 * ML-DSA and composite ML-DSA keys alongside RSA, ECDSA and Ed25519
 * No trust setup needed: certrally trusts the CA it talks to or the one you name with `--ca-cert`
 * A live diagram of every message in the exchange and plain explanations of failures
+* JSON output for scripts and capture files that record every message of a run
 * Exit statuses that tell scripts why a request failed
 
 Planned for the first releases:
 
-* JSON output and saving the exchanged messages for later analysis
 * Prebuilt binaries for Linux, macOS and Windows
 
 EST support is planned after CMP.
@@ -168,6 +168,19 @@ certrally keygen --key-type ml-dsa-65 --out device.key \
 ```
 
 `--pub-out` also saves the public key. `--list` prints the key types. The key is saved like enroll keys, as unencrypted PKCS#8 PEM with mode 0600.
+
+### Use certrally in scripts
+
+`--json` prints the outcome as one JSON document on standard output instead of the diagram and the report. The document holds the exit status, every message of the exchange, the result of the command and any error:
+
+```bash
+certrally cacerts --server https://ca.example.com/.well-known/cmp --ref device-42 --json \
+  | jq -r '.result.certificates[].subject'
+```
+
+`--capture run.jsonl` appends every message of the run, with its bytes, to a JSON Lines file for later inspection. Keep capture files private, because the messages of a shared-secret exchange allow offline guessing of the secret.
+
+[docs/json.md](docs/json.md) describes both formats.
 
 ### Colour
 
