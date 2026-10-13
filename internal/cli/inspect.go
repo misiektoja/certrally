@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/misiektoja/go-composite-mldsa/compositex509"
 	"github.com/misiektoja/go-pki-cmp/pkicmp"
@@ -48,7 +49,8 @@ func newInspectCommand() *cobra.Command {
 		Long: "Decode CMP messages and show their header, protection, body and extra certificates.\n\n" +
 			fileArgsHelp + "\n\n" +
 			"certrally checks a signature with the certificates the message carries and those in --ca-cert. " +
-			"With --ca-cert it also checks that the signer chains to those certificates. It checks a MAC with " +
+			"With --ca-cert it also checks that the signer chains to those certificates at the time the capture " +
+			"recorded the message, or at the current time for other files. It checks a MAC with " +
 			"the shared secret from --secret-file or the " + secret.EnvVar + " environment variable. " +
 			"inspect does not judge the messages. lint checks them against RFC 9483.\n\n" +
 			"Exit status: 0 success, 1 a file cannot be read or holds no CMP message.",
@@ -227,7 +229,7 @@ func describeMessage(m cmpfile.Message, a *anchors) *messageReport {
 	}
 	extra := r.parseExtraCerts(msg)
 	r.header(&msg.Header)
-	signer := r.protection(msg, extra, a)
+	signer := r.protection(msg, extra, a, m.Time)
 	r.body(msg.Body)
 	for i, cert := range extra {
 		if cert == nil {
@@ -352,9 +354,10 @@ func keyID(b []byte) string {
 	return fmt.Sprintf("%s %q", hexBytes(b), string(b))
 }
 
-// protection describes the protection of msg and checks it. extra are the parsed extraCerts. It
-// returns the certificate whose signature verifies, if any.
-func (r *messageReport) protection(msg *pkicmp.PKIMessage, extra []*x509.Certificate, a *anchors) *x509.Certificate {
+// protection describes the protection of msg and checks it. extra are the parsed extraCerts. The chain
+// of the signer is checked at the time at, or at the current time when at is zero. It returns the
+// certificate whose signature verifies, if any.
+func (r *messageReport) protection(msg *pkicmp.PKIMessage, extra []*x509.Certificate, a *anchors, at time.Time) *x509.Certificate {
 	alg := msg.Header.ProtectionAlg
 	if alg == nil {
 		r.json.Protection = protectionJSON{Algorithm: valueNone}
@@ -374,7 +377,7 @@ func (r *messageReport) protection(msg *pkicmp.PKIMessage, extra []*x509.Certifi
 	if signer != nil {
 		j.Signer = dn.Format(signer.RawSubject)
 		if len(a.caCerts) > 0 {
-			trusted := chainsTo(msg, a.caCerts)
+			trusted := chainsTo(msg, a.caCerts, at)
 			j.Trusted = &trusted
 			trust = "does not chain to --ca-cert"
 			if trusted {
@@ -401,9 +404,10 @@ var (
 // checkSignature finds the certificate among candidates whose signature protects msg. Nil
 // candidates are skipped. It returns the signer, the outcome and why the outcome is not valid.
 //
-// Each candidate is tried directly, without building a chain, so that the signature check does not
-// depend on trust. go-pki-cmp checks the validity period and the sender name before the signature,
-// so a candidate that fails either may still be the signer and the outcome is then unchecked.
+// Each candidate is tried directly, without building a chain and at the start of its validity period,
+// so that the signature check depends on neither trust nor time. go-pki-cmp checks the sender name
+// before the signature, so a candidate that does not name the sender may still be the signer and the
+// outcome is then unchecked.
 func checkSignature(msg *pkicmp.PKIMessage, candidates []*x509.Certificate) (signer *x509.Certificate, outcome, problem string) {
 	kid := msg.Header.SenderKID
 	var skipped string
@@ -418,7 +422,11 @@ func checkSignature(msg *pkicmp.PKIMessage, candidates []*x509.Certificate) (sig
 			continue
 		}
 		tried++
-		_, err := msg.Verify(pkicmp.VerifyOptions{RequiredProtection: pkicmp.ProtectionSignature, TrustedCert: cand})
+		_, err := msg.Verify(pkicmp.VerifyOptions{
+			RequiredProtection: pkicmp.ProtectionSignature,
+			TrustedCert:        cand,
+			CurrentTime:        cand.NotBefore,
+		})
 		if err == nil {
 			return cand, checkValid, ""
 		}
@@ -428,7 +436,8 @@ func checkSignature(msg *pkicmp.PKIMessage, candidates []*x509.Certificate) (sig
 			return nil, checkUnchecked, err.Error()
 		case skipped != "":
 		case verifyErr.Reason == pkicmp.ReasonCertificateExpired:
-			skipped = "the certificate " + dn.Format(cand.RawSubject) + " is outside its validity period"
+			// Only a certificate that ends before it starts is invalid at its own start.
+			skipped = "the certificate " + dn.Format(cand.RawSubject) + " ends before it starts"
 		case verifyErr.Reason == pkicmp.ReasonSenderMismatch:
 			skipped = "the certificate " + dn.Format(cand.RawSubject) + " does not name the sender"
 		}
@@ -462,8 +471,10 @@ func checkMAC(msg *pkicmp.PKIMessage, a *anchors) (outcome, problem string) {
 	return checkUnchecked, err.Error()
 }
 
-// chainsTo reports whether msg is signed with a certificate that chains to caCerts.
-func chainsTo(msg *pkicmp.PKIMessage, caCerts []*x509.Certificate) bool {
+// chainsTo reports whether msg is signed with a certificate that chains to caCerts at the time at, or at
+// the current time when at is zero. The time comes from the capture rather than from the message,
+// whose sender chooses its messageTime.
+func chainsTo(msg *pkicmp.PKIMessage, caCerts []*x509.Certificate, at time.Time) bool {
 	pool := x509.NewCertPool()
 	candidates := slices.Clone(msg.ExtraCerts)
 	for _, cert := range caCerts {
@@ -475,6 +486,7 @@ func chainsTo(msg *pkicmp.PKIMessage, caCerts []*x509.Certificate) bool {
 		TrustPool:          pool,
 		ExtraCerts:         candidates,
 		SenderKID:          msg.Header.SenderKID,
+		CurrentTime:        at,
 	})
 	return err == nil
 }
