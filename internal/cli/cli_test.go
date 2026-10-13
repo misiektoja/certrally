@@ -56,6 +56,26 @@ func TestRunVersion(t *testing.T) {
 	}
 }
 
+// TestRunFlagAfterHelp checks that a flag with a separate value may follow --help, -h or --version.
+func TestRunFlagAfterHelp(t *testing.T) {
+	isolateColorEnv(t)
+	tests := []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--help", "--color", "never"}, "--version"},
+		{[]string{"-h", "--color", "never"}, "--version"},
+		{[]string{"--version", "--color", "never"}, "certrally version "},
+		{[]string{"-v", "--color", "never"}, "certrally version "},
+	}
+	for _, tt := range tests {
+		code, out, errOut := run(t, tt.args...)
+		if code != 0 || !strings.Contains(out, tt.want) {
+			t.Errorf("%q exited with %d:\n%s%s", tt.args, code, errOut, out)
+		}
+	}
+}
+
 // TestRunErrors checks that usage errors exit with status 1 and explain themselves on stderr.
 func TestRunErrors(t *testing.T) {
 	isolateColorEnv(t)
