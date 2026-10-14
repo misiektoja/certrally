@@ -15,6 +15,8 @@ certrally cacerts --server https://ca.example.com/.well-known/cmp --ref device-4
 
 Checks that keep the exchange secure do not depend on the profile. certrally always rejects a response with the wrong transaction ID, a recipient nonce that does not match the request or protection that does not verify.
 
+Some CAs copy the `senderKID` of a signed request into their signed responses, so it names none of the certificates certrally could check the signature with. `compatible` then tries each of them. The signer must still chain to a trusted CA certificate and have the sender's name. `strict` stops such a response.
+
 ## Rejections and enrollment
 
 A rejection from the CA ends the command with exit status 3 in both profiles. Rules that the rejection breaks are listed as warnings, because the reason the CA gives is more useful than the deviation.
@@ -33,6 +35,7 @@ When `strict` stops an `ip`, `cp` or `kup` response, certrally neither confirms 
 | No response carries `certProfile` | RFC 9483 section 3.1 |
 | The response is protected the same way as the request: a MAC answers a MAC and a signature answers a signature. Error messages are exempt, because a CA signs them when it cannot check the request | RFC 9483 section 3.2 |
 | A signed response has a `senderKID` when its protection certificate has a subject key identifier | RFC 9483 section 3.1 |
+| The `senderKID` of a signed response is the subject key identifier of a certificate in `extraCerts` or among the trusted ones. It counts as broken only when one of those certificates has the sender's name and a subject key identifier | RFC 9483 section 3.1 |
 | The first signed response of an operation starts `extraCerts` with its protection certificate. Error messages are exempt | RFC 9483 section 3.3 |
 | An `ip`, `cp` or `kup` that issues a certificate carries `extraCerts` with the chain of the new certificate. A certificate issued directly by a self-signed CA certificate that certrally trusts or finds in `caPubs` needs none, because self-signed certificates are left out of `extraCerts` | RFC 9483 section 3.3 |
 | An `error` message has the status `rejection`. While the CA prepares a certificate the status may be `waiting` | RFC 9483 section 3.6.4 |
