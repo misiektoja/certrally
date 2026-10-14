@@ -326,6 +326,11 @@ func verificationHint(err error) string {
 			"--ca-cert may hold an older certificate of the CA, or the response was changed on the way."
 	case pkicmp.ReasonNoCandidateSigner:
 		return "The response does not carry the certificate it was signed with. Pass it with --ca-cert."
+	case pkicmp.ReasonSenderKIDMismatch:
+		// Only the strict profile refuses such a response. The compatible profile tries every candidate.
+		return "No certificate in the response or in --ca-cert has the key that senderKID names. " +
+			"Pass the certificate the CA signs with in --ca-cert. " +
+			"Use --profile compatible if the CA puts another value in senderKID."
 	case pkicmp.ReasonBadMAC:
 		return "The response MAC does not verify. Check the shared secret."
 	case pkicmp.ReasonUnexpectedProtection:
