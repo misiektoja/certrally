@@ -168,6 +168,13 @@ func TestCheck(t *testing.T) {
 		{"protection certificate not first", genm(), with(genp(), func(m *pkicmp.PKIMessage) {
 			m.ExtraCerts = []pkicmp.CMPCertificate{{Raw: other.Raw}, {Raw: ca.Raw}}
 		}), "does not start extraCerts with its protection certificate"},
+		// Some CAs copy the senderKID of the request. The certificate of the sender still comes first.
+		{"senderKID of another key", genm(), with(genp(), func(m *pkicmp.PKIMessage) { m.Header.SenderKID = []byte("request-kid") }),
+			"has a senderKID that is not the subject key identifier of its sender's certificate"},
+		{"senderKID without a certificate of the sender", genm(), with(genp(), func(m *pkicmp.PKIMessage) {
+			m.Header.SenderKID = []byte("request-kid")
+			m.ExtraCerts = []pkicmp.CMPCertificate{{Raw: other.Raw}}
+		}), "does not start extraCerts with its protection certificate"},
 		{"no chain", macIR(), with(ip(), func(m *pkicmp.PKIMessage) { m.ExtraCerts = nil }),
 			"carries no extraCerts, so the chain of the new certificate is missing"},
 		{"later message without extraCerts", signedBy(certConf(), device), with(signedBy(pkiconf([]byte{0xb3, 0x02, 0x05, 0x00}), ca),

@@ -235,6 +235,116 @@ func TestProfileDeviation(t *testing.T) {
 	})
 }
 
+// copySenderKID serves a proxy in front of target that answers a signed request like a CA that copies
+// the senderKID of the request into its signed responses. key and cert sign each response again, so it
+// still verifies.
+func copySenderKID(t *testing.T, target string, key crypto.Signer, cert *x509.Certificate) string {
+	t.Helper()
+	// The signature keeps the given senderKID when the certificate has no subject key identifier.
+	// extraCerts still carry the certificate as issued.
+	signer := *cert
+	signer.SubjectKeyId = nil
+	creds, err := pkicmp.NewSignatureCredentials(key, &signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signed := func(m *pkicmp.PKIMessage) bool {
+		alg := m.Header.ProtectionAlg
+		return alg != nil && !alg.Algorithm.Equal(oidPBM) && !alg.Algorithm.Equal(oidPBMAC1)
+	}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		der, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		req, err := pkicmp.ParsePKIMessage(der)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		resp, err := http.Post(target, r.Header.Get("Content-Type"), bytes.NewReader(der))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		defer func() { _ = resp.Body.Close() }()
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		if msg, err := pkicmp.ParsePKIMessage(body); err == nil && signed(req) && signed(msg) {
+			msg.Header.SenderKID = req.Header.SenderKID
+			if err := creds.Protect(msg); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if body, err = msg.MarshalBinary(); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+		w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+		w.WriteHeader(resp.StatusCode)
+		_, _ = w.Write(body)
+	}))
+	t.Cleanup(ts.Close)
+	return ts.URL + "/cmp"
+}
+
+// TestProfileCopiedSenderKID checks a CA that copies the senderKID of a signed request into its signed
+// responses. The compatible profile accepts them with a warning and the strict profile stops. inspect
+// still finds the signer and lint names the rule.
+func TestProfileCopiedSenderKID(t *testing.T) {
+	const deviation = "response has a senderKID that is not the subject key identifier of its sender's certificate (RFC 9483 section 3.1)."
+	useSecret(t, testSecret)
+	var mock *mockserver.MockCA
+	ca := startCA(t, func(m *mockserver.MockCA) server.CA {
+		mock = m
+		return m
+	})
+	certFile, keyFile := enrollIR(t, ca)
+	proxy := copySenderKID(t, ca.url, mock.Key(), mock.Cert())
+	dir := t.TempDir()
+	capture := filepath.Join(dir, "cr.jsonl")
+	enroll := func(name string, extra ...string) []string {
+		return append([]string{"enroll", "--server", proxy, "--type", "cr", "--subject", "CN=device-42",
+			"--cert", certFile, "--key", keyFile, "--cert-out", filepath.Join(dir, name+".pem"), "--key-out", filepath.Join(dir, name+".key")}, extra...)
+	}
+
+	t.Run("compatible", func(t *testing.T) {
+		code, doc := runJSON(t, enroll("compatible", "--capture", capture)...)
+		if code != exitOK || get(doc, "warnings.0") != "The cp "+deviation || get(doc, "warnings.1") != "The pkiconf "+deviation {
+			t.Errorf("exited with %d: %v", code, doc)
+		}
+	})
+	t.Run("strict", func(t *testing.T) {
+		code, doc := runJSON(t, enroll("strict", "--profile", "strict")...)
+		hint, _ := get(doc, "error.hint").(string)
+		if code != exitProfile || get(doc, "error.message") != "The cp "+deviation || !strings.Contains(hint, "--profile compatible") {
+			t.Errorf("exited with %d: %v", code, doc)
+		}
+	})
+	t.Run("inspect", func(t *testing.T) {
+		code, doc := runJSON(t, "inspect", capture, "--ca-cert", ca.caFile)
+		// Messages 1 and 3 are the cp and the pkiconf.
+		for _, i := range []string{"1", "3"} {
+			p := "result.messages." + i + ".protection"
+			if code != exitOK || get(doc, p+".check") != "valid" || get(doc, p+".trusted") != true {
+				t.Errorf("exited with %d, message %s: %v", code, i, get(doc, p))
+			}
+		}
+	})
+	t.Run("lint", func(t *testing.T) {
+		code, out, errOut := run(t, "lint", capture)
+		out += errOut
+		if code != exitProfile || !strings.Contains(out, "The cp "+deviation) || strings.Contains(out, "section 3.3") {
+			t.Errorf("exited with %d:\n%s", code, out)
+		}
+	})
+}
+
 // badRequest is a rejection without a reason the client could act on.
 var badRequest = pkicmp.PKIStatusInfo{Status: pkicmp.StatusRejection, FailInfo: pkicmp.FailBadRequest}
 
