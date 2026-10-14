@@ -162,10 +162,11 @@ func (s *session) verify(msg *pkicmp.PKIMessage) error {
 		candidates = append(candidates, pkicmp.CMPCertificate{Raw: cert.Raw})
 	}
 	_, err := msg.Verify(pkicmp.VerifyOptions{
-		RequiredProtection: pkicmp.ProtectionSignature,
-		TrustPool:          s.pool,
-		ExtraCerts:         candidates,
-		SenderKID:          msg.Header.SenderKID,
+		RequiredProtection:     pkicmp.ProtectionSignature,
+		TrustPool:              s.pool,
+		ExtraCerts:             candidates,
+		SenderKID:              msg.Header.SenderKID,
+		AllowSenderKIDMismatch: s.allowSenderKIDMismatch(),
 	})
 	return err
 }

@@ -437,6 +437,9 @@ func (s *session) client(extra ...client.Option) (*client.Client, error) {
 		// a candidate signer.
 		opts = append(opts, client.WithServerCerts(s.caCerts))
 	}
+	if s.allowSenderKIDMismatch() {
+		opts = append(opts, client.WithSenderKIDMismatch())
+	}
 	if s.conn.recipient != "" {
 		name, err := dn.ParseName(s.conn.recipient)
 		if err != nil {
@@ -445,6 +448,14 @@ func (s *session) client(extra ...client.Option) (*client.Client, error) {
 		opts = append(opts, client.WithRecipient(name))
 	}
 	return client.NewClient(s.conn.server, append(opts, extra...)...), nil
+}
+
+// allowSenderKIDMismatch reports whether a signed response may carry a senderKID that names none of its
+// candidate signers. Some CAs copy the senderKID of the request into their responses. The compatible
+// profile accepts that with a warning from the profile check. The signer must still chain to the trusted
+// CAs, name the sender and verify the signature.
+func (s *session) allowSenderKIDMismatch() bool {
+	return s.conn.profile == profile.Compatible
 }
 
 // exchange runs one operation against the server. It loads the credentials, opens a session and

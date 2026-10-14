@@ -165,6 +165,41 @@ func (c *checker) protection() {
 	if signer := c.signer(); signed && signer != nil && len(signer.SubjectKeyId) > 0 && len(c.resp.Header.SenderKID) == 0 {
 		c.add(rfc9483("3.1"), "has no senderKID, although its protection certificate has a subject key identifier")
 	}
+	if signed && c.senderKIDNamesOtherKey() {
+		c.add(rfc9483("3.1"), "has a senderKID that is not the subject key identifier of its sender's certificate")
+	}
+}
+
+// senderKIDNamesOtherKey reports whether senderKID names none of the certificates in extraCerts or among
+// the trusted ones, although one of them is a certificate of the sender with a subject key identifier.
+// Some CAs copy the senderKID of the request into their responses.
+func (c *checker) senderKIDNamesOtherKey() bool {
+	if len(c.resp.Header.SenderKID) == 0 || len(c.resp.Header.Sender.DirectoryName) == 0 || c.kidNamesCandidate() {
+		return false
+	}
+	return slices.ContainsFunc(c.candidates(), func(cert *x509.Certificate) bool {
+		return len(cert.SubjectKeyId) > 0 && c.namesSender(cert)
+	})
+}
+
+// kidNamesCandidate reports whether senderKID is the subject key identifier of a certificate in
+// extraCerts or among the trusted ones.
+func (c *checker) kidNamesCandidate() bool {
+	kid := c.resp.Header.SenderKID
+	return slices.ContainsFunc(c.candidates(), func(cert *x509.Certificate) bool {
+		return len(cert.SubjectKeyId) > 0 && bytes.Equal(cert.SubjectKeyId, kid)
+	})
+}
+
+// candidates returns the certificates in extraCerts that parse, followed by the trusted ones.
+func (c *checker) candidates() []*x509.Certificate {
+	certs := make([]*x509.Certificate, 0, len(c.resp.ExtraCerts)+len(c.trusted))
+	for _, raw := range c.resp.ExtraCerts {
+		if cert, err := raw.Parse(); err == nil {
+			certs = append(certs, cert)
+		}
+	}
+	return append(certs, c.trusted...)
 }
 
 // extraCerts checks that the first signed response of an operation starts extraCerts with its
@@ -210,25 +245,32 @@ func (c *checker) content() {
 
 // signer returns the first certificate in extraCerts when it can be the protection certificate:
 // its subject matches the sender and its key identifier matches senderKID. It returns nil otherwise.
+// A senderKID that names none of the certificates is a deviation of its own, so it does not count
+// against the first certificate.
 func (c *checker) signer() *x509.Certificate {
 	if len(c.resp.ExtraCerts) == 0 {
 		return nil
 	}
 	cert, err := c.resp.ExtraCerts[0].Parse()
-	if err != nil {
+	if err != nil || !c.namesSender(cert) {
 		return nil
 	}
-	h := c.resp.Header
-	if sender := h.Sender.DirectoryName; len(sender) > 0 {
-		var subject pkix.RDNSequence
-		if _, err := asn1.Unmarshal(cert.RawSubject, &subject); err != nil || subject.String() != sender.String() {
-			return nil
-		}
-	}
-	if len(h.SenderKID) > 0 && !bytes.Equal(h.SenderKID, cert.SubjectKeyId) {
+	if kid := c.resp.Header.SenderKID; len(kid) > 0 && !bytes.Equal(kid, cert.SubjectKeyId) && c.kidNamesCandidate() {
 		return nil
 	}
 	return cert
+}
+
+// namesSender reports whether the subject of cert is the sender of the response. Every certificate
+// matches a sender that is not a directory name.
+func (c *checker) namesSender(cert *x509.Certificate) bool {
+	sender := c.resp.Header.Sender.DirectoryName
+	if len(sender) == 0 {
+		return true
+	}
+	var subject pkix.RDNSequence
+	_, err := asn1.Unmarshal(cert.RawSubject, &subject)
+	return err == nil && subject.String() == sender.String()
 }
 
 // isMAC reports whether a message is protected with a MAC rather than a signature.
