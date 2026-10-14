@@ -408,7 +408,8 @@ var (
 // so that the signature check depends on neither trust nor time. A signature that fails with a
 // certificate of the sender is invalid, even when the message also carries its CA chain. go-pki-cmp
 // checks the sender name before the signature, so without such a certificate a candidate of another
-// name may still be the signer and the outcome is unchecked.
+// name may still be the signer and the outcome is unchecked. When senderKID names none of the
+// candidates, only a candidate that verifies the signature counts.
 func checkSignature(msg *pkicmp.PKIMessage, candidates []*x509.Certificate) (signer *x509.Certificate, outcome, problem string) {
 	kid := msg.Header.SenderKID
 	var skipped string
@@ -449,11 +450,36 @@ func checkSignature(msg *pkicmp.PKIMessage, candidates []*x509.Certificate) (sig
 	case available == 0:
 		return nil, checkUnchecked, "the message carries no certificate and --ca-cert names none"
 	case tried == 0:
+		// Some CAs copy the senderKID of the request into their responses, so a candidate that
+		// verifies the signature is the signer. senderKID may also name a certificate that is
+		// missing, so a candidate that does not verify it proves nothing.
+		if signer := anySigner(msg, candidates); signer != nil {
+			return signer, checkValid, ""
+		}
 		return nil, checkUnchecked, "no certificate in extraCerts or --ca-cert matches senderKID"
 	case checked == 0 && skipped != "":
 		return nil, checkUnchecked, skipped
 	}
 	return nil, checkInvalid, "no certificate in extraCerts or --ca-cert verifies it"
+}
+
+// anySigner returns the first of candidates whose signature protects msg, ignoring senderKID. Nil
+// candidates are skipped. It returns nil when none verifies the signature.
+func anySigner(msg *pkicmp.PKIMessage, candidates []*x509.Certificate) *x509.Certificate {
+	for _, cand := range candidates {
+		if cand == nil {
+			continue
+		}
+		_, err := msg.Verify(pkicmp.VerifyOptions{
+			RequiredProtection: pkicmp.ProtectionSignature,
+			TrustedCert:        cand,
+			CurrentTime:        cand.NotBefore,
+		})
+		if err == nil {
+			return cand
+		}
+	}
+	return nil
 }
 
 // checkMAC checks the MAC of msg with the shared secret of a. It returns the outcome and why the
@@ -476,7 +502,8 @@ func checkMAC(msg *pkicmp.PKIMessage, a *anchors) (outcome, problem string) {
 
 // chainsTo reports whether msg is signed with a certificate that chains to caCerts at the time at, or at
 // the current time when at is zero. The time comes from the capture rather than from the message,
-// whose sender chooses its messageTime.
+// whose sender chooses its messageTime. A senderKID that names none of the certificates does not
+// matter here, because checkSignature already reports which certificate signed msg.
 func chainsTo(msg *pkicmp.PKIMessage, caCerts []*x509.Certificate, at time.Time) bool {
 	pool := x509.NewCertPool()
 	candidates := slices.Clone(msg.ExtraCerts)
@@ -485,11 +512,12 @@ func chainsTo(msg *pkicmp.PKIMessage, caCerts []*x509.Certificate, at time.Time)
 		candidates = append(candidates, pkicmp.CMPCertificate{Raw: cert.Raw})
 	}
 	_, err := msg.Verify(pkicmp.VerifyOptions{
-		RequiredProtection: pkicmp.ProtectionSignature,
-		TrustPool:          pool,
-		ExtraCerts:         candidates,
-		SenderKID:          msg.Header.SenderKID,
-		CurrentTime:        at,
+		RequiredProtection:     pkicmp.ProtectionSignature,
+		TrustPool:              pool,
+		ExtraCerts:             candidates,
+		SenderKID:              msg.Header.SenderKID,
+		AllowSenderKIDMismatch: true,
+		CurrentTime:            at,
 	})
 	return err == nil
 }
