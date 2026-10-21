@@ -57,27 +57,7 @@ From source with Go 1.27.3 or newer:
 go install github.com/misiektoja/certrally/cmd/certrally@latest
 ```
 
-### Verify a download
-
-`checksums.txt` lists the SHA-256 digest of every archive. The release workflow signs it with a keyless cosign signature. Check the signature, then the archives:
-
-```bash
-cosign verify-blob --bundle checksums.txt.sigstore.json \
-  --certificate-identity https://github.com/misiektoja/certrally/.github/workflows/release.yml@refs/tags/v0.1.0 \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com checksums.txt
-sha256sum --check --ignore-missing checksums.txt
-```
-
-Archives and images also carry GitHub build provenance:
-
-```bash
-gh attestation verify certrally_0.1.0_linux_amd64.tar.gz --repo misiektoja/certrally
-gh attestation verify oci://ghcr.io/misiektoja/certrally:0.1.0 --repo misiektoja/certrally
-```
-
-The release also carries the archive provenance as `certrally_0.1.0.intoto.jsonl`, for `gh attestation verify --bundle` without access to GitHub's API.
-
-Each archive has an SPDX SBOM next to it, named after the archive with `.sbom.json` appended. The image carries its SBOM as an attestation.
+Releases are signed with cosign and carry GitHub build provenance and SBOMs. [docs/verify.md](docs/verify.md) shows how to check a download.
 
 ## Usage
 
@@ -91,6 +71,8 @@ certrally --version
 
 The CMP commands also run under `certrally cmp`, such as `certrally cmp enroll`. Without the prefix, `enroll`, `revoke`, `cacerts`, `ping` and `mock` use CMP. The EST commands run under [`certrally est`](#enroll-over-est).
 
+Output is coloured only on a terminal. [docs/output.md](docs/output.md) describes `--color`, `NO_COLOR` and `FORCE_COLOR`.
+
 ### Try it with a test CA
 
 `certrally mock` runs a CMP test CA on your machine and prints an `enroll` command that works against it:
@@ -99,7 +81,7 @@ The CMP commands also run under `certrally cmp`, such as `certrally cmp enroll`.
 certrally mock --ca-out ca.pem
 ```
 
-Run the printed command in another terminal. Running `certrally enroll` without flags there asks for the settings instead. The test CA listens on `127.0.0.1:8080` unless `--listen` names another address. It generates a shared secret for the reference `demo` unless `--ref` and `--secret-file` or `CERTRALLY_SECRET` provide one. It logs one line per request and keeps its key and certificates in memory, so every run starts empty.
+Run the printed command in another terminal. Running `certrally enroll` without flags there asks for the settings instead. The test CA keeps everything in memory, so every run starts empty. `certrally mock --help` lists its address and secret options.
 
 ### Enroll a certificate
 
@@ -161,13 +143,9 @@ Before it sends the request, certrally prints the same request as one command fo
 
 Notes:
 
-* The shared secret comes from `--secret-file` (`-` reads standard input), the `CERTRALLY_SECRET` environment variable or a prompt on a terminal, in that order. It is never accepted as a command line argument. One trailing line ending is removed.
 * With a shared secret, the request header names `CN=<ref>` as the sender and `<ref>` as the key identifier, as RFC 9483 asks. Without `--subject` or `--san` the certificate is requested for `CN=<ref>`.
 * Shared-secret requests are protected with PBMAC1. `--mac pbm` selects PasswordBasedMac for CAs that accept only that, such as the `openssl cmp` mock server.
-* certrally generates an `ecdsa-p256` key unless `--key-type`, `--new-key` or `--csr` says otherwise. Key types are `ecdsa-p256`, `ecdsa-p384`, `ecdsa-p521`, `ed25519`, `rsa-2048`, `rsa-3072`, `rsa-4096`, `ml-dsa-44`, `ml-dsa-65`, `ml-dsa-87` and the composite ML-DSA combinations such as `mldsa65-ecdsa-p256-sha512`. Shell completion lists them all.
-* Private keys are written as unencrypted PKCS#8 PEM with mode 0600. The key is written before the certificate. certrally refuses to replace an existing file unless `--force` is given. It checks this before sending anything.
-* `--chain-out` saves the issuing CA certificates from the response, issuer first.
-* `--timeout` (default 5 minutes) bounds the whole exchange, including polling while the CA prepares the certificate.
+* Private keys are written as unencrypted PKCS#8 PEM with mode 0600. `certrally keygen --list` prints the key types.
 
 ### Trust the CA
 
@@ -230,7 +208,7 @@ certrally ping --server https://ca.example.com/.well-known/cmp --count 3
   Note        An error is the expected answer, because the request carries no protection.
 ```
 
-With `--ca-cert` the answer must also be signed by that CA. A CA that leaves its errors unprotected fails this check. `ping` exits with 0 when the server answers with CMP, 2 when it does not, 4 when the answer fails the `--ca-cert` check and 6 when it breaks `--profile strict`.
+With `--ca-cert` the answer must also be signed by that CA. A CA that leaves its errors unprotected fails this check.
 
 ### Generate a key
 
@@ -241,7 +219,7 @@ certrally keygen --key-type ml-dsa-65 --out device.key \
   --csr-out device.csr --subject CN=device-42 --san device-42.example.com
 ```
 
-`--pub-out` also saves the public key. `--list` prints the key types. The key is saved like enroll keys, as unencrypted PKCS#8 PEM with mode 0600.
+`--pub-out` also saves the public key. The key is saved like enroll keys, as unencrypted PKCS#8 PEM with mode 0600.
 
 ### Enroll over EST
 
@@ -276,9 +254,7 @@ certrally est cacerts --server https://est.example.com --bootstrap \
   --fingerprint 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08 --out ca.pem
 ```
 
-When the server answers that a request is pending, `est enroll`, `est reenroll` and `est serverkeygen` wait as its `Retry-After` header asks and send the request again, within `--timeout` (default 5 minutes). `--tls-unique` binds the request to the TLS session (RFC 7030 section 3.5), which works only over TLS 1.2. `est serverkeygen` saves an unencrypted server key. It cannot decrypt a key the server encrypts.
-
-`certrally est mock` runs an EST test CA on `127.0.0.1:8443` and prints commands that work against it. It accepts the password of `--user` (default `demo`) and certificates it issued. `--srp-listen 127.0.0.1:8444` also serves TLS-SRP for the same user. `--retry-after` answers the first request for each key with `202 Accepted`, to test waiting. It generates a password unless `--password-file` or `CERTRALLY_PASSWORD` gives one.
+[docs/est.md](docs/est.md) describes how certrally waits for a pending request, channel binding with `--tls-unique`, server-generated keys and the `est mock` test CA.
 
 ### Check responses against RFC 9483 and RFC 7030
 
@@ -299,65 +275,14 @@ certrally cacerts --server https://ca.example.com/.well-known/cmp --ref device-4
 
 ### Inspect recorded messages
 
-`inspect` decodes the messages in a capture file, or in files that hold a message as DER, base64 or hex or several as PEM blocks. It shows the header, the protection, the body and the extra certificates of each CMP message:
+`inspect` decodes recorded CMP and EST messages and checks their signatures and MACs. `lint` checks recorded responses against the [profile rules](docs/profiles.md) and exits with status 6 when a response breaks one:
 
 ```bash
 certrally inspect run.jsonl --ca-cert ca.pem
-```
-
-```text
-← kup  run.jsonl:3  ECDSA SHA-256  1062 bytes  2026-10-13 11:02:04 UTC
-  Header
-    Version          2
-    Sender           CN=Example CA
-    Recipient        CN=device-42
-    Message time     2026-10-13 11:02:04 UTC
-    Transaction ID   C0:F1:6D:53:1F:6D:D3:FE:45:E3:D6:E2:2C:BD:DD:8E
-    Sender nonce     8B:CD:7D:93:2E:99:E3:0A:91:3B:00:0E:BB:C0:D6:5D
-    Recipient nonce  14:09:0A:43:F8:0F:2D:22:A5:74:49:BA:32:61:48:71
-    Sender KID       3C:9F:DD:E9:90:36:2B:9D:3B:B9:8E:9F:A1:FB:C5:E4:2C:DF:B1:89
-    General info     confirmWaitTime
-  Protection
-    Algorithm  ECDSA SHA-256
-    Signature  valid
-    Signer     CN=Example CA
-    Trust      chains to --ca-cert
-  Certificate response 0
-    Status   accepted
-    Subject  CN=device-42
-    Issuer   CN=Example CA
-    Serial   BB:CB:71:D5:56:10:E4:A2:CC:BD:89:CA:90:CC:B9:51
-    Valid    2026-10-13 11:01 UTC to 2027-10-13 11:02 UTC
-    Key      ECDSA P-256
-  Extra certificate 1 (signer)
-    Subject  CN=Example CA
-    ...
-```
-
-For EST it shows the HTTP exchange from a capture and the PKCS#10 request, the certificates or the CSR attributes. It also reads PKCS#10 requests, PKCS#7 certificate files and CSR attributes saved as files.
-
-certrally checks a signature with the certificates in the message and in `--ca-cert`, even when the signer certificate has expired. When `senderKID` names none of them, a certificate that verifies the signature still counts as the signer. With `--ca-cert` it also checks that the signer chains to those certificates. It checks the chain at the time the capture recorded the message, or at the current time for other files. It checks a MAC with the shared secret from `--secret-file` or `CERTRALLY_SECRET` and leaves it unchecked without one.
-
-`lint` checks recorded responses against the [profile rules](docs/profiles.md) and exits with status 6 when a response breaks one. It checks EST responses only in capture files, because the rules concern the HTTP response:
-
-```bash
 certrally lint run.jsonl
 ```
 
-A FILE of `-` reads standard input.
-
-### Colour
-
-certrally colours its output only when it writes to a terminal. These settings change that, highest priority first:
-
-| Setting | Effect |
-|---|---|
-| `--color always` or `--color never` | Always or never use colour |
-| `NO_COLOR` set to any non-empty value | No colour. Bold and other text styles remain on a terminal |
-| `FORCE_COLOR` or `CLICOLOR_FORCE=1` | Colour even when the output is a pipe or a file. `FORCE_COLOR=0` and `FORCE_COLOR=false` have no effect |
-| `TERM=dumb` | No colour |
-
-The colour depth comes from `TERM` and `COLORTERM`.
+Both also read messages saved as DER, base64, hex or PEM. [docs/inspect.md](docs/inspect.md) shows the output and how signatures are checked.
 
 ### Exit status
 

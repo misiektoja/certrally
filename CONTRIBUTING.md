@@ -24,7 +24,7 @@ make build
 
 Run `make actionlint` when a workflow changes, `make govulncheck` when a dependency changes and `make gitleaks` before pushing. `make scan-image` builds the container image and scans it with Trivy. It needs Docker. `make go-patch-check` reports whether a newer Go patch release is out. `make help` lists every target.
 
-User-facing behavior changes update the README and add an entry to [RELEASE_NOTES.md](RELEASE_NOTES.md). When the output of `enroll` or `revoke` changes, run `make demo` to record `docs/demo.gif` again. It needs [VHS](https://github.com/charmbracelet/vhs), ttyd and ffmpeg. Port 8080 must be free.
+User-facing behavior changes update the README or the page in `docs/` that describes them and add an entry to [RELEASE_NOTES.md](RELEASE_NOTES.md). When the output of `enroll` or `revoke` changes, run `make demo` to record `docs/demo.gif` again. It needs [VHS](https://github.com/charmbracelet/vhs), ttyd and ffmpeg. Port 8080 must be free.
 
 Every change must comply with the Developer Certificate of Origin 1.1. Use `git commit -s` only when you intend to provide that certification.
 
