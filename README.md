@@ -1,6 +1,6 @@
 # certrally
 
-certrally is a command line client for certificate enrollment with the Certificate Management Protocol (CMP, RFC 9810).
+certrally is a command line client for certificate enrollment with the Certificate Management Protocol (CMP, RFC 9810) and Enrollment over Secure Transport (EST, RFC 7030).
 
 > [!NOTE]
 > certrally is in early development and has not been released yet.
@@ -12,15 +12,14 @@ certrally is a command line client for certificate enrollment with the Certifica
 * Revocation (`rr`) and the RFC 9483 support messages for CA certificates, root CA updates, request templates and CRLs
 * `ping` to check that a server answers CMP and `keygen` to create keys and requests offline
 * `mock` to run a CMP test CA on your machine, for trying certrally and testing scripts
+* EST enrollment, renewal, server key generation, CA certificates and CSR attributes with a password, a TLS client certificate or TLS-SRP, and `est mock` as an EST test CA
 * ML-DSA and composite ML-DSA keys alongside RSA, ECDSA and Ed25519
 * No trust setup needed: certrally trusts the CA it talks to or the one you name with `--ca-cert`
 * A live diagram of every message in the exchange and plain explanations of failures
-* Warnings about responses that break RFC 9483 and a strict profile that rejects them
+* Warnings about responses that break RFC 9483 or RFC 7030 and a strict profile that rejects them
 * JSON output for scripts and capture files that record every message of a run
-* `inspect` and `lint` to decode recorded messages and check them against RFC 9483
+* `inspect` and `lint` to decode recorded messages and check them against RFC 9483 and RFC 7030
 * Exit statuses that tell scripts why a request failed
-
-EST support is planned after CMP.
 
 ## Install
 
@@ -82,7 +81,7 @@ certrally --version
 
 `certrally completion bash|zsh|fish|powershell` prints a shell completion script. `certrally man` prints a man page.
 
-The CMP commands also run under `certrally cmp`, such as `certrally cmp enroll`. Without the prefix, `enroll`, `revoke`, `cacerts`, `ping` and `mock` use CMP.
+The CMP commands also run under `certrally cmp`, such as `certrally cmp enroll`. Without the prefix, `enroll`, `revoke`, `cacerts`, `ping` and `mock` use CMP. The EST commands run under [`certrally est`](#enroll-over-est).
 
 ### Try it with a test CA
 
@@ -236,9 +235,46 @@ certrally keygen --key-type ml-dsa-65 --out device.key \
 
 `--pub-out` also saves the public key. `--list` prints the key types. The key is saved like enroll keys, as unencrypted PKCS#8 PEM with mode 0600.
 
-### Check responses against RFC 9483
+### Enroll over EST
 
-certrally warns when a response breaks a rule of the Lightweight CMP Profile (RFC 9483) that some CAs do not follow, such as a missing chain for the new certificate. `--profile strict` rejects such responses instead and exits with status 6. `lint` checks [recorded responses](#inspect-recorded-messages) the same way. [docs/profiles.md](docs/profiles.md) lists the rules. [docs/interop.md](docs/interop.md) describes how tested CAs behave.
+The `certrally est` commands talk to an EST server over HTTPS. `--server` is the address of the server, such as `https://est.example.com`. Add `/.well-known/est/LABEL` to choose a CA on a server that offers several.
+
+| Command | What it does |
+|---|---|
+| `est cacerts` | Gets the CA certificates. `--out` saves them |
+| `est csrattrs` | Shows the attributes, extensions and key types the CA wants in a request |
+| `est enroll` | Requests a certificate for a new key, `--new-key` or `--csr` |
+| `est reenroll` | Renews the certificate in `--cert`, with the same subject and subjectAltName |
+| `est serverkeygen` | Requests a certificate and a key that the server generates |
+| `est mock` | Runs an EST test CA on your machine |
+
+```bash
+certrally est enroll --server https://est.example.com --tls-ca-cert ca.pem \
+  --user device-42 --password-file password.txt \
+  --subject CN=device-42 --san device-42.example.com \
+  --cert-out device.pem --key-out device.key
+```
+
+A client signs in with one of these:
+
+* **A password** over HTTP Basic authentication with `--user`. The password comes from `--password-file` (`-` reads standard input), the `CERTRALLY_PASSWORD` environment variable or a prompt on a terminal, in that order.
+* **A TLS client certificate** with `--cert` and `--key`. `est reenroll --cert device.pem --key device.key` renews a certificate this way. Without `--key`, renewal signs in with `--user` instead, as RFC 7030 section 2.3 allows for certificates that cannot be used for TLS.
+* **TLS-SRP** with `--srp` and `--user`. The password then authenticates both sides over TLS 1.2, so the server needs no certificate and `--srp` cannot be combined with `--tls-ca-cert`.
+
+The server certificate is checked against the system roots or against the CA certificates in `--tls-ca-cert`. When nothing can check it yet, `est cacerts --bootstrap` connects without the check (RFC 7030 section 4.1.1). It saves the certificates only after the fingerprint matches `--fingerprint` or a person confirms it on a terminal:
+
+```bash
+certrally est cacerts --server https://est.example.com --bootstrap \
+  --fingerprint 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08 --out ca.pem
+```
+
+When the server answers that a request is pending, `est enroll`, `est reenroll` and `est serverkeygen` wait as its `Retry-After` header asks and send the request again, within `--timeout` (default 5 minutes). `--tls-unique` binds the request to the TLS session (RFC 7030 section 3.5), which works only over TLS 1.2. `est serverkeygen` saves an unencrypted server key. It cannot decrypt a key the server encrypts.
+
+`certrally est mock` runs an EST test CA on `127.0.0.1:8443` and prints commands that work against it. It accepts the password of `--user` (default `demo`) and certificates it issued. `--srp-listen 127.0.0.1:8444` also serves TLS-SRP for the same user. `--retry-after` answers the first request for each key with `202 Accepted`, to test waiting. It generates a password unless `--password-file` or `CERTRALLY_PASSWORD` gives one.
+
+### Check responses against RFC 9483 and RFC 7030
+
+certrally warns when a response breaks a rule of the Lightweight CMP Profile (RFC 9483) that some CAs do not follow, such as a missing chain for the new certificate. EST responses are checked against RFC 7030, for example for a chain where only the issued certificate belongs. `--profile strict` rejects such responses instead and exits with status 6. `lint` checks [recorded responses](#inspect-recorded-messages) the same way. [docs/profiles.md](docs/profiles.md) lists the rules. [docs/interop.md](docs/interop.md) describes how tested CAs behave.
 
 ### Use certrally in scripts
 
@@ -255,7 +291,7 @@ certrally cacerts --server https://ca.example.com/.well-known/cmp --ref device-4
 
 ### Inspect recorded messages
 
-`inspect` decodes the messages in a capture file, or in files that hold a message as DER, base64 or hex or several as PEM blocks. It shows the header, the protection, the body and the extra certificates of each message:
+`inspect` decodes the messages in a capture file, or in files that hold a message as DER, base64 or hex or several as PEM blocks. It shows the header, the protection, the body and the extra certificates of each CMP message:
 
 ```bash
 certrally inspect run.jsonl --ca-cert ca.pem
@@ -290,9 +326,11 @@ certrally inspect run.jsonl --ca-cert ca.pem
     ...
 ```
 
+For EST it shows the HTTP exchange from a capture and the PKCS#10 request, the certificates or the CSR attributes. It also reads PKCS#10 requests, PKCS#7 certificate files and CSR attributes saved as files.
+
 certrally checks a signature with the certificates in the message and in `--ca-cert`, even when the signer certificate has expired. When `senderKID` names none of them, a certificate that verifies the signature still counts as the signer. With `--ca-cert` it also checks that the signer chains to those certificates. It checks the chain at the time the capture recorded the message, or at the current time for other files. It checks a MAC with the shared secret from `--secret-file` or `CERTRALLY_SECRET` and leaves it unchecked without one.
 
-`lint` checks recorded responses against the [profile rules](docs/profiles.md) and exits with status 6 when a response breaks one:
+`lint` checks recorded responses against the [profile rules](docs/profiles.md) and exits with status 6 when a response breaks one. It checks EST responses only in capture files, because the rules concern the HTTP response:
 
 ```bash
 certrally lint run.jsonl
@@ -319,8 +357,8 @@ The colour depth comes from `TERM` and `COLORTERM`.
 |---|---|
 | 0 | Success |
 | 1 | Invalid command line or local error, such as an unreadable file |
-| 2 | The server could not be reached, did not answer in time or did not answer with CMP |
-| 3 | The CA rejected the request |
+| 2 | The server could not be reached, did not answer in time or did not answer with CMP or EST |
+| 3 | The CA rejected the request, or the EST server refused it or the sign-in |
 | 4 | The response broke the protocol or failed verification |
 | 5 | The CA issued the certificate but the confirmation failed. certrally saves the certificate. Check with the CA before retrying, because a retry can issue a second certificate |
 | 6 | A response broke a rule of `--profile strict`, or `lint` found a response that breaks a rule |
