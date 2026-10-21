@@ -95,6 +95,45 @@ gitleaks: gitleaks-tool ## Scan the working tree and the commit history for leak
 	"$(GITLEAKS)" dir . --config .gitleaks.toml --redact --no-banner
 	"$(GITLEAKS)" git . --config .gitleaks.toml --redact --no-banner --log-opts="$(GITLEAKS_LOG_OPTS)"
 
+# go-patch-check reaches go.dev, so it is not part of the other checks: govulncheck already fails on the
+# consequence and an offline run should not fail for a reason unrelated to any vulnerability.
+.PHONY: go-patch-check
+go-patch-check: ## Report whether go.mod declares the newest Go patch in its release series.
+	hack/go-patch-version.sh check
+
+.PHONY: go-patch-update
+go-patch-update: ## Move go.mod and the README build requirement to the newest Go patch in its series.
+	hack/go-patch-version.sh update
+
+# SBOM_VERSION names the SBOM after VERSION, or after the commit when no release is being made.
+SBOM_VERSION = $(if $(VERSION),$(VERSION),$(shell git rev-parse --short HEAD))
+SBOM_FILE = dist/certrally-$(SBOM_VERSION)-sbom.cdx.json
+
+.PHONY: sbom
+sbom: cyclonedx-gomod ## Generate a CycloneDX software bill of materials for the module. Set VERSION for a release.
+	mkdir -p dist
+	"$(CYCLONEDX_GOMOD)" mod -licenses -json -output "$(SBOM_FILE)" .
+	@echo "Wrote $(SBOM_FILE)"
+
+# SCAN_PLATFORM is the platform of the image scan-image builds and scans.
+SCAN_PLATFORM ?= linux/amd64
+SCAN_DIR ?= .cache/scan
+# TRIVY_IMAGE runs the scanner as a container so no scanner binary has to be installed.
+TRIVY_IMAGE ?= aquasec/trivy:0.74.0
+# TRIVY_CACHE is the Docker volume that keeps the vulnerability database between runs.
+TRIVY_CACHE ?= certrally-trivy-cache
+TRIVY_SEVERITY ?= HIGH,CRITICAL
+
+# scan-image builds the release image from the Dockerfile with a locally built binary, as GoReleaser
+# does. The image reaches the scanner as an archive on standard input, so neither the container
+# runtime socket nor a host directory has to be shared with the scanner.
+.PHONY: scan-image
+scan-image: ## Build the container image for SCAN_PLATFORM and scan it for known vulnerabilities.
+	mkdir -p "$(SCAN_DIR)/$(SCAN_PLATFORM)"
+	CGO_ENABLED=0 GOOS="$(word 1,$(subst /, ,$(SCAN_PLATFORM)))" GOARCH="$(word 2,$(subst /, ,$(SCAN_PLATFORM)))" go build -trimpath -o "$(SCAN_DIR)/$(SCAN_PLATFORM)/certrally" ./cmd/certrally
+	docker build --platform "$(SCAN_PLATFORM)" --tag certrally:scan --file Dockerfile "$(SCAN_DIR)"
+	docker save certrally:scan | docker run --rm -i -v "$(TRIVY_CACHE)":/root/.cache/trivy --entrypoint sh "$(TRIVY_IMAGE)" -c 'cat > /tmp/image.tar && trivy image --scanners vuln --severity "$(TRIVY_SEVERITY)" --ignore-unfixed --exit-code 1 --input /tmp/image.tar'
+
 ##@ Release
 
 # VERSION names the release tag, for example v0.1.0.
@@ -138,6 +177,7 @@ GOVULNCHECK ?= $(LOCALBIN)/govulncheck
 GITLEAKS ?= $(LOCALBIN)/gitleaks
 ACTIONLINT ?= $(LOCALBIN)/actionlint
 GORELEASER ?= $(LOCALBIN)/goreleaser
+CYCLONEDX_GOMOD ?= $(LOCALBIN)/cyclonedx-gomod
 
 ## Tool Versions
 GOLANGCI_LINT_VERSION ?= v2.14.0
@@ -146,6 +186,7 @@ GITLEAKS_VERSION ?= v8.30.1
 ACTIONLINT_VERSION ?= v1.7.12
 # The release workflow installs the same GoReleaser version.
 GORELEASER_VERSION ?= v2.18.3
+CYCLONEDX_GOMOD_VERSION ?= v1.11.0
 
 .PHONY: golangci-lint
 golangci-lint: | $(LOCALBIN) ## Download golangci-lint locally if necessary.
@@ -166,6 +207,10 @@ actionlint-tool: | $(LOCALBIN) ## Download actionlint locally if necessary.
 .PHONY: goreleaser
 goreleaser: | $(LOCALBIN) ## Download GoReleaser locally if necessary.
 	$(call go-install-tool,$(GORELEASER),github.com/goreleaser/goreleaser/v2,$(GORELEASER_VERSION))
+
+.PHONY: cyclonedx-gomod
+cyclonedx-gomod: | $(LOCALBIN) ## Download cyclonedx-gomod locally if necessary.
+	$(call go-install-tool,$(CYCLONEDX_GOMOD),github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod,$(CYCLONEDX_GOMOD_VERSION))
 
 # go-install-tool installs a package at a pinned version under a versioned directory and points the
 # unversioned tool path at it, so a version bump installs the new tool instead of keeping the old one.
