@@ -1,5 +1,14 @@
 # certrally
 
+[![GitHub Release](https://img.shields.io/github/v/release/misiektoja/certrally?style=flat-square&color=blue)](https://github.com/misiektoja/certrally/releases)
+[![GitHub Stars](https://img.shields.io/github/stars/misiektoja/certrally?style=flat-square&color=magenta)](https://github.com/misiektoja/certrally)
+[![Last Commit](https://img.shields.io/github/last-commit/misiektoja/certrally?style=flat-square&color=green)](https://github.com/misiektoja/certrally/commits/main)
+[![Maintenance](https://img.shields.io/badge/maintenance-active-brightgreen?style=flat-square)](https://github.com/misiektoja/certrally)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square)](LICENSE)
+[![Tests](https://github.com/misiektoja/certrally/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/misiektoja/certrally/actions/workflows/test.yml)
+[![Supply chain](https://github.com/misiektoja/certrally/actions/workflows/supply-chain.yml/badge.svg?branch=main)](https://github.com/misiektoja/certrally/actions/workflows/supply-chain.yml)
+[![OpenSSF Scorecard](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.scorecard.dev%2Fprojects%2Fgithub.com%2Fmisiektoja%2Fcertrally&query=%24.score&label=openssf%20scorecard&style=flat-square)](https://scorecard.dev/viewer/?uri=github.com/misiektoja/certrally)
+
 certrally is a command line client for certificate enrollment with the Certificate Management Protocol (CMP, RFC 9810) and Enrollment over Secure Transport (EST, RFC 7030).
 
 ![certrally enrolls an ML-DSA-65 certificate from the test CA and revokes it](docs/demo.gif)
@@ -65,6 +74,8 @@ Archives and images also carry GitHub build provenance:
 gh attestation verify certrally_0.1.0_linux_amd64.tar.gz --repo misiektoja/certrally
 gh attestation verify oci://ghcr.io/misiektoja/certrally:0.1.0 --repo misiektoja/certrally
 ```
+
+The release also carries the archive provenance as `certrally_0.1.0.intoto.jsonl`, for `gh attestation verify --bundle` without access to GitHub's API.
 
 Each archive has an SPDX SBOM next to it, named after the archive with `.sbom.json` appended. The image carries its SBOM as an attestation.
 
