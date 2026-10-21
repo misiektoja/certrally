@@ -1,9 +1,10 @@
-// Package ui renders the ladder view of a CMP exchange and the result reports of certrally.
+// Package ui renders the ladder view of a CMP or EST exchange and the result reports of certrally.
 package ui
 
 import (
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 	"time"
 	"unicode"
@@ -22,6 +23,8 @@ var (
 	good    = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
 	warn    = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
 	bad     = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
+	// plainStyle leaves text in the terminal's own colour.
+	plainStyle = lipgloss.NewStyle()
 )
 
 // ladderWidth is the number of columns between the two lifelines.
@@ -57,11 +60,36 @@ func (l *Ladder) Event(ev trace.Event) {
 	case trace.Failure:
 		l.line(label(bad, Sanitize(ev.Transport.Error()), ""), false)
 		l.line(label(bad, "─ ─ ─ ✗ no response after "+formatDuration(ev.Elapsed), ""), false)
+	case trace.Connect:
+		l.line(connectLabel(ev.TLS), false)
+		l.arrowBoth()
 	}
+}
+
+// Note writes a remark between the lifelines, such as a wait the server asked for.
+func (l *Ladder) Note(text string) {
+	text = truncate(Sanitize(text), ladderWidth-2)
+	pad := (ladderWidth - 2 - utf8.RuneCountInString(text)) / 2
+	l.line(strings.Repeat(" ", pad)+faint.Render(text), false)
+}
+
+// connectLabel describes a TLS connection.
+func connectLabel(info *trace.TLSInfo) string {
+	details := info.CipherSuite
+	switch {
+	case info.SRPUser != "":
+		details += "  SRP " + Sanitize(info.SRPUser)
+	case info.Server != "":
+		details += "  " + Sanitize(info.Server)
+	}
+	return label(plainStyle, info.Version, details)
 }
 
 // requestLabel describes a request message.
 func requestLabel(ev trace.Event) string {
+	if e := ev.EST; e != nil {
+		return estRequestLabel(e, ev.Size)
+	}
 	if ev.Message == nil {
 		return label(request, "request", formatSize(ev.Size))
 	}
@@ -73,6 +101,9 @@ func responseLabel(ev trace.Event) (string, lipgloss.Style) {
 	timing := formatDuration(ev.Elapsed)
 	if ev.Transport != nil {
 		return label(bad, Sanitize(ev.Transport.Error()), timing), bad
+	}
+	if ev.EST != nil {
+		return estResponseLabel(ev, timing)
 	}
 	m := ev.Message
 	if m == nil {
@@ -100,6 +131,69 @@ func responseLabel(ev trace.Event) (string, lipgloss.Style) {
 		parts = append(parts, fmt.Sprintf("HTTP %d", ev.HTTPStatus))
 	}
 	return label(style, strings.Join(parts, "  "), m.Protection+"  "+formatSize(ev.Size)+"  "+timing), style
+}
+
+// estRequestLabel describes an EST request by its operation, method and subject.
+func estRequestLabel(e *trace.ESTSummary, size int) string {
+	head := e.Operation
+	switch {
+	case head == "":
+		head = e.Path
+	case e.Label != "":
+		head = e.Label + "/" + head
+	}
+	details := []string{e.Method}
+	if e.Subject != "" {
+		details = append(details, e.Subject)
+	}
+	if size > 0 {
+		details = append(details, formatSize(size))
+	}
+	return label(request, Sanitize(head), Sanitize(strings.Join(details, "  ")))
+}
+
+// estResponseLabel describes an EST response and returns the style its arrow uses.
+func estResponseLabel(ev trace.Event, timing string) (string, lipgloss.Style) {
+	e := ev.EST
+	status := fmt.Sprintf("HTTP %d %s", ev.HTTPStatus, http.StatusText(ev.HTTPStatus))
+	style := good
+	var parts []string
+	switch {
+	case e.Problem != "":
+		style, parts = bad, []string{status, e.Problem}
+	case ev.HTTPStatus == http.StatusOK && e.Content != "":
+		parts = []string{e.Content}
+		if e.Certificates > 0 {
+			parts = append(parts, plural(e.Certificates, "certificate", "certificates"))
+		}
+	case ev.HTTPStatus == http.StatusAccepted:
+		style, parts = warn, []string{status}
+	case ev.HTTPStatus/100 == 2:
+		parts = []string{status}
+	case ev.HTTPStatus == http.StatusNotFound && e.Operation == "csrattrs":
+		parts = []string{status, "no attributes"}
+	default:
+		style, parts = bad, []string{status}
+		if e.Text != "" {
+			parts = append(parts, fmt.Sprintf("%q", Sanitize(e.Text)))
+		}
+	}
+	if e.RetryAfter != nil {
+		parts = append(parts, fmt.Sprintf("retry after %d s", *e.RetryAfter))
+	}
+	details := timing
+	if ev.Size > 0 {
+		details = formatSize(ev.Size) + "  " + timing
+	}
+	return label(style, strings.Join(parts, "  "), details), style
+}
+
+// plural returns n followed by the singular or plural noun.
+func plural(n int, singular, plural string) string {
+	if n == 1 {
+		return "1 " + singular
+	}
+	return fmt.Sprintf("%d %s", n, plural)
 }
 
 // label joins a highlighted head and faint details, shortening the head so that both fit between
@@ -135,6 +229,12 @@ func (l *Ladder) arrow(style lipgloss.Style, back bool) {
 		a = shaft + "▶"
 	}
 	_, _ = fmt.Fprintf(l.w, "  %s %s %s\n", faint.Render("│"), style.Render(a), faint.Render("│"))
+}
+
+// arrowBoth writes a faint arrow that points both ways, for a handshake.
+func (l *Ladder) arrowBoth() {
+	a := "◀" + strings.Repeat("─", ladderWidth-4) + "▶"
+	_, _ = fmt.Fprintf(l.w, "  %s %s %s\n", faint.Render("│"), faint.Render(a), faint.Render("│"))
 }
 
 // formatSize returns a byte count for display.

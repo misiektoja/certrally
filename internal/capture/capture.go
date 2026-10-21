@@ -1,5 +1,5 @@
-// Package capture writes the messages of an exchange to a file, so that they can be inspected or
-// replayed later.
+// Package capture writes the messages of a CMP or EST exchange to a file, so that they can be
+// inspected or replayed later.
 //
 // A capture file holds JSON Lines. Each run appends a "start" line, one line per message event in
 // the trace.Record form with the message bytes and an "end" line with the exit status. A file can
@@ -23,13 +23,15 @@ const Format = 1
 // Start describes a run. It is the first line the run writes.
 type Start struct {
 	// Kind is always "start".
-	Kind    string    `json:"kind"`
-	Format  int       `json:"format"`
-	Tool    string    `json:"tool"`
-	Version string    `json:"version,omitempty"`
-	Command string    `json:"command"`
-	Server  string    `json:"server"`
-	Time    time.Time `json:"time"`
+	Kind   string `json:"kind"`
+	Format int    `json:"format"`
+	// Protocol is "est" for an EST run. It is absent for a CMP run.
+	Protocol string    `json:"protocol,omitempty"`
+	Tool     string    `json:"tool"`
+	Version  string    `json:"version,omitempty"`
+	Command  string    `json:"command"`
+	Server   string    `json:"server"`
+	Time     time.Time `json:"time"`
 }
 
 // End records how a run finished. It is the last line the run writes.

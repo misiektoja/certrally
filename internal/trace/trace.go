@@ -1,5 +1,5 @@
-// Package trace records the CMP messages a client exchanges over HTTP, for the ladder view and for
-// telling transport failures apart from protocol failures.
+// Package trace records the CMP or EST messages a client exchanges over HTTP, for the ladder view
+// and for telling transport failures apart from protocol failures.
 package trace
 
 import (
@@ -30,6 +30,8 @@ const (
 	Response
 	// Failure is a request that got no HTTP response.
 	Failure
+	// Connect is a TLS connection the client opened.
+	Connect
 )
 
 // Event is one step of an exchange.
@@ -48,7 +50,13 @@ type Event struct {
 	DER []byte
 	// Message summarizes the body when it parses as a PKIMessage.
 	Message *Summary
-	// Transport is set when Kind is Failure or when a response cannot carry CMP, such as a 404 page.
+	// EST summarizes an EST request or response. DER then holds the decoded message instead of the
+	// body.
+	EST *ESTSummary
+	// TLS describes the connection of a Connect event.
+	TLS *TLSInfo
+	// Transport is set when Kind is Failure or when a response cannot carry CMP or EST, such as a
+	// 404 page.
 	Transport error
 }
 
@@ -95,14 +103,27 @@ type Record struct {
 	StatusText    []string `json:"statusText,omitempty"`
 	CheckAfter    int64    `json:"checkAfter,omitempty"`
 	ExtraCerts    int      `json:"extraCerts,omitempty"`
-	// Problem says why a response cannot be a CMP answer or why a request got no response.
+	// The following fields describe EST requests and responses.
+	Method       string `json:"method,omitempty"`
+	Path         string `json:"path,omitempty"`
+	Operation    string `json:"operation,omitempty"`
+	Content      string `json:"content,omitempty"`
+	Subject      string `json:"subject,omitempty"`
+	Certificates int    `json:"certificates,omitempty"`
+	RetryAfter   *int   `json:"retryAfter,omitempty"`
+	Parts        []Part `json:"parts,omitempty"`
+	Text         string `json:"text,omitempty"`
+	// TLS describes the connection of a connect record.
+	TLS *TLSInfo `json:"tls,omitempty"`
+	// Problem says why a response cannot be a CMP or EST answer, why its EST message does not decode
+	// or why a request got no response.
 	Problem string `json:"problem,omitempty"`
 	// DER is the body, encoded as base64. Capture files include it and JSON output leaves it out.
 	DER []byte `json:"der,omitempty"`
 }
 
 // kindNames are the Record kinds of the event kinds.
-var kindNames = map[Kind]string{Request: "request", Response: "response", Failure: "failure"}
+var kindNames = map[Kind]string{Request: "request", Response: "response", Failure: "failure", Connect: "connect"}
 
 // Record returns the JSON form of ev. withDER includes the message bytes.
 func (ev Event) Record(withDER bool) Record {
@@ -126,6 +147,15 @@ func (ev Event) Record(withDER bool) Record {
 		rec.Status, rec.StatusText, rec.CheckAfter, rec.ExtraCerts = m.Status, m.StatusText, m.CheckAfter, m.ExtraCerts
 		rec.FailInfo = FailureNames(m.FailInfo)
 	}
+	if e := ev.EST; e != nil {
+		rec.Method, rec.Path, rec.Operation, rec.Content = e.Method, e.Path, e.Operation, e.Content
+		rec.Subject, rec.Certificates, rec.RetryAfter = e.Subject, e.Certificates, e.RetryAfter
+		rec.Parts, rec.Text = e.Parts, e.Text
+		if rec.Problem == "" {
+			rec.Problem = e.Problem
+		}
+	}
+	rec.TLS = ev.TLS
 	return rec
 }
 
@@ -151,22 +181,53 @@ func FailureNames(f pkicmp.PKIFailureInfo) []string {
 // more than the client would accept.
 const maxBody = 10 * 1024 * 1024
 
+// Protocol says how a Recorder reads the messages it records.
+type Protocol int
+
+// Protocols.
+const (
+	// CMP reads bodies as DER-encoded PKIMessages (RFC 9811).
+	CMP Protocol = iota
+	// EST reads the base64 bodies of EST operations (RFC 7030).
+	EST
+)
+
 // Recorder is an http.RoundTripper that records every exchange before passing the response on.
 type Recorder struct {
+	// Protocol says how bodies are read. The zero value reads CMP.
+	Protocol Protocol
 	// Next sends the requests. http.DefaultTransport is used when it is nil.
 	Next http.RoundTripper
 	// OnEvent, when set, is called with each event as it is recorded.
 	OnEvent func(Event)
 	// Inspect, when set, is called with each request and its response after both are recorded, if
-	// the response holds a CMP message. An error stops the response from reaching the client.
+	// the response holds a CMP message or is an EST answer. An error stops the response from
+	// reaching the client.
 	Inspect func(request, response Event) error
 
 	mu     sync.Mutex
 	events []Event
 }
 
+// roundTripperFunc adapts a function to http.RoundTripper.
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+// RoundTrip calls f.
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
+// Wrap returns a transport that records into r and sends with next. It lets a client that builds its
+// own transport, such as the go-pki-est client, record every exchange in one Recorder.
+func (r *Recorder) Wrap(next http.RoundTripper) http.RoundTripper {
+	return roundTripperFunc(func(req *http.Request) (*http.Response, error) { return r.roundTrip(next, req) })
+}
+
 // RoundTrip records the request, sends it and records the response or failure.
 func (r *Recorder) RoundTrip(req *http.Request) (*http.Response, error) {
+	return r.roundTrip(r.Next, req)
+}
+
+// roundTrip records the request, sends it with next and records the response or failure.
+func (r *Recorder) roundTrip(next http.RoundTripper, req *http.Request) (*http.Response, error) {
 	var reqBody []byte
 	if req.Body != nil {
 		var err error
@@ -179,10 +240,14 @@ func (r *Recorder) RoundTrip(req *http.Request) (*http.Response, error) {
 		req.Body = io.NopCloser(bytes.NewReader(reqBody))
 	}
 	start := time.Now()
-	reqEvent := Event{Kind: Request, Time: start, Size: len(reqBody), DER: reqBody, Message: Summarize(reqBody)}
+	reqEvent := Event{Kind: Request, Time: start, Size: len(reqBody)}
+	if r.Protocol == EST {
+		reqEvent.EST, reqEvent.DER = SummarizeESTRequest(req, reqBody)
+	} else {
+		reqEvent.DER, reqEvent.Message = reqBody, Summarize(reqBody)
+	}
 	r.add(reqEvent)
 
-	next := r.Next
 	if next == nil {
 		next = http.DefaultTransport
 	}
@@ -207,13 +272,16 @@ func (r *Recorder) RoundTrip(req *http.Request) (*http.Response, error) {
 		ev.Transport = fmt.Errorf("read response: %w", readErr)
 	case len(body) > maxBody:
 		ev.Transport = fmt.Errorf("response body is larger than %d bytes", maxBody)
+	case r.Protocol == EST:
+		ev.EST, ev.DER = SummarizeESTResponse(reqEvent.EST.Operation, resp, body)
+		ev.Transport = estProblem(reqEvent.EST.Operation, resp.StatusCode, ev.ContentType)
 	default:
 		ev.DER = body
 		ev.Transport = transportProblem(resp.StatusCode, ev.ContentType, len(body))
 		ev.Message = Summarize(body)
 	}
 	r.add(ev)
-	if r.Inspect != nil && ev.Transport == nil && ev.Message != nil {
+	if r.Inspect != nil && ev.Transport == nil && (ev.Message != nil || ev.EST != nil) {
 		if err := r.Inspect(reqEvent, ev); err != nil {
 			_ = resp.Body.Close()
 			return nil, err
@@ -250,6 +318,17 @@ func transportProblem(status int, contentType string, size int) error {
 	return nil
 }
 
+// Connected records a TLS connection the client opened.
+func (r *Recorder) Connected(info TLSInfo) {
+	r.add(Event{Kind: Connect, Time: time.Now(), TLS: &info})
+}
+
+// Failed records a request that failed before it was sent, such as one whose TLS handshake
+// failed.
+func (r *Recorder) Failed(err error, elapsed time.Duration) {
+	r.add(Event{Kind: Failure, Time: time.Now(), Elapsed: elapsed, Transport: err})
+}
+
 // add stores an event and reports it.
 func (r *Recorder) add(ev Event) {
 	r.mu.Lock()
@@ -268,7 +347,7 @@ func (r *Recorder) Events() []Event {
 }
 
 // TransportError returns the transport problem of the last event. It returns nil if the last
-// exchange delivered a CMP message or nothing was sent.
+// exchange delivered a CMP message or an EST answer or nothing was sent.
 func (r *Recorder) TransportError() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
