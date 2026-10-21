@@ -259,6 +259,23 @@ func TestEnrollSignedOtherCA(t *testing.T) {
 	}
 }
 
+// TestEnrollMACOtherCA checks that --ca-cert also holds for a MAC-protected enrollment, whose response
+// carries the CA certificate of the server in caPubs.
+func TestEnrollMACOtherCA(t *testing.T) {
+	useSecret(t, testSecret)
+	ca, other := startCA(t, nil), startCA(t, nil)
+	dir := t.TempDir()
+	certOut := filepath.Join(dir, "cert.pem")
+	code, _, errOut := run(t, "enroll", "--server", ca.url, "--ref", testRef, "--ca-cert", other.caFile,
+		"--cert-out", certOut, "--key-out", filepath.Join(dir, "key.pem"))
+	if code != exitProtocol || !strings.Contains(errOut, "does not chain to the certificates in --ca-cert") {
+		t.Errorf("exited with %d, want %d with the --ca-cert hint:\n%s", code, exitProtocol, errOut)
+	}
+	if _, err := os.Stat(certOut); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("%s was written for a certificate from another CA", certOut)
+	}
+}
+
 // TestEnrollComposite checks enrollment of a composite ML-DSA key and that the certificate signs a key
 // update and a revocation.
 func TestEnrollComposite(t *testing.T) {
