@@ -1,6 +1,6 @@
 module github.com/misiektoja/certrally
 
-go 1.27.2
+go 1.27.3
 
 require (
 	charm.land/fang/v2 v2.0.1
