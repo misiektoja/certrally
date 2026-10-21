@@ -1,0 +1,76 @@
+name: Bug report
+description: certrally fails against a CMP or EST server, or behaves differently from its documentation or an RFC
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not report a suspected vulnerability here. Follow [SECURITY.md](https://github.com/misiektoja/certrally/blob/main/SECURITY.md) instead.
+
+        Never paste shared secrets, passwords, private keys or capture files from a production system into an issue. A capture of a shared-secret exchange allows offline guessing of the secret.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you expected, and what you got instead. Cite the RFC section when certrally deviates from it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: command
+    attributes:
+      label: Command
+      description: The command you ran. Redact hostnames, references and credentials.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: The message diagram and the error certrally printed, or the document from `--json`.
+      render: shell
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: certrally version
+      description: The output of `certrally --version`.
+      placeholder: certrally version v0.1.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How certrally was installed
+      options:
+        - Release archive
+        - Homebrew
+        - Container image
+        - go install
+        - Built from source
+    validations:
+      required: true
+
+  - type: input
+    id: server
+    attributes:
+      label: Server and protocol
+      description: The CA or EST server, its version and whether you used CMP or EST.
+      placeholder: EJBCA 9.6.3 over CMP
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: macOS 26.1 on arm64, Ubuntu 24.04 on amd64
+    validations:
+      required: false

@@ -1,0 +1,41 @@
+name: Feature request
+description: Ask for a capability that certrally does not have yet
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The [README](https://github.com/misiektoja/certrally/blob/main/README.md) lists the commands and what each one covers.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: The enrollment or operational problem, not the implementation you have in mind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would solve it
+      description: The command, flag or behavior you would like. Name the RFC section when the request is protocol level.
+    validations:
+      required: true
+
+  - type: input
+    id: server
+    attributes:
+      label: Server this concerns
+      placeholder: EJBCA 9.6.3, OpenSSL 4.0.3, other
+    validations:
+      required: false
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Current workaround
+      description: What you do today instead, if anything.
+    validations:
+      required: false
