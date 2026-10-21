@@ -8,7 +8,7 @@ require (
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/misiektoja/go-composite-mldsa v0.2.1
-	github.com/misiektoja/go-pki-cmp v0.7.1
+	github.com/misiektoja/go-pki-cmp v0.7.2
 	github.com/misiektoja/go-pki-est v1.3.0
 	github.com/misiektoja/go-tls-srp v0.2.0
 	github.com/spf13/cobra v1.10.2

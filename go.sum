@@ -72,8 +72,8 @@ github.com/mattn/go-runewidth v0.0.24 h1:cpokDiIn0MGnhdHwuWnJBITySJ20QyNGnY2kR/a
 github.com/mattn/go-runewidth v0.0.24/go.mod h1:XBkDxAl56ILZc9knddidhrOlY5R/pDhgLpndooCuJAs=
 github.com/misiektoja/go-composite-mldsa v0.2.1 h1:Qf5JSW0jJvlwXDisVob1iC5M5LKlsWhbupPku+a7sDY=
 github.com/misiektoja/go-composite-mldsa v0.2.1/go.mod h1:VDbjLFqIpOSO6Oga14SE3vrdIe5PgfZlk2JtajaUT50=
-github.com/misiektoja/go-pki-cmp v0.7.1 h1:R+D521Lw6hfh4Pu6ujrfVB9yyVNSDG4PGFVLJ3WlsRE=
-github.com/misiektoja/go-pki-cmp v0.7.1/go.mod h1:/zmhvRvXTxiCKYnDsL7NSrdMSG7rec+InhdE5A/p5H0=
+github.com/misiektoja/go-pki-cmp v0.7.2 h1:m64gjIVC1KvlkCGlry1IaGTXZPKXy65XX37BYpCjATA=
+github.com/misiektoja/go-pki-cmp v0.7.2/go.mod h1:dfq/zYepohnXBUcrLoiGjXMr87Mv6/LOTKe1GhmDSbM=
 github.com/misiektoja/go-pki-est v1.3.0 h1:gUW6JWPYwO5rm/s7HJGauo5PeX35b0K43m4DvRPX12k=
 github.com/misiektoja/go-pki-est v1.3.0/go.mod h1:OUkog74BTXcG6977o+NpINL6393G1K1ZbsDK7EDYHkU=
 github.com/misiektoja/go-tls-srp v0.2.0 h1:7iFcvHfgtHNdIwhtxomiciwE3xoC0kPCFmJ0Hm8a1Do=
