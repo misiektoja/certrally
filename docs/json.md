@@ -30,7 +30,7 @@ certrally enroll --server https://ca.example.com/.well-known/cmp --ref device-42
 
 | Field | Type | Meaning |
 |---|---|---|
-| `command` | string | The command, such as `enroll` or `cmp genm crl` |
+| `command` | string | The command as it was typed, such as `enroll`, `cmp enroll` or `cmp genm crl` |
 | `ok` | boolean | `true` when the exit status is 0 |
 | `exitStatus` | number | The exit status of the process |
 | `server` | string | The `--server` URL without any password. Absent when the command does not contact a server or stops before it does |
@@ -97,7 +97,7 @@ An enrollment produces a document like this, shortened:
 
 ### Results
 
-A certificate in a result has `subject`, `issuer`, `serial`, `notBefore`, `notAfter`, `altNames`, `key`, `sha256` and `pem`.
+A certificate in a result has `subject`, `issuer`, `serial`, `notBefore`, `notAfter`, `altNames`, `key`, `sha256` and `pem`. A command run under `cmp`, such as `cmp enroll`, has the result of the same command without the prefix.
 
 | Command | Result fields |
 |---|---|

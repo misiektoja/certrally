@@ -82,6 +82,8 @@ certrally --version
 
 `certrally completion bash|zsh|fish|powershell` prints a shell completion script. `certrally man` prints a man page.
 
+The CMP commands also run under `certrally cmp`, such as `certrally cmp enroll`. Without the prefix, `enroll`, `revoke`, `cacerts`, `ping` and `mock` use CMP.
+
 ### Try it with a test CA
 
 `certrally mock` runs a CMP test CA on your machine and prints an `enroll` command that works against it:
