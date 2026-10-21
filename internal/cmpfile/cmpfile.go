@@ -1,10 +1,12 @@
-// Package cmpfile reads CMP messages from capture files and from files that hold one message as DER,
-// PEM, base64 or hex.
+// Package cmpfile reads CMP and EST messages from capture files and from files that hold one message
+// as DER, PEM, base64 or hex.
 package cmpfile
 
 import (
 	"bufio"
 	"bytes"
+	"crypto/x509"
+	"encoding/asn1"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -17,9 +19,13 @@ import (
 	"time"
 
 	"github.com/misiektoja/go-pki-cmp/pkicmp"
+	est "github.com/misiektoja/go-pki-est"
+	"go.mozilla.org/pkcs7"
+
+	"github.com/misiektoja/certrally/internal/trace"
 )
 
-// Message is a CMP message read from a file.
+// Message is a CMP or EST message read from a file.
 type Message struct {
 	// Source locates the message, such as "run.jsonl:4" for line 4 of a capture file or "ip.der".
 	Source string
@@ -28,15 +34,27 @@ type Message struct {
 	// Run numbers the capture run that holds the message, starting at 1. It is 0 for other files.
 	Run int
 	// Request reports whether the client sent the message. A capture records it. For other files
-	// it follows from the body type.
+	// it follows from the body type or EST content.
 	Request bool
 	// Time is when the capture recorded the message. It is zero for other files.
 	Time time.Time
 	// Server is the server of the capture run.
 	Server string
-	DER    []byte
-	Msg    *pkicmp.PKIMessage
+	// DER is the message. For an EST serverkeygen response it is the certificate part. It is empty
+	// for an EST exchange without a body, such as a cacerts request or an error response.
+	DER []byte
+	// Msg is the CMP message. It is nil for an EST message.
+	Msg *pkicmp.PKIMessage
+	// EST describes an EST message. A capture records the HTTP exchange. For other files only Kind
+	// and Content are set. It is nil for a CMP message.
+	EST *trace.Record
 }
+
+// Kinds of capture lines that hold a message.
+const (
+	kindRequest  = "request"
+	kindResponse = "response"
+)
 
 // maxFileSize bounds what Read loads, well above a capture of many runs.
 const maxFileSize = 256 << 20
@@ -83,23 +101,91 @@ func Parse(name string, data []byte) ([]Message, error) {
 	// Ordinary text can decode as base64, so only a decoded SEQUENCE counts as a message.
 	der, err := decodeText(trimmed)
 	if err != nil || len(der) == 0 || der[0] != 0x30 {
-		return nil, fmt.Errorf("%s: not a capture file and not a CMP message as DER, PEM, base64 or hex", name)
+		return nil, fmt.Errorf("%s: not a capture file and not a CMP or EST message as DER, PEM, base64 or hex", name)
 	}
 	return single(name, der)
 }
 
 // single returns the one message in der.
 func single(name string, der []byte) ([]Message, error) {
-	msg, err := parseMessage(der)
+	m, err := parseAny(name, name, der)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", name, err)
 	}
-	return []Message{fileMessage(name, name, der, msg)}, nil
+	return []Message{m}, nil
 }
 
-// fileMessage returns a message read from a file other than a capture.
+// parseAny parses der as a CMP message or, failing that, as an EST message.
+func parseAny(source, name string, der []byte) (Message, error) {
+	msg, err := parseMessage(der)
+	if err == nil {
+		return fileMessage(source, name, der, msg), nil
+	}
+	if content := estContent(der); content != "" {
+		return estFileMessage(source, name, der, content), nil
+	}
+	return Message{}, fmt.Errorf("%w, and not a PKCS#10 request, certs-only message or CSR attributes of EST", err)
+}
+
+// fileMessage returns a CMP message read from a file other than a capture.
 func fileMessage(source, name string, der []byte, msg *pkicmp.PKIMessage) Message {
 	return Message{Source: source, File: name, Request: IsRequest(msg.Body.Type), DER: der, Msg: msg}
+}
+
+// estFileMessage returns an EST message read from a file other than a capture. Only a PKCS#10
+// request is sent by the client.
+func estFileMessage(source, name string, der []byte, content string) Message {
+	kind := kindResponse
+	if content == trace.ContentPKCS10 {
+		kind = kindRequest
+	}
+	return Message{
+		Source:  source,
+		File:    name,
+		Request: kind == kindRequest,
+		DER:     der,
+		EST:     &trace.Record{Kind: kind, Content: content, Size: len(der)},
+	}
+}
+
+// estContent names the EST message in der: trace.ContentPKCS10, trace.ContentCertsOnly or
+// trace.ContentCSRAttrs. It returns "" when der is none of them.
+func estContent(der []byte) string {
+	if _, err := x509.ParseCertificateRequest(der); err == nil {
+		return trace.ContentPKCS10
+	}
+	if _, err := pkcs7.Parse(der); err == nil {
+		return trace.ContentCertsOnly
+	}
+	if isCSRAttrs(der) {
+		return trace.ContentCSRAttrs
+	}
+	return ""
+}
+
+// isCSRAttrs reports whether der holds CSR attributes (RFC 7030 section 4.5.2) with at least one
+// entry. est.CSRAttrs skips entries that are neither an OID nor an attribute, so it would accept
+// any SEQUENCE.
+func isCSRAttrs(der []byte) bool {
+	var seq []asn1.RawValue
+	if rest, err := asn1.Unmarshal(der, &seq); err != nil || len(rest) > 0 || len(seq) == 0 {
+		return false
+	}
+	for _, item := range seq {
+		if item.Class != asn1.ClassUniversal || item.Tag != asn1.TagOID && item.Tag != asn1.TagSequence {
+			return false
+		}
+	}
+	var attrs est.CSRAttrs
+	return attrs.Unmarshal(der) == nil
+}
+
+// pemContents are the EST contents of PEM block types. Other types are tried as CMP and then EST.
+var pemContents = map[string]string{
+	"CERTIFICATE REQUEST":     trace.ContentPKCS10,
+	"NEW CERTIFICATE REQUEST": trace.ContentPKCS10,
+	"PKCS7":                   trace.ContentCertsOnly,
+	"CMS":                     trace.ContentCertsOnly,
 }
 
 // parseMessage parses der as a PKIMessage with a body.
@@ -135,8 +221,8 @@ func decodeText(text []byte) ([]byte, error) {
 	return nil, errors.New("neither hex nor base64")
 }
 
-// parsePEM returns the message in each PEM block. The block type is not checked, because no type is
-// registered for CMP messages.
+// parsePEM returns the message in each PEM block. A block of a type in pemContents must hold that
+// EST content. Other types are not checked, because no type is registered for CMP messages.
 func parsePEM(name string, data []byte) ([]Message, error) {
 	var msgs []Message
 	for rest := data; ; {
@@ -146,11 +232,18 @@ func parsePEM(name string, data []byte) ([]Message, error) {
 			break
 		}
 		source := fmt.Sprintf("%s#%d", name, len(msgs)+1)
-		msg, err := parseMessage(block.Bytes)
+		if content, ok := pemContents[block.Type]; ok {
+			if estContent(block.Bytes) != content {
+				return nil, fmt.Errorf("%s: PEM block %d (%s) does not decode", name, len(msgs)+1, block.Type)
+			}
+			msgs = append(msgs, estFileMessage(source, name, block.Bytes, content))
+			continue
+		}
+		m, err := parseAny(source, name, block.Bytes)
 		if err != nil {
 			return nil, fmt.Errorf("%s: PEM block %d (%s): %w", name, len(msgs)+1, block.Type, err)
 		}
-		msgs = append(msgs, fileMessage(source, name, block.Bytes, msg))
+		msgs = append(msgs, m)
 	}
 	if len(msgs) == 0 {
 		return nil, fmt.Errorf("%s: no PEM block", name)
@@ -161,22 +254,25 @@ func parsePEM(name string, data []byte) ([]Message, error) {
 // captureLine holds the fields of a capture line that Parse uses. The capture package documents the
 // format.
 type captureLine struct {
-	Kind   string    `json:"kind"`
-	Format int       `json:"format"`
-	Server string    `json:"server"`
-	Time   time.Time `json:"time"`
-	Body   string    `json:"body"`
-	DER    []byte    `json:"der"`
+	Kind     string    `json:"kind"`
+	Format   int       `json:"format"`
+	Protocol string    `json:"protocol"`
+	Server   string    `json:"server"`
+	Time     time.Time `json:"time"`
+	Body     string    `json:"body"`
+	DER      []byte    `json:"der"`
 }
 
 // captureFormat is the newest capture format Parse understands.
 const captureFormat = 1
 
-// parseCapture returns the messages of every run in a capture file. Requests without a response,
-// failures and responses that are not CMP messages, such as an HTML error page, are skipped.
+// parseCapture returns the messages of every run in a capture file. In a CMP run, requests without
+// a response, failures and responses that are not CMP messages, such as an HTML error page, are
+// skipped. In an EST run every request and response is kept, because the HTTP exchange is the EST
+// message even without a body. Connections and failures are skipped.
 func parseCapture(name string, data []byte) ([]Message, error) {
 	var msgs []Message
-	run, server := 0, ""
+	run, server, protocol := 0, "", ""
 	sc := bufio.NewScanner(bytes.NewReader(data))
 	sc.Buffer(make([]byte, 0, 64*1024), maxFileSize)
 	for n := 1; sc.Scan(); n++ {
@@ -197,8 +293,25 @@ func parseCapture(name string, data []byte) ([]Message, error) {
 			if line.Format > captureFormat {
 				return nil, fmt.Errorf("%s:%d: capture format %d is newer than this certrally understands", name, n, line.Format)
 			}
-			run, server = run+1, line.Server
-		case "request", "response":
+			run, server, protocol = run+1, line.Server, line.Protocol
+		case kindRequest, kindResponse:
+			if protocol == "est" {
+				var rec trace.Record
+				if err := json.Unmarshal(text, &rec); err != nil {
+					return nil, fmt.Errorf("%s:%d: not a capture line: %w", name, n, err)
+				}
+				msgs = append(msgs, Message{
+					Source:  fmt.Sprintf("%s:%d", name, n),
+					File:    name,
+					Run:     max(run, 1),
+					Request: line.Kind == kindRequest,
+					Time:    line.Time,
+					Server:  server,
+					DER:     rec.DER,
+					EST:     &rec,
+				})
+				continue
+			}
 			if len(line.DER) == 0 || line.Body == "" {
 				continue
 			}
@@ -210,7 +323,7 @@ func parseCapture(name string, data []byte) ([]Message, error) {
 				Source:  fmt.Sprintf("%s:%d", name, n),
 				File:    name,
 				Run:     max(run, 1),
-				Request: line.Kind == "request",
+				Request: line.Kind == kindRequest,
 				Time:    line.Time,
 				Server:  server,
 				DER:     line.DER,
@@ -225,7 +338,7 @@ func parseCapture(name string, data []byte) ([]Message, error) {
 		return nil, fmt.Errorf("%s: not a capture file, it has no start line", name)
 	}
 	if len(msgs) == 0 {
-		return nil, fmt.Errorf("%s: the capture holds no CMP message", name)
+		return nil, fmt.Errorf("%s: the capture holds no CMP or EST message", name)
 	}
 	return msgs, nil
 }

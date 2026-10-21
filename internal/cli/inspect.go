@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"cmp"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
@@ -45,15 +46,17 @@ func newInspectCommand() *cobra.Command {
 	o := &inspectOptions{}
 	cmd := &cobra.Command{
 		Use:   "inspect FILE... [flags]",
-		Short: "Decode CMP messages from capture or message files",
-		Long: "Decode CMP messages and show their header, protection, body and extra certificates.\n\n" +
+		Short: "Decode CMP and EST messages from capture or message files",
+		Long: "Decode CMP messages and show their header, protection, body and extra certificates. Decode EST " +
+			"requests and responses and show the HTTP exchange, the PKCS#10 request, the certificates or the " +
+			"CSR attributes.\n\n" +
 			fileArgsHelp + "\n\n" +
 			"certrally checks a signature with the certificates the message carries and those in --ca-cert. " +
 			"With --ca-cert it also checks that the signer chains to those certificates at the time the capture " +
 			"recorded the message, or at the current time for other files. It checks a MAC with " +
 			"the shared secret from --secret-file or the " + secret.EnvVar + " environment variable. " +
 			"inspect does not judge the messages. lint checks them against RFC 9483.\n\n" +
-			"Exit status: 0 success, 1 a file cannot be read or holds no CMP message.",
+			"Exit status: 0 success, 1 a file cannot be read or holds no CMP or EST message.",
 		Example: "  certrally enroll --server https://ca.example.com/.well-known/cmp --ref device-42 \\\n" +
 			"    --cert-out device.pem --key-out device.key --capture enroll.jsonl\n" +
 			"  certrally inspect enroll.jsonl",
@@ -210,11 +213,15 @@ func (r *messageReport) problem(format string, args ...any) {
 	r.json.Problems = append(r.json.Problems, fmt.Sprintf(format, args...))
 }
 
-// describeMessage describes m and checks its protection with a.
+// describeMessage describes m and checks the protection of a CMP message with a.
 func describeMessage(m cmpfile.Message, a *anchors) *messageReport {
+	if m.EST != nil {
+		return describeESTMessage(m)
+	}
 	msg := m.Msg
 	r := &messageReport{json: messageJSON{
 		Source:    m.Source,
+		Protocol:  protocolCMP,
 		Direction: "response",
 		Server:    m.Server,
 		Size:      len(m.DER),
@@ -252,11 +259,24 @@ func (r *messageReport) title() (title, details string) {
 	if j.Direction == "request" {
 		arrow = "→"
 	}
-	parts := []string{ui.Sanitize(j.Source), j.Protection.Algorithm, count(j.Size, "byte", "bytes")}
+	name := j.Body
+	parts := []string{ui.Sanitize(j.Source)}
+	if e := j.EST; e != nil {
+		name = ui.Sanitize(cmp.Or(e.Operation, e.Content))
+		if e.HTTPStatus != 0 {
+			parts = append(parts, fmt.Sprintf("HTTP %d", e.HTTPStatus))
+		}
+		if e.Operation != "" && e.Content != "" && e.Content != e.Operation {
+			parts = append(parts, e.Content)
+		}
+	} else {
+		parts = append(parts, j.Protection.Algorithm)
+	}
+	parts = append(parts, count(j.Size, "byte", "bytes"))
 	if j.Time != nil {
 		parts = append(parts, j.Time.Format(messageTimeLayout))
 	}
-	return arrow + " " + j.Body, strings.Join(parts, "  ")
+	return arrow + " " + name, strings.Join(parts, "  ")
 }
 
 // messageTimeLayout formats message times, which need seconds unlike certificate validity.
@@ -300,7 +320,7 @@ func (r *messageReport) header(h *pkicmp.PKIHeader) {
 	for _, item := range h.GeneralInfo {
 		j.GeneralInfo = append(j.GeneralInfo, infoTypeName(item.InfoType))
 	}
-	r.json.Header = j
+	r.json.Header = &j
 	r.section("Header",
 		ui.Field{Name: "Version", Value: strconv.Itoa(h.PVNO)},
 		ui.Field{Name: "Sender", Value: nameText(j.Sender)},
@@ -360,7 +380,7 @@ func keyID(b []byte) string {
 func (r *messageReport) protection(msg *pkicmp.PKIMessage, extra []*x509.Certificate, a *anchors, at time.Time) *x509.Certificate {
 	alg := msg.Header.ProtectionAlg
 	if alg == nil {
-		r.json.Protection = protectionJSON{Algorithm: valueNone}
+		r.json.Protection = &protectionJSON{Algorithm: valueNone}
 		r.section("Protection", ui.Field{Name: "Algorithm", Value: valueNone})
 		return nil
 	}
@@ -385,7 +405,7 @@ func (r *messageReport) protection(msg *pkicmp.PKIMessage, extra []*x509.Certifi
 			}
 		}
 	}
-	r.json.Protection = j
+	r.json.Protection = &j
 	r.section("Protection",
 		ui.Field{Name: "Algorithm", Value: j.Algorithm},
 		ui.Field{Name: kind, Value: checkText(j.Check, j.Problem)},

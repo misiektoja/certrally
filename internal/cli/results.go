@@ -11,6 +11,7 @@ import (
 	"github.com/misiektoja/certrally/internal/dn"
 	"github.com/misiektoja/certrally/internal/keys"
 	"github.com/misiektoja/certrally/internal/pemfile"
+	"github.com/misiektoja/certrally/internal/trace"
 )
 
 // The types in this file are the result members of the JSON document, documented in docs/json.md.
@@ -190,21 +191,25 @@ type inspectJSON struct {
 	Messages []messageJSON `json:"messages"`
 }
 
-// messageJSON describes one CMP message. The members after protection appear only for the body
-// types that carry them.
+// messageJSON describes one CMP or EST message. Body, header and protection describe a CMP message
+// and est an EST message. The members after them appear only for the body types and EST contents
+// that carry them.
 type messageJSON struct {
 	// Source locates the message, such as "run.jsonl:4" for line 4 of a capture file.
 	Source string `json:"source"`
+	// Protocol is "cmp" or "est".
+	Protocol string `json:"protocol"`
 	// Direction is "request" or "response".
 	Direction string `json:"direction"`
 	// Time and Server come from a capture file.
-	Time       *time.Time     `json:"time,omitempty"`
-	Server     string         `json:"server,omitempty"`
-	Size       int            `json:"size"`
-	Body       string         `json:"body"`
-	Header     headerJSON     `json:"header"`
-	Protection protectionJSON `json:"protection"`
-	// Requests are the certificate requests of ir, cr, kur and p10cr.
+	Time       *time.Time      `json:"time,omitempty"`
+	Server     string          `json:"server,omitempty"`
+	Size       int             `json:"size"`
+	Body       string          `json:"body,omitempty"`
+	Header     *headerJSON     `json:"header,omitempty"`
+	Protection *protectionJSON `json:"protection,omitempty"`
+	EST        *estMessageJSON `json:"est,omitempty"`
+	// Requests are the certificate requests of ir, cr, kur, p10cr and an EST PKCS#10 request.
 	Requests []certRequestJSON `json:"requests,omitempty"`
 	// Responses are the certificate responses of ip, cp and kup.
 	Responses []certResponseJSON `json:"responses,omitempty"`
@@ -223,8 +228,28 @@ type messageJSON struct {
 	// Nested lists the body types of the messages in a nested body.
 	Nested     []string           `json:"nested,omitempty"`
 	ExtraCerts []*certificateJSON `json:"extraCerts,omitempty"`
+	// Certificates are those of an EST certs-only message or serverkeygen response.
+	Certificates []*certificateJSON `json:"certificates,omitempty"`
+	// Attributes are the EST CSR attributes.
+	Attributes []csrAttrJSON `json:"attributes,omitempty"`
 	// Problems lists the parts of the message that could not be decoded.
 	Problems []string `json:"problems,omitempty"`
+}
+
+// estMessageJSON describes an EST request or response. Only content is known for a file other than
+// a capture.
+type estMessageJSON struct {
+	Operation   string `json:"operation,omitempty"`
+	Method      string `json:"method,omitempty"`
+	Path        string `json:"path,omitempty"`
+	HTTPStatus  int    `json:"httpStatus,omitempty"`
+	ContentType string `json:"contentType,omitempty"`
+	// Content is "pkcs10", "certs-only", "csrattrs" or "serverkeygen". It is absent without a body.
+	Content    string       `json:"content,omitempty"`
+	RetryAfter *int         `json:"retryAfter,omitempty"`
+	Parts      []trace.Part `json:"parts,omitempty"`
+	// Text is the text of an error response.
+	Text string `json:"text,omitempty"`
 }
 
 // headerJSON describes a PKIHeader.
