@@ -17,7 +17,7 @@ all: test build
 
 .PHONY: help
 help: ## Display this help.
-	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-25s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
 ##@ Development
 
@@ -133,6 +133,41 @@ scan-image: ## Build the container image for SCAN_PLATFORM and scan it for known
 	CGO_ENABLED=0 GOOS="$(word 1,$(subst /, ,$(SCAN_PLATFORM)))" GOARCH="$(word 2,$(subst /, ,$(SCAN_PLATFORM)))" go build -trimpath -o "$(SCAN_DIR)/$(SCAN_PLATFORM)/certrally" ./cmd/certrally
 	docker build --platform "$(SCAN_PLATFORM)" --tag certrally:scan --file Dockerfile "$(SCAN_DIR)"
 	docker save certrally:scan | docker run --rm -i -v "$(TRIVY_CACHE)":/root/.cache/trivy --entrypoint sh "$(TRIVY_IMAGE)" -c 'cat > /tmp/image.tar && trivy image --scanners vuln --severity "$(TRIVY_SEVERITY)" --ignore-unfixed --exit-code 1 --input /tmp/image.tar'
+
+##@ Integration tests
+
+# The integration tests run the binary that make build writes against real CMP and EST servers.
+INTEGRATION_TEST = CERTRALLY_BIN="$(LOCALBIN)/certrally" go test -v -count=1 -tags integration
+# EJBCA_HTTP_PORT is the host port of the EJBCA CMP endpoint.
+EJBCA_HTTP_PORT ?= 8080
+export EJBCA_HTTP_PORT
+# LIBEST_IMAGE names the image of the libest example server that test-integration-libest builds.
+LIBEST_IMAGE ?= certrally-libest
+export LIBEST_IMAGE
+
+.PHONY: test-integration
+test-integration: test-integration-openssl test-integration-ejbca test-integration-libest ## Run every integration test. Needs OpenSSL 3.5 or newer and Docker.
+
+.PHONY: test-integration-openssl
+test-integration-openssl: build ## Run the CMP tests against the openssl cmp mock server. Needs OpenSSL 3.5 or newer on PATH.
+	$(INTEGRATION_TEST) ./test/integration/openssl
+
+.PHONY: setup-ejbca
+setup-ejbca: ## Start EJBCA in Docker and configure it for the CMP tests.
+	bash test/integration/ejbca/setup.sh
+
+.PHONY: test-integration-ejbca
+test-integration-ejbca: build setup-ejbca ## Run the CMP tests against EJBCA in Docker. EJBCA keeps running afterwards.
+	$(INTEGRATION_TEST) ./test/integration/ejbca
+
+.PHONY: teardown-ejbca
+teardown-ejbca: ## Stop EJBCA and delete its container and data.
+	docker compose -f test/integration/ejbca/docker-compose.yml down --volumes
+
+.PHONY: test-integration-libest
+test-integration-libest: build ## Build the Cisco libest example server image and run the EST tests against it.
+	docker build -t "$(LIBEST_IMAGE)" test/integration/libest
+	$(INTEGRATION_TEST) ./test/integration/libest
 
 ##@ Release
 

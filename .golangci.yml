@@ -1,6 +1,9 @@
 version: "2"
 run:
   allow-parallel-runners: true
+  # The integration tests build only with this tag, so without it they are never linted.
+  build-tags:
+    - integration
 linters:
   default: none
   enable:
