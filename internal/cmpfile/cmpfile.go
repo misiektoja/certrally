@@ -234,7 +234,7 @@ func parseCapture(name string, data []byte) ([]Message, error) {
 func IsRequest(t pkicmp.BodyType) bool {
 	switch t {
 	case pkicmp.BodyTypeIR, pkicmp.BodyTypeCR, pkicmp.BodyTypeKUR, pkicmp.BodyTypeP10CR, pkicmp.BodyTypeRR,
-		pkicmp.BodyTypeCertConf, pkicmp.BodyTypePollReq, pkicmp.BodyTypeGenM:
+		pkicmp.BodyTypeCertConf, pkicmp.BodyTypePollReq, pkicmp.BodyTypeGenM, pkicmp.BodyTypePopDecR:
 		return true
 	default:
 		return false

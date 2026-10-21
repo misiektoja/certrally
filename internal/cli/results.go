@@ -217,6 +217,9 @@ type messageJSON struct {
 	Polls []pollJSON        `json:"polls,omitempty"`
 	Error *errorContentJSON `json:"error,omitempty"`
 	Items []infoItemJSON    `json:"items,omitempty"`
+	// Challenges are the entries of popdecc. Answers are the numbers of popdecr in hex.
+	Challenges []challengeJSON `json:"challenges,omitempty"`
+	Answers    []string        `json:"answers,omitempty"`
 	// Nested lists the body types of the messages in a nested body.
 	Nested     []string           `json:"nested,omitempty"`
 	ExtraCerts []*certificateJSON `json:"extraCerts,omitempty"`
@@ -311,6 +314,14 @@ type confirmationJSON struct {
 	CertHash  string `json:"certHash"`
 	HashAlg   string `json:"hashAlg,omitempty"`
 	*statusJSON
+}
+
+// challengeJSON is an entry of popdecc. OWF is absent from every challenge but the first, which
+// names the one-way function for all of them.
+type challengeJSON struct {
+	OWF               string `json:"owf,omitempty"`
+	Witness           string `json:"witness"`
+	EncryptedRandSize int    `json:"encryptedRandSize"`
 }
 
 // pollJSON is an entry of pollReq or pollRep. CheckAfter and Reason appear in pollRep.

@@ -608,10 +608,37 @@ func (r *messageReport) body(b *pkicmp.PKIBody) {
 			}
 			r.section("Nested messages", ui.Field{Name: "Bodies", Value: strings.Join(r.json.Nested, ", ")})
 		}
+	default:
+		err = r.proofByDecryption(b)
 	}
 	if err != nil {
 		r.problem("The %s body does not decode: %v", b.Type, err)
 	}
+}
+
+// proofByDecryption describes a popdecc or popdecr body and returns the error that stopped it
+// from decoding.
+func (r *messageReport) proofByDecryption(b *pkicmp.PKIBody) error {
+	switch b.Type {
+	case pkicmp.BodyTypePopDecC:
+		challenges, err := b.PopDecC()
+		if err != nil {
+			return err
+		}
+		r.challenges(*challenges)
+	case pkicmp.BodyTypePopDecR:
+		answers, err := b.PopDecR()
+		if err != nil {
+			return err
+		}
+		for i, n := range *answers {
+			r.json.Answers = append(r.json.Answers, serialHex(n))
+			r.section(fmt.Sprintf("Answer to challenge %d", i+1), ui.Field{Name: "Number", Value: serialText(n)})
+		}
+	default:
+		// Other body types have nothing more to describe.
+	}
+	return nil
 }
 
 // certRepContent returns the content of an ip, cp or kup body.
@@ -824,6 +851,23 @@ func (r *messageReport) confirmations(conf pkicmp.CertConfirmContent) {
 		}
 		r.json.Confirmations = append(r.json.Confirmations, j)
 		r.section(fmt.Sprintf("Confirmation of response %d", cs.CertReqID), fields...)
+	}
+}
+
+// challenges describes the entries of a popdecc body. The CA sends one challenge per request that
+// proves possession by decryption.
+func (r *messageReport) challenges(challenges pkicmp.POPODecKeyChallContent) {
+	for i, c := range challenges {
+		j := challengeJSON{Witness: hex.EncodeToString(c.Witness), EncryptedRandSize: len(c.EncryptedRand)}
+		if c.OWF != nil {
+			j.OWF = trace.AlgorithmName(c.OWF.Algorithm)
+		}
+		r.json.Challenges = append(r.json.Challenges, j)
+		r.section(fmt.Sprintf("Challenge %d", i+1),
+			ui.Field{Name: "One-way function", Value: j.OWF},
+			ui.Field{Name: "Witness", Value: hexBytes(c.Witness)},
+			ui.Field{Name: "Encrypted number", Value: count(j.EncryptedRandSize, "byte", "bytes")},
+		)
 	}
 }
 
