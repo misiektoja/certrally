@@ -1,8 +1,10 @@
-# Tested CA servers
+# Tested servers
 
-certrally has been run against the CMP servers below. Each section lists where the server differs from RFC 9483 or needs a particular setting, and what certrally shows in that case.
+certrally has been run against the CMP and EST servers below. Each section lists where the server differs from the RFCs or needs a particular setting, and what certrally shows in that case.
 
-## EJBCA Community Edition 9.6.3
+## CMP
+
+### EJBCA Community Edition 9.6.3
 
 Tested with a CMP alias in client mode that accepts the end entity password as the shared secret and end entity certificates for signed requests.
 
@@ -15,7 +17,7 @@ Tested with a CMP alias in client mode that accepts the end entity password as t
 * A `cr` signed with an end entity certificate is rejected with "Status NEW, FAILED or INPROCESS required" once the end entity has a certificate. Reset the end entity status in EJBCA first.
 * Composite ML-DSA keys were rejected with "Illegal key algorithm, not authorized by certificate profile", even with the composite algorithms listed in the certificate profile.
 
-## Nokia NCM 26.7
+### Nokia NCM 26.7
 
 Tested over HTTP with a shared secret and with certificates that NCM issued.
 
@@ -29,7 +31,7 @@ Tested over HTTP with a shared secret and with certificates that NCM issued.
 * NCM answers every general message with the same `signKeyPairTypes`, `encKeyPairTypes` and `preferredSymmAlg` items instead of the requested one, so `cacerts` and `cmp genm` exit with status 3. The answer is signed even for a MAC-protected request and its extraCerts do not start with the signer certificate. certrally warns about RFC 9483 sections 3.2 and 3.3.
 * With a rate limit configured, NCM answers requests that come too fast with HTTP 503 and no CMP message. certrally exits with status 2. Wait a few seconds between requests.
 
-## Insta Certifier 10.0.0
+### Insta Certifier 10.0.0
 
 Tested over HTTPS and HTTP with a shared secret and with certificates that Certifier issued.
 
@@ -41,8 +43,23 @@ Tested over HTTPS and HTTP with a shared secret and with certificates that Certi
 * General messages are not supported. Each gets a signed error with `notAuthorized` "operation not supported", so `cacerts` and `cmp genm` exit with status 3.
 * Unprotected requests get unprotected errors, so `ping --ca-cert` cannot check the answer and exits with status 4.
 
-## OpenSSL 4.0.3 `openssl cmp` mock server
+### OpenSSL 4.0.3 `openssl cmp` mock server
 
 * The server accepts only PasswordBasedMac. It answers a PBMAC1-protected request with `badRequest` "no suitable sender cert", and certrally suggests `--mac pbm`.
 * Its `kup` carries only the server certificate. Without `--ca-cert`, certrally cannot verify the new certificate and asks for the issuing CA certificate.
 * The server process exits on `cmp genm template` and `cmp genm rootupdate` unless it is started with the options for them, `-ref_cert` and `-rsp_newwithnew`.
+
+## EST
+
+### Cisco libest 3.2.0 example server
+
+Tested with the `estserver` example of libest 3.2.0 on OpenSSL 1.1.1, with a password, a client certificate and TLS-SRP.
+
+* `est cacerts`, `est cacerts --bootstrap`, `est csrattrs`, `est enroll` and `est reenroll` work. `est cacerts` and `est enroll` also pass `--profile strict`.
+* `est enroll` was tested with ECDSA P-256 and P-384, RSA 2048 and Ed25519 keys and with a PKCS#10 request from `--csr`. ML-DSA and composite ML-DSA requests get HTTP 400 "Invalid or corrupted pkcs10 request", because OpenSSL 1.1.1 does not support these algorithms.
+* `est reenroll` works with the client certificate alone when the server runs with `-o`. Without `-o` the server also wants a password: a certificate alone gets HTTP 401 and certrally suggests `--user`. With `--cert`, `--key` and `--user` the renewal works.
+* TLS-SRP works with `--srp` when the verifier uses a group of at least 2048 bits. The `passwd.srpv` that comes with libest holds `srpuser` with a 1536-bit group, which certrally refuses with "server chose the 1536 bit SRP group, below the minimum of 2048 bits".
+* With `-t` the server requires the tls-unique binding. `--tls-unique` works. Without it the server answers HTTP 401 "Proof of Possession Mismatch".
+* With `-h` the server asks for HTTP Digest authentication. certrally signs in with Basic only and gets HTTP 401.
+* With `-m` the server answers `202 Accepted` with `Retry-After: 3600`. certrally exits with status 2 unless `--timeout` covers the hour.
+* `est serverkeygen` exits with status 4. The server declares a `Content-Length` shorter than its multipart response, so the response ends before its last part. certrally also warns that the response has no `smime-type=certs-only` parameter, because the certificate part is cut off.
