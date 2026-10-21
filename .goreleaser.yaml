@@ -31,6 +31,8 @@ archives:
       - LICENSE
       - README.md
       - RELEASE_NOTES.md
+      # The README links to these pages.
+      - docs/*.md
     builds_info:
       mtime: "{{ .CommitDate }}"
 
