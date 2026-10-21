@@ -1,6 +1,9 @@
-# Publishes a release: archives, checksums, SBOMs, container images and the Homebrew cask.
+# Builds a release: archives, checksums, SBOMs, container images and the Homebrew cask. The GitHub
+# release is left as a draft to review and publish by hand. The images and the cask are pushed during
+# the run, so publish the draft soon after the run succeeds.
 # The workflow is inert until a version tag is pushed. It has no manual trigger, because the keyless
 # signature names the ref that ran it and users verify against the tag. Re-run a failed run instead.
+# A re-run replaces the draft that the failed run left.
 name: Release
 
 on:
@@ -51,20 +54,26 @@ jobs:
             exit 1
           fi
 
-      - name: Refuse to rebuild a release that already exists
+      - name: Refuse to rebuild a published release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # This step runs before checkout, so there is no git remote for gh to infer the repository
           # from. Naming it keeps that failure from being read as an absent release.
           GH_REPO: ${{ github.repository }}
           VERSION: ${{ steps.release.outputs.version }}
-        # A release created by hand in the GitHub UI also creates the tag and so starts this workflow.
-        # Failing here keeps its assets, the images and the cask from being replaced.
+        # A release published by hand in the GitHub UI also creates the tag and so starts this
+        # workflow. Failing here keeps its assets, the images and the cask from being replaced. A draft
+        # left by an earlier run is replaced by GoReleaser.
         run: |
           # Only a release that is genuinely absent may be treated as absent. Any other gh failure,
           # such as an authentication or an API error, stops the run rather than being taken for one.
           if lookup="$(gh release view "$VERSION" --json isDraft --jq .isDraft 2>&1)"; then
-            echo "Release ${VERSION} already exists (draft: ${lookup}) and cannot be rebuilt." >&2
+            case "$lookup" in
+              true) exit 0 ;;
+              false) ;;
+              *) echo "Unexpected release state for ${VERSION}: ${lookup}" >&2; exit 1 ;;
+            esac
+            echo "Release ${VERSION} is already published and cannot be rebuilt." >&2
             echo "Releases are built by pushing the tag, not by creating the release in the GitHub UI." >&2
             echo "To recover, delete the release and its tag, then push the tag again:" >&2
             echo "  gh release delete ${VERSION} --cleanup-tag --yes" >&2
@@ -131,7 +140,7 @@ jobs:
       - name: Install GoReleaser
         run: make goreleaser
 
-      - name: Publish the release with GoReleaser
+      - name: Build the draft release with GoReleaser
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -140,9 +149,22 @@ jobs:
 
       # Lets users verify with `gh attestation verify` that every archive came from this run.
       - name: Attest the archives' build provenance
+        id: archives
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-checksums: dist/checksums.txt
+
+      # Scanners such as OpenSSF Scorecard look for the provenance among the release assets.
+      - name: Attach the archives' provenance to the draft release
+        env:
+          ATTESTATION_BUNDLE: ${{ steps.archives.outputs.bundle-path }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          bundle="dist/certrally_${VERSION#v}.intoto.jsonl"
+          cp "$ATTESTATION_BUNDLE" "$bundle"
+          gh release upload "$VERSION" "$bundle" --clobber
 
       - name: Find the container image digest
         id: image
@@ -162,3 +184,8 @@ jobs:
           subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ steps.image.outputs.digest }}
           push-to-registry: true
+
+      - name: Point to the draft release
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: echo "Review and publish the draft release at ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases" >> "$GITHUB_STEP_SUMMARY"

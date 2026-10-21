@@ -100,11 +100,15 @@ homebrew_casks:
 changelog:
   disable: true
 
+# The release stays a draft until it is published by hand. A re-run of a failed release replaces the
+# draft that the earlier run left.
 release:
   github:
     owner: misiektoja
     name: certrally
   name_template: "{{ .Tag }}"
+  draft: true
+  replace_existing_draft: true
 
 snapshot:
   version_template: "{{ incpatch .Version }}-snapshot"
