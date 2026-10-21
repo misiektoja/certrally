@@ -353,3 +353,34 @@ type lintFindingJSON struct {
 	Text   string `json:"text"`
 	Rule   string `json:"rule"`
 }
+
+// estCACertsJSON is the result of est cacerts.
+type estCACertsJSON struct {
+	Certificates []*certificateJSON `json:"certificates"`
+	Saved        []string           `json:"saved"`
+	// Verified says how the certificates were checked: "tls", "srp", "fingerprint", "confirmed" or "none".
+	Verified string `json:"verified"`
+	// TLSIssued reports whether these certificates issued the TLS certificate of the server.
+	TLSIssued *bool `json:"tlsIssued,omitempty"`
+}
+
+// estEnrollJSON is the result of est enroll, est reenroll and est serverkeygen.
+type estEnrollJSON struct {
+	Certificate *certificateJSON `json:"certificate"`
+	// Key names the type of the new key. It is absent when the command certified a key it was given.
+	Key   string   `json:"key,omitempty"`
+	Saved []string `json:"saved"`
+}
+
+// csrAttrsJSON is the result of est csrattrs.
+type csrAttrsJSON struct {
+	Attributes []csrAttrJSON `json:"attributes"`
+}
+
+// csrAttrJSON is one entry of the CSR attributes. Values is absent for an entry that is only an
+// OID.
+type csrAttrJSON struct {
+	OID    string   `json:"oid"`
+	Name   string   `json:"name,omitempty"`
+	Values []string `json:"values,omitempty"`
+}

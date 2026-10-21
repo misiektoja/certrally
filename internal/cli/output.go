@@ -31,6 +31,8 @@ const (
 	fieldStatus  = "Status"
 	fieldSerial  = "Serial"
 	fieldReason  = "Reason"
+	// fieldVerified says how a command checked what the server sent.
+	fieldVerified = "Verified"
 )
 
 // outputOptions holds the flags that choose how a command reports its outcome.
@@ -81,9 +83,9 @@ type printer struct {
 	// dataOnStdout is set when the command writes data such as a certificate to standard output.
 	// The text report then goes to standard error.
 	dataOnStdout bool
-	// session is the connection the command opened, if any.
-	session *session
-	doc     jsonDocument
+	// rec records the exchange of a command that talks to a server.
+	rec *recording
+	doc jsonDocument
 }
 
 // newPrinter returns the printer for a command.
@@ -159,7 +161,7 @@ func (p *printer) fail(f *failure, err error, fields ...ui.Field) error {
 	p.doc.Error = f
 	if p.text() {
 		if fields == nil {
-			fields = f.fields(p.session)
+			fields = f.fields(p.rec)
 		}
 		ui.Report(p.stderr, false, f.Title, fields)
 	}
@@ -176,8 +178,8 @@ func (p *printer) finish(err error) error {
 			code = ee.code
 		}
 	}
-	if s := p.session; s != nil && s.capture != nil {
-		if cerr := s.capture.Close(code); cerr != nil {
+	if rec := p.rec; rec != nil && rec.capture != nil {
+		if cerr := rec.capture.Close(code); cerr != nil {
 			p.warn("The capture file is incomplete: " + cerr.Error())
 		}
 	}
@@ -189,9 +191,9 @@ func (p *printer) finish(err error) error {
 		p.doc.Error = &failure{code: code, Title: "The command failed", Message: err.Error()}
 	}
 	p.doc.Command, p.doc.OK, p.doc.ExitStatus = p.command, code == exitOK, code
-	if s := p.session; s != nil {
-		p.doc.Server, p.doc.Profile = s.conn.redactedServer(), s.conn.profile
-		events := s.recorder.Events()
+	if rec := p.rec; rec != nil {
+		p.doc.Server, p.doc.Profile = rec.server, rec.profile
+		events := rec.recorder.Events()
 		p.doc.Exchange = make([]trace.Record, 0, len(events))
 		for _, ev := range events {
 			p.doc.Exchange = append(p.doc.Exchange, ev.Record(false))

@@ -19,14 +19,12 @@ import (
 	"github.com/misiektoja/go-pki-cmp/pkicmp"
 	"github.com/spf13/cobra"
 
-	"github.com/misiektoja/certrally/internal/capture"
 	"github.com/misiektoja/certrally/internal/dn"
 	"github.com/misiektoja/certrally/internal/keys"
 	"github.com/misiektoja/certrally/internal/pemfile"
 	"github.com/misiektoja/certrally/internal/profile"
 	"github.com/misiektoja/certrally/internal/secret"
 	"github.com/misiektoja/certrally/internal/trace"
-	"github.com/misiektoja/certrally/internal/ui"
 )
 
 // macAlgorithms lists the --mac values.
@@ -95,29 +93,12 @@ func (c *connection) checkCapture(outputs ...string) error {
 	return nil
 }
 
-// host returns the host of the server URL for display.
-func (c *connection) host() string {
-	u, err := url.Parse(c.server)
-	if err != nil {
-		return c.server
-	}
-	return u.Host
-}
-
-// redactedServer returns the server URL without any password it contains.
-func (c *connection) redactedServer() string {
-	u, err := url.Parse(c.server)
-	if err != nil {
-		return c.server
-	}
-	return u.Redacted()
-}
-
 // Names of the flags that several commands define and the enroll wizard sets.
 const (
 	flagRef     = "ref"
 	flagSAN     = "san"
 	flagSubject = "subject"
+	flagServer  = "server"
 )
 
 // protection holds the flags that protect requests with a shared secret or a signature.
@@ -238,12 +219,12 @@ func (p *protection) load(stdin io.Reader, prompt io.Writer) (*protected, error)
 	return pr, nil
 }
 
-// session is an open connection: an HTTP client that records every exchange and the trust state.
+// session is an open connection to a CMP server: an HTTP client that records every exchange and the
+// trust state.
 type session struct {
-	conn     *connection
-	p        *printer
-	recorder *trace.Recorder
-	http     *http.Client
+	*recording
+	conn *connection
+	http *http.Client
 	// pool holds the trust anchors. Without --ca-cert it fills from the first response.
 	pool *x509.CertPool
 	// anchors lists the certificates in pool.
@@ -251,20 +232,12 @@ type session struct {
 	// pinned is set when --ca-cert names the CA, so nothing the server sends is trusted by itself.
 	pinned  bool
 	caCerts []*x509.Certificate
-	// ladder draws the exchange in text output without --quiet.
-	ladder *ui.Ladder
-	// capture records the exchange for --capture.
-	capture *capture.Writer
-	// warned holds the profile deviations already reported as warnings.
-	warned map[string]bool
-	// pending holds the warnings that wait for the ladder to end, so they do not split it.
-	pending []string
 }
 
 // open prepares a session and registers it with p. Certificates after the first one in chain, the
 // chain of the signing certificate, are trusted as well, because the user named them.
 func (c *connection) open(p *printer, chain []*x509.Certificate) (*session, error) {
-	s := &session{conn: c, p: p, pool: x509.NewCertPool(), warned: map[string]bool{}}
+	s := &session{conn: c, pool: x509.NewCertPool()}
 	for _, path := range c.caCerts {
 		certs, err := pemfile.ReadCertificates(path)
 		if err != nil {
@@ -296,35 +269,19 @@ func (c *connection) open(p *printer, chain []*x509.Certificate) (*session, erro
 		t.TLSClientConfig = &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}
 		next = t
 	}
-	if c.capture != "" {
-		w, err := capture.Open(c.capture, capture.Start{
-			Tool:    programName,
-			Version: toolVersion(),
-			Command: p.command,
-			Server:  c.redactedServer(),
-			Time:    time.Now().UTC(),
-		})
-		if err != nil {
-			return nil, fmt.Errorf("--capture: %w", err)
-		}
-		s.capture = w
+	rec, err := openRecording(p, recordingOptions{server: c.server, profile: c.profile, capture: c.capture})
+	if err != nil {
+		return nil, err
 	}
-	p.session = s
-
-	s.recorder = &trace.Recorder{Next: next}
+	s.recording = rec
+	s.recorder.Next = next
 	trustFirst := !s.pinned
-	s.recorder.OnEvent = func(ev trace.Event) {
+	s.observe = func(ev trace.Event) {
 		// The recorder reports a response before the client verifies it, so certificates added here
 		// already count for that response.
 		if trustFirst && ev.Kind == trace.Response && ev.Message != nil {
 			trustFirst = false
 			s.trustResponse(ev.DER)
-		}
-		if s.capture != nil {
-			s.capture.Event(ev)
-		}
-		if s.ladder != nil {
-			s.ladder.Event(ev)
 		}
 	}
 	s.recorder.Inspect = s.inspect
@@ -345,44 +302,7 @@ func (s *session) inspect(request, response trace.Event) error {
 		return nil
 	}
 	findings := profile.Check(req, resp, s.anchors)
-	if len(findings) == 0 {
-		return nil
-	}
-	if s.conn.profile == profile.Strict && response.Message.Status != pkicmp.StatusRejection.String() {
-		return &profileError{findings: findings}
-	}
-	for _, f := range findings {
-		text := f.String()
-		switch {
-		case s.warned[text]:
-		case s.ladder != nil:
-			s.pending = append(s.pending, text)
-		default:
-			s.p.warn(text)
-		}
-		s.warned[text] = true
-	}
-	return nil
-}
-
-// startLadder starts drawing the exchange in text output without --quiet.
-func (s *session) startLadder() {
-	if s.p.showProgress() {
-		s.ladder = ui.NewLadder(s.p.stderr, programName, s.conn.host())
-	}
-}
-
-// endLadder separates the ladder from the report that follows it and prints the warnings that
-// waited for it.
-func (s *session) endLadder() {
-	if s.ladder != nil && len(s.recorder.Events()) > 0 {
-		_, _ = fmt.Fprintln(s.p.stderr)
-	}
-	s.ladder = nil
-	for _, text := range s.pending {
-		s.p.warn(text)
-	}
-	s.pending = nil
+	return s.report(findings, response.Message.Status != pkicmp.StatusRejection.String())
 }
 
 // trustResponse adds the certificates of a response to the trust anchors. This trusts the CA the

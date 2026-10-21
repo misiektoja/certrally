@@ -90,16 +90,19 @@ func handleError(w io.Writer, styles fang.Styles, err error) {
 func newRootCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   programName,
-		Short: "Certificate enrollment client for CMP",
-		Long: "certrally is a certificate enrollment client for the Certificate Management Protocol (CMP).\n\n" +
-			"It shows each exchange as a ladder diagram and explains failures. It trusts the CA that answers " +
-			"its first request, unless --ca-cert names the CA to expect.",
+		Short: "Certificate enrollment client for CMP and EST",
+		Long: "certrally is a certificate enrollment client for the Certificate Management Protocol (CMP) and " +
+			"Enrollment over Secure Transport (EST).\n\n" +
+			"It shows each exchange as a ladder diagram and explains failures. The CMP commands trust the CA " +
+			"that answers their first request, unless --ca-cert names the CA to expect. The EST commands run " +
+			"under certrally est.",
 	}
 	cmd.AddCommand(
 		newEnrollCommand(),
 		newRevokeCommand(),
 		newCACertsCommand("cacerts"),
 		newCMPCommand(),
+		newESTCommand(),
 		newPingCommand(),
 		newInspectCommand(),
 		newLintCommand(),

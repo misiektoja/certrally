@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/misiektoja/go-pki-cmp/client"
 	"github.com/misiektoja/go-pki-cmp/pkicmp"
@@ -84,14 +86,19 @@ type failure struct {
 	Status     string   `json:"status,omitempty"`
 	FailInfo   []string `json:"failInfo,omitempty"`
 	StatusText []string `json:"statusText,omitempty"`
+	// HTTPStatus and RetryAfter repeat the HTTP status and Retry-After value of an EST refusal.
+	// StatusText then holds the text of the server.
+	HTTPStatus int  `json:"httpStatus,omitempty"`
+	RetryAfter *int `json:"retryAfter,omitempty"`
 	// Unauthenticated marks a CA status that the client could not verify.
 	Unauthenticated bool   `json:"unauthenticated,omitempty"`
 	Hint            string `json:"hint,omitempty"`
 	Note            string `json:"note,omitempty"`
 }
 
-// fields returns the text form of f. s is the session of the command. It is nil when there is none.
-func (f *failure) fields(s *session) []ui.Field {
+// fields returns the text form of f. rec is the recording of the command. It is nil when there is
+// none.
+func (f *failure) fields(rec *recording) []ui.Field {
 	var fields []ui.Field
 	switch {
 	case f.Status != "":
@@ -100,8 +107,18 @@ func (f *failure) fields(s *session) []ui.Field {
 			ui.Field{Name: "Fail info", Value: strings.Join(f.FailInfo, ", ")},
 			ui.Field{Name: "CA says", Value: quoteText(f.StatusText)},
 		)
-	case f.code == exitTransport && s != nil:
-		fields = append(fields, ui.Field{Name: fieldServer, Value: s.conn.redactedServer()}, errorField(f.Message))
+	case f.HTTPStatus != 0:
+		retry := ""
+		if f.RetryAfter != nil {
+			retry = fmt.Sprintf("%d s", *f.RetryAfter)
+		}
+		fields = append(fields,
+			ui.Field{Name: fieldStatus, Value: fmt.Sprintf("HTTP %d %s", f.HTTPStatus, http.StatusText(f.HTTPStatus))},
+			ui.Field{Name: "Server says", Value: quoteText(f.StatusText)},
+			ui.Field{Name: "Retry after", Value: retry},
+		)
+	case f.code == exitTransport && rec != nil:
+		fields = append(fields, ui.Field{Name: fieldServer, Value: rec.server}, errorField(f.Message))
 	default:
 		fields = append(fields, errorField(f.Message))
 	}
@@ -146,13 +163,7 @@ func (s *session) failure(err error) *failure {
 	case exitLocal:
 		return &failure{code: code, Title: "The request was not completed", Message: err.Error()}
 	case exitProfile:
-		violation, _ := errors.AsType[*profileError](err)
-		return &failure{
-			code:    code,
-			Title:   "The response breaks the strict profile",
-			Message: violation.Error(),
-			Hint:    "Use --profile compatible to accept these deviations with a warning.",
-		}
+		return profileFailure(err)
 	default:
 		hint := issuedTrustHint(err, s.pinned)
 		if hint == "" {
@@ -266,19 +277,20 @@ func (s *session) transportFailure(err error) *failure {
 		code:    exitTransport,
 		Title:   "No CMP answer from the server",
 		Message: problem.Error(),
-		Hint:    s.conn.transportHint(err, problem),
+		Hint:    transportHint(err, problem, s.conn.timeout),
 	}
 }
 
-// transportHint suggests a fix for a failure to reach the server. It returns "" when it has none.
-func (c *connection) transportHint(err, problem error) string {
+// transportHint suggests a fix for a failure to reach the server within timeout. It returns "" when
+// it has none.
+func transportHint(err, problem error, timeout time.Duration) string {
 	_, unknownAuthority := errors.AsType[x509.UnknownAuthorityError](problem)
 	_, wrongHost := errors.AsType[x509.HostnameError](problem)
 	_, dnsFailure := errors.AsType[*net.DNSError](problem)
 	_, netFailure := errors.AsType[*net.OpError](problem)
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
-		return fmt.Sprintf("No answer within --timeout %s.", c.timeout)
+		return fmt.Sprintf("No answer within --timeout %s.", timeout)
 	case unknownAuthority:
 		return "The HTTPS certificate of the server is not trusted. Pass its CA with --tls-ca-cert."
 	case wrongHost:

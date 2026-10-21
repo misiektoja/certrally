@@ -200,16 +200,23 @@ func cleanupTransactions(ctx context.Context, srv *server.Server) {
 
 // mockURL returns the server URL for addr and reports whether other hosts can reach it.
 func mockURL(addr net.Addr) (url string, remote bool) {
+	hostPort, remote := mockHostPort(addr)
+	return "http://" + hostPort + mockPath, remote
+}
+
+// mockHostPort returns the host and port that reach addr and reports whether other hosts can reach
+// it. The unspecified address is reached as localhost.
+func mockHostPort(addr net.Addr) (hostPort string, remote bool) {
 	host, port, err := net.SplitHostPort(addr.String())
 	if err != nil {
-		return "http://" + addr.String() + mockPath, true
+		return addr.String(), true
 	}
 	ip := net.ParseIP(host)
 	remote = ip == nil || !ip.IsLoopback()
 	if ip != nil && ip.IsUnspecified() {
 		host = "localhost"
 	}
-	return "http://" + net.JoinHostPort(host, port) + mockPath, remote
+	return net.JoinHostPort(host, port), remote
 }
 
 // report prints how to reach the mock CA and an enroll command that works against it.
