@@ -9,7 +9,7 @@ require (
 	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/misiektoja/go-composite-mldsa v0.2.1
 	github.com/misiektoja/go-pki-cmp v0.7.2
-	github.com/misiektoja/go-pki-est v1.3.0
+	github.com/misiektoja/go-pki-est v1.3.1
 	github.com/misiektoja/go-tls-srp v0.2.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.9
