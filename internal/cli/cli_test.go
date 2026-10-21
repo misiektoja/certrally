@@ -188,6 +188,8 @@ func TestCommandHelp(t *testing.T) {
 		{"cmp", "genm", "cacerts"}, {"cmp", "genm", "rootupdate"}, {"cmp", "genm", "template"},
 		{"cmp", "genm", "crl"}, {"cmp", "genm", "crlupdate"}, {"cmp", "genm", "raw"},
 		{"cmp", "enroll"}, {"cmp", "revoke"}, {"cmp", "cacerts"}, {"cmp", "ping"}, {"cmp", "mock"},
+		{"est"}, {"est", "cacerts"}, {"est", "csrattrs"}, {"est", "enroll"}, {"est", "reenroll"},
+		{"est", "serverkeygen"}, {"est", "mock"},
 	}
 	for _, c := range commands {
 		code, out, errOut := run(t, append(c, "--help")...)
