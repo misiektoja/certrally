@@ -139,12 +139,16 @@ func caCertFields(cert *x509.Certificate) []ui.Field {
 	}
 }
 
-// newCMPCommand returns the cmp command group for CMP-specific operations.
+// newCMPCommand returns the cmp command group. It holds every CMP command. The top-level enroll,
+// revoke, cacerts, ping and mock commands are the same commands, because CMP is the default protocol.
 func newCMPCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cmp",
-		Short: "Commands for individual CMP message types",
-		Args:  cobra.NoArgs,
+		Short: "Commands for the Certificate Management Protocol",
+		Long: "Commands for the Certificate Management Protocol (CMP). enroll, revoke, cacerts, ping and mock " +
+			"also work without the cmp prefix, because CMP is the default protocol. genm sends the support " +
+			"messages of RFC 9483 section 4.3.",
+		Args: cobra.NoArgs,
 	}
 	genm := &cobra.Command{
 		Use:   "genm",
@@ -161,7 +165,14 @@ func newCMPCommand() *cobra.Command {
 		newCRLUpdateCommand(),
 		newRawGenMCommand(),
 	)
-	cmd.AddCommand(genm)
+	cmd.AddCommand(
+		newEnrollCommand(),
+		newRevokeCommand(),
+		newCACertsCommand("cacerts"),
+		newPingCommand(),
+		newMockCommand(),
+		genm,
+	)
 	return cmd
 }
 
