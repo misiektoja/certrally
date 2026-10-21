@@ -96,3 +96,39 @@ func TestHeading(t *testing.T) {
 		t.Errorf("Heading wrote %q, want %q", b.String(), want)
 	}
 }
+
+// TestLadderEST checks the labels of a TLS connection, EST messages and a note.
+func TestLadderEST(t *testing.T) {
+	w, b := plain()
+	l := NewLadder(w, "certrally", "est.example.com:8443")
+	retry := 30
+	events := []trace.Event{
+		{Kind: trace.Connect, TLS: &trace.TLSInfo{Version: "TLS 1.3", CipherSuite: "TLS_AES_128_GCM_SHA256", Server: "CN=est.example.com"}},
+		{Kind: trace.Request, Size: 400, EST: &trace.ESTSummary{Method: "POST", Operation: "simpleenroll", Content: "pkcs10", Subject: "CN=device-42"}},
+		{Kind: trace.Response, HTTPStatus: 202, Elapsed: 5 * time.Millisecond, EST: &trace.ESTSummary{RetryAfter: &retry}},
+		{Kind: trace.Response, HTTPStatus: 200, Size: 1500, EST: &trace.ESTSummary{Content: "certs-only", Certificates: 1}},
+		{Kind: trace.Response, HTTPStatus: 401, EST: &trace.ESTSummary{Text: "wrong\x1b[2J password"}},
+		{Kind: trace.Response, HTTPStatus: 204, EST: &trace.ESTSummary{}},
+		{Kind: trace.Request, EST: &trace.ESTSummary{Method: "GET", Operation: "cacerts", Label: "ca1"}},
+	}
+	for _, ev := range events {
+		l.Event(ev)
+	}
+	l.Note("waiting 30 s as the server asked")
+	out := b.String()
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	for _, line := range lines[1:] {
+		if w := lipgloss.Width(line); w != ladderWidth+4 || !strings.HasSuffix(line, "│") {
+			t.Errorf("line of width %d: %q", w, line)
+		}
+	}
+	for _, want := range []string{
+		"TLS 1.3  TLS_AES_128_GCM_SHA256  CN=est.example.com", "◀", "simpleenroll  POST  CN=device-42  400 B",
+		"HTTP 202 Accepted  retry after 30 s", "certs-only  1 certificate", "HTTP 401 Unauthorized  \"wrong�[2J password\"",
+		"HTTP 204 No Content", "ca1/cacerts  GET", "waiting 30 s as the server asked",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("ladder lacks %q:\n%s", want, out)
+		}
+	}
+}

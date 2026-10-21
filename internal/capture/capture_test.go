@@ -90,3 +90,21 @@ func TestOpenError(t *testing.T) {
 		t.Error("Open succeeded in a missing directory")
 	}
 }
+
+// TestWriterProtocol checks that an EST run names its protocol and a CMP run leaves it out.
+func TestWriterProtocol(t *testing.T) {
+	for _, protocol := range []string{"", "est"} {
+		path := filepath.Join(t.TempDir(), "run.jsonl")
+		w, err := Open(path, Start{Protocol: protocol, Tool: "certrally", Command: "est cacerts", Time: time.Now()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := w.Close(0); err != nil {
+			t.Fatal(err)
+		}
+		got, ok := readLines(t, path)[0]["protocol"]
+		if protocol == "" && ok || protocol != "" && got != protocol {
+			t.Errorf("protocol %q: start line has %v", protocol, got)
+		}
+	}
+}

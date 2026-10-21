@@ -60,3 +60,21 @@ func TestReadErrors(t *testing.T) {
 		t.Error("missing file accepted")
 	}
 }
+
+// TestReadPassword checks that a password uses its own variable and names its own flag.
+func TestReadPassword(t *testing.T) {
+	both := env(map[string]string{EnvVar: "secret", PasswordEnvVar: "password"})
+	got, err := Source{Kind: Password, LookupEnv: both}.Read()
+	if err != nil || string(got) != "password" {
+		t.Errorf("password: %q, %v", got, err)
+	}
+	_, err = Source{Kind: Password, LookupEnv: env(map[string]string{EnvVar: "secret"})}.Read()
+	if !errors.Is(err, ErrMissing) || !strings.Contains(err.Error(), "--password-file") ||
+		!strings.Contains(err.Error(), PasswordEnvVar) {
+		t.Errorf("missing password: %v", err)
+	}
+	if _, err := (Source{Kind: Password, File: "-", Stdin: strings.NewReader("\n")}).Read(); err == nil ||
+		!strings.Contains(err.Error(), "password") {
+		t.Errorf("empty password: %v", err)
+	}
+}
