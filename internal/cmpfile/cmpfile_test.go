@@ -167,12 +167,12 @@ func TestParseErrors(t *testing.T) {
 		name, data, want string
 	}{
 		{"empty", " \n", "f: the file is empty"},
-		{"text", "hello world", "not a capture file and not a CMP message"},
+		{"text", "hello world", "not a capture file and not a CMP or EST message"},
 		{"json output", "{\n  \"command\": \"enroll\"\n}\n", "record the run with --capture"},
 		{"bad json line", `{"kind": "start", "format": 1}` + "\n{oops\n", "f:2: not a capture line"},
 		{"no start", `{"kind": "request"}`, "it has no start line"},
 		{"newer format", `{"kind": "start", "format": 2}`, "capture format 2 is newer"},
-		{"no message", `{"kind": "start", "format": 1}` + "\n" + `{"kind": "end"}`, "the capture holds no CMP message"},
+		{"no message", `{"kind": "start", "format": 1}` + "\n" + `{"kind": "end"}`, "the capture holds no CMP or EST message"},
 		{"bad message line", string(captureLines(t,
 			map[string]any{"kind": "start", "format": 1},
 			map[string]any{"kind": "request", "body": "genm", "der": []byte{0x30, 0x00}},
