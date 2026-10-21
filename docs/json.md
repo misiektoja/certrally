@@ -133,6 +133,8 @@ A certificate in a result has `subject`, `issuer`, `serial`, `notBefore`, `notAf
 | `polls` | The entries of `pollReq` with `certReqId`, or of `pollRep` with `certReqId`, `checkAfter` and `reason` |
 | `error` | The content of an `error` body: `status`, `failInfo`, `statusText`, `errorCode` and `errorDetails` |
 | `items` | The items of `genm` and `genp`, like those of `cmp genm raw` |
+| `challenges` | The challenges of `popdecc`, which the CA sends for a key that proves possession by decryption: `owf`, `witness` and `encryptedRandSize`. Only the first challenge names the one-way function `owf` |
+| `answers` | The decrypted numbers of `popdecr` in hex, in the order of the challenges |
 | `nested` | The body types of the messages in a `nested` body |
 | `problems` | Parts of the message that could not be decoded |
 
