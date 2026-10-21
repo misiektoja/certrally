@@ -354,8 +354,9 @@ func (s *session) client(extra ...client.Option) (*client.Client, error) {
 	opts := []client.Option{client.WithHTTPClient(s.http), client.WithTrustedCAs(s.pool)}
 	if s.pinned {
 		// Some CAs leave their certificate out of responses, so a named CA certificate is also
-		// a candidate signer.
-		opts = append(opts, client.WithServerCerts(s.caCerts))
+		// a candidate signer. caPubs of a MAC-protected response would otherwise become trusted CAs
+		// next to --ca-cert.
+		opts = append(opts, client.WithServerCerts(s.caCerts), client.WithoutCAPubsTrust())
 	}
 	if s.allowSenderKIDMismatch() {
 		opts = append(opts, client.WithSenderKIDMismatch())
