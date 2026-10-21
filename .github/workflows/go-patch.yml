@@ -1,0 +1,90 @@
+name: Go patch version
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly, after the Monday dependency runs, so a published patch is picked up without anyone
+    # watching for it. Dependabot does not advance the go directive, so nothing else would.
+    - cron: "41 6 * * 1"
+
+permissions: {}
+
+jobs:
+  bump:
+    name: Newest patch in the release series
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      BRANCH_PREFIX: go-patch
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        # Credentials are kept because this is the one workflow that writes back to the repository.
+        # Every other checkout drops them.
+        with:
+          ref: dev
+          persist-credentials: true
+
+      # Runs before the toolchain is installed, because it needs only curl and jq. Doing it first means
+      # the Go that gets installed below is already the version being proposed.
+      - name: Move the go directive to the newest patch
+        run: make go-patch-update
+
+      - name: Decide whether anything changed
+        id: bump
+        run: |
+          if git diff --quiet -- go.mod; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            echo "go.mod already declares the newest patch in its series"
+            exit 0
+          fi
+          version="$(awk '$1 == "go" && $2 ~ /^[0-9]/ { print $2; exit }' go.mod)"
+          {
+            echo "needed=true"
+            echo "version=${version}"
+            echo "branch=${BRANCH_PREFIX}/${version}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Setup Go
+        if: steps.bump.outputs.needed == 'true'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      # A pull request raised with GITHUB_TOKEN does not start other workflows, so the checks that
+      # matter for a toolchain move are run here and their result is recorded in the description.
+      - name: Verify the proposed toolchain
+        if: steps.bump.outputs.needed == 'true'
+        run: |
+          make test
+          make govulncheck
+
+      - name: Open the pull request
+        if: steps.bump.outputs.needed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ steps.bump.outputs.branch }}
+          VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            echo "$BRANCH already exists, so this patch has already been proposed"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git add go.mod
+          git commit -m "build(deps): require Go ${VERSION} for the standard library fixes it carries"
+          git add README.md
+          git commit -m "docs: require Go ${VERSION} to build from source"
+          git push origin "$BRANCH"
+          printf '%s\n' \
+            "Go ${VERSION} is the newest patch in the release series go.mod targets. Standard library security fixes ship in patch releases, so staying on an older one makes \`make govulncheck\` report them even though no dependency changed." \
+            "" \
+            "\`make test\` and \`make govulncheck\` passed against ${VERSION} in the run that opened this pull request. A pull request opened by this workflow does not start the other workflows. They run once the change lands on dev." \
+            "" \
+            "The release series itself is never advanced automatically, because a minor bump is a compatibility decision rather than a security one." >"$RUNNER_TEMP/pr-body.md"
+          gh pr create --base dev --head "$BRANCH" --title "build(deps): require Go ${VERSION} for the standard library fixes it carries" --body-file "$RUNNER_TEMP/pr-body.md"
