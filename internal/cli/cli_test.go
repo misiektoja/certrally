@@ -187,6 +187,7 @@ func TestCommandHelp(t *testing.T) {
 		{"enroll"}, {"revoke"}, {"cacerts"}, {"ping"}, {"inspect"}, {"lint"}, {"keygen"}, {"mock"}, {"cmp"}, {"cmp", "genm"},
 		{"cmp", "genm", "cacerts"}, {"cmp", "genm", "rootupdate"}, {"cmp", "genm", "template"},
 		{"cmp", "genm", "crl"}, {"cmp", "genm", "crlupdate"}, {"cmp", "genm", "raw"},
+		{"cmp", "enroll"}, {"cmp", "revoke"}, {"cmp", "cacerts"}, {"cmp", "ping"}, {"cmp", "mock"},
 	}
 	for _, c := range commands {
 		code, out, errOut := run(t, append(c, "--help")...)
@@ -261,9 +262,9 @@ func TestHelpWrapping(t *testing.T) {
 // TestExitStatusHelp checks that only enroll, which confirms certificates, documents exit status 5.
 func TestExitStatusHelp(t *testing.T) {
 	isolateColorEnv(t)
-	for _, args := range [][]string{{"enroll"}, {"revoke"}, {"cacerts"}, {"cmp", "genm", "crl"}} {
+	for _, args := range [][]string{{"enroll"}, {"revoke"}, {"cacerts"}, {"cmp", "genm", "crl"}, {"cmp", "enroll"}, {"cmp", "revoke"}} {
 		_, out, _ := run(t, append(args, "--help")...)
-		if got, want := strings.Contains(out, "5 issued"), args[0] == "enroll"; got != want {
+		if got, want := strings.Contains(out, "5 issued"), args[len(args)-1] == "enroll"; got != want {
 			t.Errorf("%q --help mentions exit status 5: %v, want %v", args, got, want)
 		}
 	}

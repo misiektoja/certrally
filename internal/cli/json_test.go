@@ -266,6 +266,22 @@ func TestCommandsJSON(t *testing.T) {
 	}
 }
 
+// TestCMPGroupJSON checks that the CMP commands also run under cmp and report the command as typed.
+func TestCMPGroupJSON(t *testing.T) {
+	useSecret(t, testSecret)
+	ca := startCA(t, nil)
+	dir := t.TempDir()
+	code, doc := runJSON(t, "cmp", "enroll", "--server", ca.url, "--ref", testRef,
+		"--cert-out", filepath.Join(dir, "cert.pem"), "--key-out", filepath.Join(dir, "key.pem"))
+	if code != exitOK || get(doc, "command") != "cmp enroll" {
+		t.Fatalf("cmp enroll exited with %d as %v: %v", code, get(doc, "command"), doc)
+	}
+	code, doc = runJSON(t, "cmp", "cacerts", "--server", ca.url, "--ref", testRef)
+	if code != exitOK || get(doc, "command") != "cmp cacerts" {
+		t.Errorf("cmp cacerts exited with %d as %v: %v", code, get(doc, "command"), doc)
+	}
+}
+
 // TestKeygenJSON checks the keygen document, which must not contain the private key.
 func TestKeygenJSON(t *testing.T) {
 	isolateColorEnv(t)
