@@ -7,7 +7,9 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/asn1"
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"path/filepath"
 	"strings"
@@ -391,6 +393,70 @@ func protectWithMAC(t *testing.T, der []byte, opts ...pkicmp.MACCredentialOption
 		t.Fatal(err)
 	}
 	return out
+}
+
+// TestInspectProofByDecryption checks the challenges of a popdecc body and the answers of a
+// popdecr body, and that a popdecr file counts as a request.
+func TestInspectProofByDecryption(t *testing.T) {
+	useSecret(t, "")
+	dir := t.TempDir()
+	owf := &pkicmp.AlgorithmIdentifier{Algorithm: asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 1}}
+	challenges := pkicmp.POPODecKeyChallContent{
+		{OWF: owf, Witness: []byte{0xab, 0xcd}, EncryptedRand: derSequence(38)},
+		{Witness: []byte{0x01}, EncryptedRand: derSequence(5)},
+	}
+	answers := pkicmp.POPODecKeyRespContent{big.NewInt(0x1234), big.NewInt(5)}
+	challFile, answerFile := filepath.Join(dir, "popdecc.der"), filepath.Join(dir, "popdecr.der")
+	for file, body := range map[string]*pkicmp.PKIBody{challFile: pkicmp.NewPopDecCBody(&challenges), answerFile: pkicmp.NewPopDecRBody(&answers)} {
+		der, err := pkicmp.NewPKIMessage(body, pkicmp.MessageOptions{}).MarshalBinary()
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, file, der)
+	}
+
+	code, doc := runJSON(t, "inspect", challFile, answerFile)
+	if code != exitOK {
+		t.Fatalf("exited with %d: %v", code, doc)
+	}
+	msgs, _ := get(doc, "result.messages").([]any)
+	if len(msgs) != 2 {
+		t.Fatalf("got %d messages", len(msgs))
+	}
+	if got := get(msgs[0], "direction"); got != "response" {
+		t.Errorf("popdecc direction = %v", got)
+	}
+	if got := get(msgs[1], "direction"); got != "request" {
+		t.Errorf("popdecr direction = %v", got)
+	}
+	for i, m := range msgs {
+		if p := get(m, "problems"); p != nil {
+			t.Errorf("message %d problems: %v", i, p)
+		}
+	}
+	gotChallenges, _ := json.Marshal(get(msgs[0], "challenges"))
+	wantChallenges := `[{"encryptedRandSize":40,"owf":"2.16.840.1.101.3.4.2.1","witness":"abcd"},{"encryptedRandSize":7,"witness":"01"}]`
+	if string(gotChallenges) != wantChallenges {
+		t.Errorf("challenges = %s, want %s", gotChallenges, wantChallenges)
+	}
+	if got := fmt.Sprint(get(msgs[1], "answers")); got != "[1234 05]" {
+		t.Errorf("answers = %s", got)
+	}
+
+	code, out, errOut := run(t, "inspect", "--color", "never", challFile, answerFile)
+	if code != exitOK {
+		t.Fatalf("exited with %d:\n%s", code, errOut)
+	}
+	for _, want := range []string{"Challenge 1", "One-way function", "2.16.840.1.101.3.4.2.1", "AB:CD", "40 bytes", "Challenge 2", "Answer to challenge 1", "12:34", "Answer to challenge 2"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("text report lacks %q:\n%s", want, out)
+		}
+	}
+}
+
+// derSequence returns a DER SEQUENCE with n zero content bytes, which stands in for EnvelopedData.
+func derSequence(n int) []byte {
+	return append([]byte{0x30, byte(n)}, make([]byte, n)...)
 }
 
 // TestInspectSecretFromStdin checks that --secret-file - reads the secret from standard input.

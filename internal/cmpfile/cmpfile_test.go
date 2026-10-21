@@ -41,6 +41,29 @@ func captureLines(t *testing.T, lines ...any) []byte {
 	return []byte(b.String())
 }
 
+// TestIsRequest checks the direction of every body type. A client sends popdecr to answer the
+// popdecc challenge of the CA. A nested body can travel either way and counts as a response.
+func TestIsRequest(t *testing.T) {
+	requests := []pkicmp.BodyType{
+		pkicmp.BodyTypeIR, pkicmp.BodyTypeCR, pkicmp.BodyTypeKUR, pkicmp.BodyTypeP10CR, pkicmp.BodyTypeRR,
+		pkicmp.BodyTypeCertConf, pkicmp.BodyTypePollReq, pkicmp.BodyTypeGenM, pkicmp.BodyTypePopDecR,
+	}
+	responses := []pkicmp.BodyType{
+		pkicmp.BodyTypeIP, pkicmp.BodyTypeCP, pkicmp.BodyTypeKUP, pkicmp.BodyTypeRP, pkicmp.BodyTypePKIConf,
+		pkicmp.BodyTypeError, pkicmp.BodyTypePollRep, pkicmp.BodyTypeGenP, pkicmp.BodyTypePopDecC, pkicmp.BodyTypeNested,
+	}
+	for _, bt := range requests {
+		if !IsRequest(bt) {
+			t.Errorf("IsRequest(%s) = false", bt)
+		}
+	}
+	for _, bt := range responses {
+		if IsRequest(bt) {
+			t.Errorf("IsRequest(%s) = true", bt)
+		}
+	}
+}
+
 // TestParseFormats checks that every single-message format yields the message with its direction.
 func TestParseFormats(t *testing.T) {
 	genm := encode(t, pkicmp.NewGenMBody())
