@@ -24,6 +24,9 @@ import (
 // that stops answering fails the test before the go test deadline.
 const commandTimeout = 2 * time.Minute
 
+// maxClockSkew is how far a server clock may run ahead of the test clock.
+const maxClockSkew = time.Minute
+
 // Certrally runs the binary that CERTRALLY_BIN names in a temporary working directory.
 type Certrally struct {
 	bin string
@@ -105,6 +108,12 @@ func (c *Certrally) CheckIssued(t *testing.T, certFile, caFile, keyFile string) 
 		Roots:         roots,
 		Intermediates: intermediates,
 		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
+		CurrentTime:   time.Now(),
+	}
+	// Some servers start a certificate at the moment they issue it, and a server in a container can
+	// run slightly ahead of the host clock, as in the Docker Desktop VM.
+	if skew := certs[0].NotBefore.Sub(opts.CurrentTime); skew > 0 && skew <= maxClockSkew {
+		opts.CurrentTime = certs[0].NotBefore
 	}
 	if _, err := certs[0].Verify(opts); err != nil {
 		t.Fatalf("%s does not chain to %s: %v", certFile, caFile, err)
