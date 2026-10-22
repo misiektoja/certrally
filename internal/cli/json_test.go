@@ -372,7 +372,7 @@ func TestCaptureSameAsOutput(t *testing.T) {
 		{"cacerts", "--ref", testRef, "--out", file, "--capture", file},
 	} {
 		code, _, errOut := run(t, append(args, "--server", ca.url)...)
-		if code != exitLocal || !strings.Contains(errOut, "for an output") {
+		if code != exitLocal || !errorContains(errOut, "for an output") {
 			t.Errorf("%q exited with %d:\n%s", args, code, errOut)
 		}
 	}
@@ -386,7 +386,7 @@ func TestCaptureUnwritable(t *testing.T) {
 	useSecret(t, testSecret)
 	ca := startCA(t, nil)
 	code, _, errOut := run(t, "ping", "--server", ca.url, "--capture", filepath.Join(t.TempDir(), "missing", "run.jsonl"))
-	if code != exitLocal || !strings.Contains(errOut, "--capture") || ca.requests.Load() != 0 {
+	if code != exitLocal || !errorContains(errOut, "--capture") || ca.requests.Load() != 0 {
 		t.Errorf("exited with %d after %d requests:\n%s", code, ca.requests.Load(), errOut)
 	}
 }

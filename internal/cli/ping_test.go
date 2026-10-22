@@ -81,7 +81,7 @@ func TestPingNoAnswer(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			code, _, errOut := run(t, append([]string{"ping"}, tt.args...)...)
 			t.Log(errOut)
-			if code != tt.wantCode || !strings.Contains(errOut, tt.want) {
+			if code != tt.wantCode || !errorContains(errOut, tt.want) {
 				t.Errorf("exited with %d, want %d and %q in:\n%s", code, tt.wantCode, tt.want, errOut)
 			}
 		})

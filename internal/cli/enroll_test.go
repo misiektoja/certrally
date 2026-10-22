@@ -167,7 +167,7 @@ func TestEnrollIR(t *testing.T) {
 				t.Errorf("chain = %d certificates, %v", len(chain), err)
 			}
 			for _, want := range []string{"ir", "ip  accepted", "certConf", "pkiconf", "PBMAC1"} {
-				if !strings.Contains(errOut, want) {
+				if !errorContains(errOut, want) {
 					t.Errorf("ladder lacks %q:\n%s", want, errOut)
 				}
 			}
@@ -254,7 +254,7 @@ func TestEnrollSignedOtherCA(t *testing.T) {
 	dir := t.TempDir()
 	code, _, errOut := run(t, "enroll", "--server", ca.url, "--type", "kur", "--cert", certFile, "--key", keyFile,
 		"--ca-cert", other.caFile, "--cert-out", filepath.Join(dir, "cert.pem"), "--key-out", filepath.Join(dir, "key.pem"))
-	if code != exitProtocol || !strings.Contains(errOut, "not signed by the CA in --ca-cert") {
+	if code != exitProtocol || !errorContains(errOut, "not signed by the CA in --ca-cert") {
 		t.Errorf("exited with %d, want %d with the --ca-cert hint:\n%s", code, exitProtocol, errOut)
 	}
 }
@@ -268,7 +268,7 @@ func TestEnrollMACOtherCA(t *testing.T) {
 	certOut := filepath.Join(dir, "cert.pem")
 	code, _, errOut := run(t, "enroll", "--server", ca.url, "--ref", testRef, "--ca-cert", other.caFile,
 		"--cert-out", certOut, "--key-out", filepath.Join(dir, "key.pem"))
-	if code != exitProtocol || !strings.Contains(errOut, "does not chain to the certificates in --ca-cert") {
+	if code != exitProtocol || !errorContains(errOut, "does not chain to the certificates in --ca-cert") {
 		t.Errorf("exited with %d, want %d with the --ca-cert hint:\n%s", code, exitProtocol, errOut)
 	}
 	if _, err := os.Stat(certOut); !errors.Is(err, os.ErrNotExist) {
@@ -355,7 +355,7 @@ func TestEnrollFailures(t *testing.T) {
 			args := append([]string{"enroll", "--server", tt.server, "--ref", testRef,
 				"--cert-out", certOut, "--key-out", filepath.Join(dir, "key.pem")}, tt.extra...)
 			code, _, errOut := run(t, args...)
-			if code != tt.wantCode || !strings.Contains(errOut, tt.want) {
+			if code != tt.wantCode || !errorContains(errOut, tt.want) {
 				t.Errorf("exited with %d, want %d and %q in:\n%s", code, tt.wantCode, tt.want, errOut)
 			}
 			_, statErr := os.Stat(certOut)
@@ -396,7 +396,7 @@ func TestEnrollUsage(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			args := append([]string{"enroll", "--server", ca.url}, tt.args...)
 			code, _, errOut := run(t, args...)
-			if code != exitLocal || !strings.Contains(errOut, tt.want) {
+			if code != exitLocal || !errorContains(errOut, tt.want) {
 				t.Errorf("exited with %d, want 1 and %q in:\n%s", code, tt.want, errOut)
 			}
 		})
@@ -416,7 +416,7 @@ func TestEnrollMissingSecret(t *testing.T) {
 	dir := t.TempDir()
 	code, _, errOut := run(t, "enroll", "--server", ca.url, "--ref", testRef,
 		"--cert-out", filepath.Join(dir, "c.pem"), "--key-out", filepath.Join(dir, "k.pem"))
-	if code != exitLocal || !strings.Contains(errOut, secret.EnvVar) {
+	if code != exitLocal || !errorContains(errOut, secret.EnvVar) {
 		t.Errorf("exited with %d:\n%s", code, errOut)
 	}
 }
@@ -468,7 +468,7 @@ func TestEnrollHints(t *testing.T) {
 	}
 	for _, tt := range rejections {
 		code, errOut := enroll(rejectingServer(t, tt.status), "--mac", tt.mac)
-		if code != exitRejected || !strings.Contains(errOut, tt.want) || strings.Contains(errOut, pbm) != tt.wantPBM {
+		if code != exitRejected || !errorContains(errOut, tt.want) || errorContains(errOut, pbm) != tt.wantPBM {
 			t.Errorf("%s: exited with %d, want %d with %q and the --mac pbm hint %v:\n%s",
 				tt.name, code, exitRejected, tt.want, tt.wantPBM, errOut)
 		}
@@ -491,7 +491,7 @@ func TestEnrollHints(t *testing.T) {
 	}
 	for _, tt := range tests {
 		code, errOut := enroll(proxy, tt.extra...)
-		if code != exitProtocol || !strings.Contains(errOut, tt.hint) || !strings.Contains(errOut, "trusted certificate: x509:") {
+		if code != exitProtocol || !errorContains(errOut, tt.hint) || !errorContains(errOut, "trusted certificate: x509:") {
 			t.Errorf("%s: exited with %d, want %d with %q:\n%s", tt.name, code, exitProtocol, tt.hint, errOut)
 		}
 	}

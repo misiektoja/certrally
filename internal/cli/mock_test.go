@@ -209,7 +209,7 @@ func TestMockErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			code, _, errOut := run(t, append([]string{"mock"}, tt.args...)...)
-			if code != exitLocal || !strings.Contains(errOut, tt.want) {
+			if code != exitLocal || !errorContains(errOut, tt.want) {
 				t.Errorf("exited with %d, want %d with %q:\n%s", code, exitLocal, tt.want, errOut)
 			}
 		})

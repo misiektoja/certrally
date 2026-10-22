@@ -36,6 +36,18 @@ func run(t *testing.T, args ...string) (code int, stdout, stderr string) {
 	return code, out.String(), errOut.String()
 }
 
+// errorContains reports whether the error output contains want when whitespace is ignored. When the
+// writer is not a file, as in these tests, fang prints errors in a box that wraps at 120 columns, so
+// a line break can fall anywhere in a message, even inside a long temporary path.
+func errorContains(errOut, want string) bool {
+	return strings.Contains(removeSpace(errOut), removeSpace(want))
+}
+
+// removeSpace returns s without any white space.
+func removeSpace(s string) string {
+	return strings.Join(strings.Fields(s), "")
+}
+
 // TestRunHelp checks that help succeeds and lists the global flags.
 func TestRunHelp(t *testing.T) {
 	isolateColorEnv(t)
@@ -94,7 +106,7 @@ func TestRunErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		code, _, errOut := run(t, tt.args...)
-		if code != 1 || !strings.Contains(errOut, tt.want) {
+		if code != 1 || !errorContains(errOut, tt.want) {
 			t.Errorf("%q exited with %d and wrote %q, want 1 and %q", tt.args, code, errOut, tt.want)
 		}
 	}

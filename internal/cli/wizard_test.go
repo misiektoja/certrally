@@ -151,10 +151,10 @@ func TestEnrollWizard(t *testing.T) {
 	if command != want {
 		t.Errorf("printed command\n%s\nwant\n%s", command, want)
 	}
-	if strings.Contains(errOut, testSecret) {
+	if errorContains(errOut, testSecret) {
 		t.Error("the wizard printed the shared secret")
 	}
-	if !strings.Contains(errOut, "That command asks for the shared secret") {
+	if !errorContains(errOut, "That command asks for the shared secret") {
 		t.Errorf("the wizard does not say where the command gets the secret:\n%s", errOut)
 	}
 
@@ -210,7 +210,7 @@ func TestEnrollWizardPrefill(t *testing.T) {
 	if command := printedCommand(t, errOut); command != want {
 		t.Errorf("printed command\n%s\nwant\n%s", command, want)
 	}
-	if strings.Contains(errOut, "That command asks for the shared secret") {
+	if errorContains(errOut, "That command asks for the shared secret") {
 		t.Error("the wizard explains a secret that it did not ask for")
 	}
 	if got := readCert(t, certOut); got.Subject.CommonName != "device-42" {
@@ -271,7 +271,7 @@ func TestEnrollWizardCancel(t *testing.T) {
 	} {
 		a := useWizard(t, answers)
 		code, _, errOut := run(t, flags...)
-		if code != exitLocal || !strings.Contains(errOut, "nothing was sent") {
+		if code != exitLocal || !errorContains(errOut, "nothing was sent") {
 			t.Errorf("%v: enroll exited with %d:\n%s", answers, code, errOut)
 		}
 		if len(a.asked) != len(answers) {
@@ -310,7 +310,7 @@ func TestEnrollWizardStart(t *testing.T) {
 				wizardTerminal = func(io.Reader, io.Writer) bool { return false }
 			}
 			code, _, errOut := run(t, tt.args...)
-			if code != exitLocal || !strings.Contains(errOut, tt.want) {
+			if code != exitLocal || !errorContains(errOut, tt.want) {
 				t.Errorf("exited with %d, want %d with %q:\n%s", code, exitLocal, tt.want, errOut)
 			}
 			if asked := len(a.asked) > 0; asked != tt.asked {

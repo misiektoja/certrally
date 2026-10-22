@@ -282,7 +282,7 @@ func TestESTBootstrap(t *testing.T) {
 	}
 
 	code, _, errOut := run(t, append(base, "--out", filepath.Join(dir, "unchecked.pem"))...)
-	if code != exitLocal || !strings.Contains(errOut, "--fingerprint") {
+	if code != exitLocal || !errorContains(errOut, "--fingerprint") {
 		t.Errorf("bootstrap without a check: exit %d:\n%s", code, errOut)
 	}
 
@@ -292,7 +292,7 @@ func TestESTBootstrap(t *testing.T) {
 	}
 
 	code, _, errOut = run(t, append(base, "--fingerprint", "12:34")...)
-	if code != exitLocal || !strings.Contains(errOut, "64 hex digits") {
+	if code != exitLocal || !errorContains(errOut, "64 hex digits") {
 		t.Errorf("short fingerprint: exit %d:\n%s", code, errOut)
 	}
 }
@@ -702,7 +702,7 @@ func TestESTMockErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		code, _, errOut := run(t, append([]string{"est", "mock"}, tt.args...)...)
-		if code != exitLocal || !strings.Contains(errOut, tt.want) {
+		if code != exitLocal || !errorContains(errOut, tt.want) {
 			t.Errorf("%q: exit %d:\n%s", tt.args, code, errOut)
 		}
 	}
@@ -740,7 +740,7 @@ func TestESTUsageErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		code, _, errOut := run(t, tt.args...)
-		if code != exitLocal || !strings.Contains(errOut, tt.want) {
+		if code != exitLocal || !errorContains(errOut, tt.want) {
 			t.Errorf("%q: exit %d, want %q:\n%s", tt.args, code, tt.want, errOut)
 		}
 	}

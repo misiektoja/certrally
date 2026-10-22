@@ -46,7 +46,7 @@ func TestLintCapturedDeviation(t *testing.T) {
 	writeFile(t, chainFile, pemfile.EncodeCertificates([]*x509.Certificate{issuing.cert, issuing.Cert()}))
 	code, _, errOut := run(t, "enroll", "--server", stripExtraCerts(t, ca.url), "--ref", testRef, "--ca-cert", chainFile,
 		"--cert-out", filepath.Join(dir, "cert.pem"), "--key-out", filepath.Join(dir, "key.pem"), "--capture", capture)
-	if code != exitOK || !strings.Contains(errOut, deviation) {
+	if code != exitOK || !errorContains(errOut, deviation) {
 		t.Fatalf("enroll exited with %d:\n%s", code, errOut)
 	}
 
@@ -60,7 +60,7 @@ func TestLintCapturedDeviation(t *testing.T) {
 	}
 	code, out, errOut := run(t, "lint", capture)
 	if code != exitProfile || !strings.Contains(out, capture+":3: "+deviation+" (RFC 9483 section 3.3).") ||
-		!strings.Contains(errOut, "1 deviation in 2 responses") {
+		!errorContains(errOut, "1 deviation in 2 responses") {
 		t.Errorf("exited with %d:\n%s%s", code, errOut, out)
 	}
 }
@@ -110,8 +110,8 @@ func TestLintMessageFiles(t *testing.T) {
 	}
 
 	code, out, errOut := run(t, "lint", ip)
-	if code != exitLocal || out != "" || !strings.Contains(errOut, "the ip response has no request before it") ||
-		!strings.Contains(errOut, "No response was checked") {
+	if code != exitLocal || out != "" || !errorContains(errOut, "the ip response has no request before it") ||
+		!errorContains(errOut, "No response was checked") {
 		t.Errorf("lone response exited with %d:\n%s%s", code, errOut, out)
 	}
 	code, doc = runJSON(t, "lint", ip, ir, otherIP)

@@ -494,7 +494,7 @@ func TestInspectErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			code, _, errOut := run(t, append([]string{"inspect"}, tt.args...)...)
-			if code != exitLocal || !strings.Contains(errOut, tt.want) {
+			if code != exitLocal || !errorContains(errOut, tt.want) {
 				t.Errorf("exited with %d:\n%s", code, errOut)
 			}
 		})

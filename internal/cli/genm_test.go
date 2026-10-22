@@ -40,7 +40,7 @@ func TestCACerts(t *testing.T) {
 	if block, rest := pem.Decode([]byte(stdout)); block == nil || len(rest) != 0 || !bytes.Equal(block.Bytes, caCert.Raw) {
 		t.Errorf("standard output is not the CA certificate:\n%s", stdout)
 	}
-	if !strings.Contains(errOut, "Received 1 CA certificate") {
+	if !errorContains(errOut, "Received 1 CA certificate") {
 		t.Errorf("the report did not move to standard error:\n%s", errOut)
 	}
 }
@@ -112,7 +112,7 @@ func TestGenMFailures(t *testing.T) {
 			args = append(args, "--server", ca.url, "--ref", testRef)
 			code, out, errOut := run(t, args...)
 			t.Log(errOut + out)
-			if code != tt.wantCode || !strings.Contains(errOut, tt.want) {
+			if code != tt.wantCode || !errorContains(errOut, tt.want) {
 				t.Errorf("exited with %d, want %d and %q in:\n%s", code, tt.wantCode, tt.want, errOut)
 			}
 		})
@@ -162,7 +162,7 @@ func TestGenMRejected(t *testing.T) {
 	}
 	for _, tt := range tests {
 		code, _, errOut := run(t, "cacerts", "--server", rejectingServer(t, tt.status), "--ref", testRef)
-		if code != exitRejected || strings.Contains(errOut, unsupported) != tt.want {
+		if code != exitRejected || errorContains(errOut, unsupported) != tt.want {
 			t.Errorf("%s: exited with %d, want %d with the hint %v:\n%s", tt.name, code, exitRejected, tt.want, errOut)
 		}
 	}

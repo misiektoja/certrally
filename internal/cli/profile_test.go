@@ -203,7 +203,7 @@ func TestProfileDeviation(t *testing.T) {
 
 	t.Run("compatible text", func(t *testing.T) {
 		code, _, errOut := run(t, enroll("text")...)
-		if code != exitOK || !strings.Contains(errOut, deviation) {
+		if code != exitOK || !errorContains(errOut, deviation) {
 			t.Errorf("exited with %d:\n%s", code, errOut)
 		}
 	})
@@ -229,7 +229,7 @@ func TestProfileDeviation(t *testing.T) {
 	})
 	t.Run("strict text", func(t *testing.T) {
 		code, _, errOut := run(t, enroll("strict-text", "--profile", "strict")...)
-		if code != exitProfile || !strings.Contains(errOut, "--profile compatible") {
+		if code != exitProfile || !errorContains(errOut, "--profile compatible") {
 			t.Errorf("exited with %d:\n%s", code, errOut)
 		}
 	})
@@ -397,7 +397,7 @@ func TestProfileRejection(t *testing.T) {
 func TestProfileUsage(t *testing.T) {
 	isolateColorEnv(t)
 	code, _, errOut := run(t, "ping", "--server", "http://ca.test/cmp", "--profile", "lenient")
-	if code != exitLocal || !strings.Contains(errOut, "--profile") {
+	if code != exitLocal || !errorContains(errOut, "--profile") {
 		t.Errorf("exited with %d:\n%s", code, errOut)
 	}
 }

@@ -27,7 +27,7 @@ func TestRevoke(t *testing.T) {
 		}
 	}
 	for _, want := range []string{"rr", "rp  accepted"} {
-		if !strings.Contains(errOut, want) {
+		if !errorContains(errOut, want) {
 			t.Errorf("ladder lacks %q:\n%s", want, errOut)
 		}
 	}
@@ -69,7 +69,7 @@ func TestRevokeFailures(t *testing.T) {
 			args := append([]string{"revoke", "--server", ca.url, "--yes"}, tt.args...)
 			code, _, errOut := run(t, args...)
 			t.Log(errOut)
-			if code != tt.wantCode || !strings.Contains(errOut, tt.want) {
+			if code != tt.wantCode || !errorContains(errOut, tt.want) {
 				t.Errorf("exited with %d, want %d and %q in:\n%s", code, tt.wantCode, tt.want, errOut)
 			}
 		})

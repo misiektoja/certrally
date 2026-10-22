@@ -94,7 +94,7 @@ func TestKeygenStdout(t *testing.T) {
 	if _, err := keys.Parse([]byte(out)); err != nil {
 		t.Errorf("standard output is not a key: %v", err)
 	}
-	if !strings.Contains(errOut, "ECDSA P-256") {
+	if !errorContains(errOut, "ECDSA P-256") {
 		t.Errorf("report:\n%s", errOut)
 	}
 }
@@ -132,7 +132,7 @@ func TestKeygenUsage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			code, _, errOut := run(t, append([]string{"keygen"}, tt.args...)...)
-			if code != exitLocal || !strings.Contains(errOut, tt.want) {
+			if code != exitLocal || !errorContains(errOut, tt.want) {
 				t.Errorf("exited with %d, want 1 and %q in:\n%s", code, tt.want, errOut)
 			}
 		})
