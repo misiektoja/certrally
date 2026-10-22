@@ -87,16 +87,19 @@ homebrew_casks:
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Casks
     commit_msg_template: "feat: update {{ .ProjectName }} to {{ .Tag }}"
+    # The cobra format adds the completion command and the shell name to the binary.
     generate_completions_from_executable:
-      args: [completion]
       shell_parameter_format: cobra
-    # The binaries are not notarized, so macOS would refuse to run a downloaded copy.
-    hooks:
-      post:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/certrally"]
-          end
+    # The binaries are not notarized, so macOS kills a downloaded copy that still has the quarantine
+    # attribute. Homebrew runs the binary for the completions before any postflight stanza, so the
+    # attribute goes in a preflight step. GoReleaser v2.18 has no option for install steps. It applies
+    # its templates to the custom block, so Homebrew's {{staged_path}} token is escaped.
+    custom_block: |
+      preflight_steps do
+        on_macos do
+          run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ "{{staged_path}}" }}/certrally"]
+        end
+      end
 
 # The release workflow passes the RELEASE_NOTES.md section of the version with --release-notes.
 # GoReleaser reads that file in its changelog step, so disabling the step leaves the release empty.
