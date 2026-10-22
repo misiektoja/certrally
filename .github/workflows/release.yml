@@ -1,0 +1,191 @@
+# Builds a release: archives, checksums, SBOMs, container images and the Homebrew cask. The GitHub
+# release is left as a draft to review and publish by hand. The images and the cask are pushed during
+# the run, so publish the draft soon after the run succeeds.
+# The workflow is inert until a version tag is pushed. It has no manual trigger, because the keyless
+# signature names the ref that ran it and users verify against the tag. Re-run a failed run instead.
+# A re-run replaces the draft that the failed run left.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions: {}
+
+env:
+  # Matches the image name in .goreleaser.yaml.
+  IMAGE: ghcr.io/misiektoja/certrally
+
+jobs:
+  publish:
+    name: Publish the release
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      # Creating the release and uploading its assets.
+      contents: write
+      # Pushing the container images and their attestations.
+      packages: write
+      # Keyless cosign signing and the provenance attestations use a short lived identity.
+      id-token: write
+      attestations: write
+    steps:
+      - name: Resolve the release version
+        id: release
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          version="$REF_NAME"
+          if ! printf '%s\n' "$version" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'; then
+            echo "Release version must be a stable SemVer tag such as v0.1.0, got ${version}" >&2
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      # The cask is pushed to another repository, which the workflow token cannot write to. Failing
+      # here keeps a missing secret from leaving a published release without its cask.
+      - name: Check the release secrets
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "$HOMEBREW_TAP_TOKEN" ]; then
+            echo "Set the HOMEBREW_TAP_TOKEN secret to a token that can push to misiektoja/homebrew-tap" >&2
+            exit 1
+          fi
+
+      - name: Refuse to rebuild a published release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # This step runs before checkout, so there is no git remote for gh to infer the repository
+          # from. Naming it keeps that failure from being read as an absent release.
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ steps.release.outputs.version }}
+        # A release published by hand in the GitHub UI also creates the tag and so starts this
+        # workflow. Failing here keeps its assets, the images and the cask from being replaced. A draft
+        # left by an earlier run is replaced by GoReleaser.
+        run: |
+          # Only a release that is genuinely absent may be treated as absent. Any other gh failure,
+          # such as an authentication or an API error, stops the run rather than being taken for one.
+          if lookup="$(gh release view "$VERSION" --json isDraft --jq .isDraft 2>&1)"; then
+            case "$lookup" in
+              true) exit 0 ;;
+              false) ;;
+              *) echo "Unexpected release state for ${VERSION}: ${lookup}" >&2; exit 1 ;;
+            esac
+            echo "Release ${VERSION} is already published and cannot be rebuilt." >&2
+            echo "Releases are built by pushing the tag, not by creating the release in the GitHub UI." >&2
+            echo "To recover, delete the release and its tag, then push the tag again:" >&2
+            echo "  gh release delete ${VERSION} --cleanup-tag --yes" >&2
+            echo "  git push origin ${VERSION}" >&2
+            exit 1
+          elif ! printf '%s\n' "$lookup" | grep -q 'release not found'; then
+            echo "Could not determine whether ${VERSION} is already released: ${lookup}" >&2
+            exit 1
+          fi
+
+      - name: Clone the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # GoReleaser reads the previous tag and the commit dates from the history.
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ steps.release.outputs.version }}
+
+      - name: Verify the release tag belongs to the default branch
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          tag_commit="$(git rev-list -n 1 "$VERSION")"
+          if ! git merge-base --is-ancestor "$tag_commit" "origin/${DEFAULT_BRANCH}"; then
+            echo "Release tag ${VERSION} is not reachable from ${DEFAULT_BRANCH}" >&2
+            exit 1
+          fi
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      # The release description is the RELEASE_NOTES.md section for this version. Extracting it first
+      # fails the run on a missing or undated section while retagging is still cheap.
+      - name: Build the release description from the release notes
+        env:
+          RELEASE_BODY: ${{ runner.temp }}/release-body.md
+          VERSION: ${{ steps.release.outputs.version }}
+        run: make release-body VERSION="$VERSION" RELEASE_BODY="$RELEASE_BODY"
+
+      - name: Check the tagged code
+        run: make tidy-check fmt-check test
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Install syft
+        uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+
+      # The images only copy prebuilt binaries, so a cross-platform build needs no emulation.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to the GitHub container registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The Makefile pins the GoReleaser version, so a local snapshot and the release use the same one.
+      - name: Install GoReleaser
+        run: make goreleaser
+
+      - name: Build the draft release with GoReleaser
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          RELEASE_BODY: ${{ runner.temp }}/release-body.md
+        run: ./bin/goreleaser release --clean --release-notes "$RELEASE_BODY"
+
+      # Lets users verify with `gh attestation verify` that every archive came from this run.
+      - name: Attest the archives' build provenance
+        id: archives
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: dist/checksums.txt
+
+      # Scanners such as OpenSSF Scorecard look for the provenance among the release assets.
+      - name: Attach the archives' provenance to the draft release
+        env:
+          ATTESTATION_BUNDLE: ${{ steps.archives.outputs.bundle-path }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          bundle="dist/certrally_${VERSION#v}.intoto.jsonl"
+          cp "$ATTESTATION_BUNDLE" "$bundle"
+          gh release upload "$VERSION" "$bundle" --clobber
+
+      - name: Find the container image digest
+        id: image
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          digest="$(awk -v ref="${IMAGE}:${VERSION#v}" '$2 == ref { print $1; exit }' dist/digests.txt)"
+          if [ -z "$digest" ]; then
+            echo "dist/digests.txt has no digest for ${IMAGE}:${VERSION#v}" >&2
+            exit 1
+          fi
+          echo "digest=sha256:${digest#sha256:}" >> "$GITHUB_OUTPUT"
+
+      - name: Attest the container image's build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+
+      - name: Point to the draft release
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: echo "Review and publish the draft release at ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases" >> "$GITHUB_STEP_SUMMARY"

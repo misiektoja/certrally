@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a vulnerability
+    url: https://github.com/misiektoja/certrally/security/advisories/new
+    about: Report privately through GitHub. Never open a public issue for a suspected vulnerability.
+  - name: Documentation
+    url: https://github.com/misiektoja/certrally#readme
+    about: Installation, every command, the trust model and the exit statuses.

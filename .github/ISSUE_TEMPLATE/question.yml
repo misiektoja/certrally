@@ -1,0 +1,27 @@
+name: Question
+description: Ask how to use certrally or how it behaves against a CMP or EST server
+labels:
+  - question
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the [README](https://github.com/misiektoja/certrally/blob/main/README.md) and [SUPPORT.md](https://github.com/misiektoja/certrally/blob/main/SUPPORT.md) first.
+
+        Never paste shared secrets, passwords, private keys or capture files from a production system into an issue.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What you want to do and what you tried.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: certrally version and server
+      placeholder: v0.1.0, EJBCA 9.6.3
+    validations:
+      required: false
