@@ -98,9 +98,10 @@ homebrew_casks:
             system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/certrally"]
           end
 
-# The release workflow passes the RELEASE_NOTES.md section of the version as the release notes.
+# The release workflow passes the RELEASE_NOTES.md section of the version with --release-notes.
+# GoReleaser reads that file in its changelog step, so disabling the step leaves the release empty.
 changelog:
-  disable: true
+  disable: false
 
 # The release stays a draft until it is published by hand. A re-run of a failed release replaces the
 # draft that the earlier run left.
