@@ -147,6 +147,21 @@ jobs:
           RELEASE_BODY: ${{ runner.temp }}/release-body.md
         run: ./bin/goreleaser release --clean --release-notes "$RELEASE_BODY"
 
+      # GoReleaser leaves the description empty, without an error, when it does not read --release-notes.
+      - name: Check the release description
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_BODY: ${{ runner.temp }}/release-body.md
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          first_line="$(grep -m 1 '[^[:space:]]' "$RELEASE_BODY")"
+          gh release view "$VERSION" --json body --jq .body > "${RUNNER_TEMP}/draft-body.md"
+          if ! grep -qxF "$first_line" "${RUNNER_TEMP}/draft-body.md"; then
+            echo "The draft release ${VERSION} does not carry the RELEASE_NOTES.md section" >&2
+            exit 1
+          fi
+
       # Lets users verify with `gh attestation verify` that every archive came from this run.
       - name: Attest the archives' build provenance
         id: archives
