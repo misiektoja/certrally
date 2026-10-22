@@ -9,24 +9,33 @@
 [![Supply chain](https://github.com/misiektoja/certrally/actions/workflows/supply-chain.yml/badge.svg?branch=main)](https://github.com/misiektoja/certrally/actions/workflows/supply-chain.yml)
 [![OpenSSF Scorecard](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.scorecard.dev%2Fprojects%2Fgithub.com%2Fmisiektoja%2Fcertrally&query=%24.score&label=openssf%20scorecard&style=flat-square)](https://scorecard.dev/viewer/?uri=github.com/misiektoja/certrally)
 
-certrally is a command line client for certificate enrollment with the Certificate Management Protocol (CMP, RFC 9810) and Enrollment over Secure Transport (EST, RFC 7030).
+certrally is a command line client for certificate enrollment with the Certificate Management Protocol (CMP) and Enrollment over Secure Transport (EST).
 
 ![certrally enrolls an ML-DSA-65 certificate from the test CA and revokes it](docs/demo.gif)
 
-* Enrollment and key update over CMP (`ir`, `cr`, `kur`, `p10cr`) with a shared secret or a certificate
-* A step-by-step `enroll` on a terminal that prints the matching command for scripts
-* Revocation (`rr`) and the RFC 9483 support messages for CA certificates, root CA updates, request templates and CRLs
-* `ping` to check that a server answers CMP and `keygen` to create keys and requests offline
-* `mock` to run a CMP test CA on your machine, for trying certrally and testing scripts
-* EST enrollment, renewal, server key generation, CA certificates and CSR attributes with a password, a TLS client certificate or TLS-SRP, and `est mock` as an EST test CA
-* ML-DSA and composite ML-DSA keys alongside RSA, ECDSA and Ed25519
-* No trust setup needed: certrally trusts the CA it talks to or the one you name with `--ca-cert`
-* A live diagram of every message in the exchange and plain explanations of failures
-* Warnings about responses that break RFC 9483 or RFC 7030 and a strict profile that rejects them
-* JSON output for scripts and capture files that record every message of a run
-* `inspect` and `lint` to decode recorded messages and check them against RFC 9483 and RFC 7030
-* Exit statuses that tell scripts why a request failed
-* Tested over CMP with EJBCA, Nokia NCM, Insta Certifier and the `openssl cmp` mock server and over EST with Cisco libest, see [docs/interop.md](docs/interop.md)
+**CMP** (RFC 9810, which replaces RFC 4210, with the RFC 9483 profile)
+
+* `ir`, `cr`, `kur`, `p10cr` and `rr` with a shared secret or a certificate
+* CA certificates, root CA updates, request templates and CRLs from the CA
+* `ping` to check a server and `mock` to run a test CA on your machine
+
+**EST** (RFC 7030)
+
+* Enrollment, renewal, server key generation, CA certificates and CSR attributes
+* Authentication with a password, a TLS client certificate or TLS-SRP
+* `est mock` to run a test EST CA on your machine
+
+**Both protocols**
+
+* A live diagram of every message and plain explanations of failures
+* A step-by-step `enroll` that prints the matching command for scripts
+* RSA, ECDSA, Ed25519, ML-DSA and composite ML-DSA keys, also offline with `keygen`
+* No trust setup: certrally trusts the CA it talks to or the one in `--ca-cert`
+* Warnings about responses that break the RFCs and a strict profile that rejects them
+* JSON output, capture files and exit statuses for scripts
+* `inspect` and `lint` to decode recorded messages and check them
+
+Tested with EJBCA, Nokia NCM, Insta Certifier and the `openssl cmp` mock server over CMP and with Cisco libest over EST. See [docs/interop.md](docs/interop.md).
 
 ## Install
 
@@ -145,7 +154,8 @@ Before it sends the request, certrally prints the same request as one command fo
 Notes:
 
 * With a shared secret, the request header names `CN=<ref>` as the sender and `<ref>` as the key identifier, as RFC 9483 asks. Without `--subject` or `--san` the certificate is requested for `CN=<ref>`.
-* Shared-secret requests are protected with PBMAC1. `--mac pbm` selects PasswordBasedMac for CAs that accept only that, such as the `openssl cmp` mock server.
+* Requests use CMP version 2, the syntax of RFC 4210, so servers built for RFC 4210 understand them. Only messages that need a field added by RFC 9810 use version 3, such as the confirmation of a certificate that the CA signed with ML-DSA or composite ML-DSA.
+* Shared-secret requests are protected with PBMAC1. `--mac pbm` selects PasswordBasedMac for CAs that accept only that, such as Nokia NCM, Insta Certifier and the `openssl cmp` mock server.
 * Private keys are written as unencrypted PKCS#8 PEM with mode 0600. `certrally keygen --list` prints the key types.
 
 ### Trust the CA
