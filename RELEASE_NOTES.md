@@ -2,6 +2,18 @@
 
 Notable changes to certrally. Versions follow the `vMAJOR.MINOR.PATCH` tags published in this repository.
 
+## v0.2.0 - TBD
+
+This release adds flags that shape a request the way a test scenario needs and fault flags that make the test CA delay, reject and relax its checks.
+
+### CMP
+
+* **`enroll --cert-req-id`**, **`--general-info`**, **`--hash`** and **`--iterations`** set the certReqId, add generalInfo items such as a vendor profile identifier, select the digest of the signatures and of a PasswordBasedMac and set the MAC iteration count. `--hash`, `--iterations` and `--general-info` also apply to `revoke` and the `genm` commands.
+
+### Testing and troubleshooting
+
+* **`certrally mock` fault flags** make the test CA answer with status `waiting` until a chosen poll (`--waiting`, `--check-after`), reject every request with a chosen failInfo (`--reject`), grant implicit confirmation (`--grant-implicit-confirm`), set the confirmation deadline (`--confirm-wait`), enforce RFC 9483 strictly (`--strict`), bound the MAC iteration count (`--mac-iterations`) and accept deviations from the profile on request (`--accept`, such as `sha1` or `any-cert-req-id`). The startup report shows the flags in use. [docs/mock.md](docs/mock.md) describes them.
+
 ## v0.1.1 - 22 Oct 2026
 
 This release fixes the Homebrew install.
