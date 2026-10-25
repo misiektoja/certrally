@@ -120,7 +120,7 @@ A certificate in a result has `subject`, `issuer`, `serial`, `notBefore`, `notAf
 
 | Command | Result fields |
 |---|---|
-| `enroll` | `status`, `confirmed`, `certificate`, `chain`, `saved`. With exit status 5 the result is present and `confirmed` is `false` |
+| `enroll` | `status`, `confirmed`, `implicitConfirm`, `certificate`, `chain`, `saved`. With exit status 5 the result is present and `confirmed` is `false`. `implicitConfirm` is `true` when the CA granted implicit confirmation, so no `certConf` was sent |
 | `revoke` | `certificate`, `reason` |
 | `cacerts`, `cmp genm cacerts` | `certificates`, `saved` |
 | `cmp genm rootupdate` | `update` with `newWithNew`, `newWithOld` and `oldWithNew`. It is `null` when no update is available. `saved` |

@@ -28,7 +28,7 @@ The failInfo names are those of RFC 9810 section 5.2.3, such as `badRequest`, `b
 
 ## Confirmation
 
-`--grant-implicit-confirm` grants implicit confirmation to a request that asks for it, so that client need not send `certConf`. A request that does not ask for it is confirmed as usual. certrally never asks for implicit confirmation, so use the flag with clients that do, such as `openssl cmp -implicit_confirm`.
+`--grant-implicit-confirm` grants implicit confirmation to a request that asks for it, so that the client need not send `certConf`. A request that does not ask for it is confirmed as usual. `certrally enroll --implicit-confirm` asks for it, as does `openssl cmp -implicit_confirm`.
 
 `--confirm-wait` sets the time the client has to confirm a certificate, sent as `confirmWaitTime` (default 10s). The CA drops a transaction whose certificate is not confirmed in time.
 

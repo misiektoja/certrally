@@ -30,7 +30,7 @@ When `strict` stops an `ip`, `cp` or `kup` response, certrally neither confirms 
 | `pvno` is 2 or 3 | RFC 9483 section 3.5 |
 | `senderNonce` is present and at least 128 bits long | RFC 9483 section 3.5 |
 | Only `ip`, `cp` and `kup` carry `implicitConfirm` in `generalInfo` | RFC 9483 section 3.1 |
-| `implicitConfirm` is granted only when the request asked for it. certrally never asks for it | RFC 9810 section 5.1.1.1 |
+| `implicitConfirm` is granted only when the request asked for it, which `enroll --implicit-confirm` does | RFC 9810 section 5.1.1.1 |
 | `confirmWaitTime` comes with `messageTime` and never with `implicitConfirm` | RFC 9483 section 3.1 |
 | No response carries `certProfile` | RFC 9483 section 3.1 |
 | The response is protected the same way as the request: a MAC answers a MAC and a signature answers a signature. Error messages are exempt, because a CA signs them when it cannot check the request | RFC 9483 section 3.2 |
