@@ -4,10 +4,11 @@ Notable changes to certrally. Versions follow the `vMAJOR.MINOR.PATCH` tags publ
 
 ## v0.2.0 - TBD
 
-This release adds flags that shape a request the way a test scenario needs and fault flags that make the test CA delay, reject and relax its checks.
+This release adds implicit confirmation, flags that shape a request the way a test scenario needs and fault flags that make the test CA delay, reject and relax its checks.
 
 ### CMP
 
+* **`enroll --implicit-confirm`** asks the CA for implicit confirmation, as RFC 9483 recommends. When the CA grants it, certrally skips the `certConf` exchange and the result says so, in the text report and as `implicitConfirm` in `--json`. A CA that does not grant it gets the `certConf` as before.
 * **`enroll --cert-req-id`**, **`--general-info`**, **`--hash`** and **`--iterations`** set the certReqId, add generalInfo items such as a vendor profile identifier, select the digest of the signatures and of a PasswordBasedMac and set the MAC iteration count. `--hash`, `--iterations` and `--general-info` also apply to `revoke` and the `genm` commands.
 
 ### Testing and troubleshooting
