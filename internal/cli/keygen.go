@@ -102,7 +102,7 @@ func runKeygen(o *keygenOptions, p *printer) error {
 	}
 	result := &keygenJSON{KeyType: o.keyType, Key: keys.Describe(key.Public()), PublicKey: pemString("PUBLIC KEY", pubDER)}
 	if o.csrOut != "" {
-		der, err := createCSR(subject, extensions, key)
+		der, err := createCSR(subject, extensions, key, 0)
 		if err != nil {
 			return err
 		}

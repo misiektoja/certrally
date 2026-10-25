@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"crypto"
+	"crypto/ecdsa"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"errors"
@@ -54,6 +56,7 @@ type enrollOptions struct {
 	chainOut    string
 	force       bool
 	certProfile string
+	certReqID   int64
 	interactive bool
 }
 
@@ -103,13 +106,15 @@ func newEnrollCommand() *cobra.Command {
 	f.StringVar(&o.chainOut, "chain-out", "", "write the issuing CA certificates from the response to this file")
 	f.BoolVar(&o.force, "force", false, "replace existing output files")
 	f.StringVar(&o.certProfile, "cert-profile", "", "certificate profile to request")
+	f.Int64Var(&o.certReqID, "cert-req-id", 0,
+		"request identifier (certReqId) of an ir, cr or kur, which the CA must repeat")
 	f.BoolVar(&o.interactive, "interactive", false, "ask for the settings that the command line leaves out")
 
 	_ = cmd.MarkFlagRequired("cert-out")
 	cmd.MarkFlagsMutuallyExclusive("key-type", "new-key", "csr")
 	_ = cmd.RegisterFlagCompletionFunc("type", fixedCompletion(requestTypes))
 	_ = cmd.RegisterFlagCompletionFunc("key-type", fixedCompletion(keys.TypeNames()))
-	for _, name := range []string{flagSubject, flagSAN, "cert-profile"} {
+	for _, name := range []string{flagSubject, flagSAN, "cert-profile", "cert-req-id"} {
 		_ = cmd.RegisterFlagCompletionFunc(name, cobra.NoFileCompletions)
 	}
 	return cmd
@@ -149,6 +154,10 @@ func (o *enrollOptions) validate() error {
 		return errors.New("--csr needs --type p10cr")
 	case o.csr != "" && (o.subject != "" || len(o.sans) > 0):
 		return errors.New("--subject and --san cannot change a request given with --csr")
+	case o.certReqID < 0:
+		return errors.New("--cert-req-id must not be negative")
+	case o.certReqID != 0 && o.reqType == typeP10CR:
+		return errors.New("a p10cr request carries no certReqId, so --cert-req-id needs --type ir, cr or kur")
 	}
 	generated := o.csr == "" && o.newKey == ""
 	switch {
@@ -207,6 +216,9 @@ func runEnroll(ctx context.Context, o *enrollOptions, p *printer, stdin io.Reade
 	}
 	if o.certProfile != "" {
 		e.reqOpts = append(e.reqOpts, client.WithCertProfile(o.certProfile))
+	}
+	if o.certReqID != 0 {
+		e.reqOpts = append(e.reqOpts, client.WithCertReqID(o.certReqID))
 	}
 
 	s, err := o.open(p, e.chain)
@@ -304,6 +316,11 @@ func (o *enrollOptions) prepareKey(e *enrollment) error {
 		}
 		e.newKey = key
 	}
+	// The new key signs the proof of possession or the PKCS#10 request with the chosen digest.
+	if o.hash != "" && e.newKey != nil && !takesDigest(e.newKey) {
+		return fmt.Errorf("--hash applies to RSA and ECDSA keys, not to the %s key to certify",
+			keys.Describe(e.newKey.Public()))
+	}
 	return nil
 }
 
@@ -336,7 +353,7 @@ func (o *enrollOptions) prepareTemplate(e *enrollment) error {
 		return err
 	}
 	if o.reqType == typeP10CR {
-		e.csrDER, err = createCSR(subject, extensions, e.newKey)
+		e.csrDER, err = createCSR(subject, extensions, e.newKey, o.digest())
 		return err
 	}
 	if o.subject != "" || (o.reqType != typeKUR && hasSubject) {
@@ -361,14 +378,38 @@ func sanExtensions(sans []string, hasSubject bool) ([]pkix.Extension, error) {
 	return []pkix.Extension{ext}, nil
 }
 
-// createCSR returns a PKCS#10 request for key, signed with it.
-func createCSR(subject pkix.Name, extensions []pkix.Extension, key crypto.Signer) ([]byte, error) {
-	tmpl := &x509.CertificateRequest{Subject: subject, ExtraExtensions: extensions}
+// createCSR returns a PKCS#10 request for key, signed with it. A non-zero hash selects the digest
+// of the signature of an RSA or ECDSA key.
+func createCSR(subject pkix.Name, extensions []pkix.Extension, key crypto.Signer, hash crypto.Hash) ([]byte, error) {
+	tmpl := &x509.CertificateRequest{
+		Subject:            subject,
+		ExtraExtensions:    extensions,
+		SignatureAlgorithm: csrSignatureAlgorithm(key, hash),
+	}
 	der, err := compositex509.CreateCertificateRequest(rand.Reader, tmpl, key)
 	if err != nil {
 		return nil, fmt.Errorf("create certificate request: %w", err)
 	}
 	return der, nil
+}
+
+// csrSignatureAlgorithm returns the PKCS#10 signature algorithm of key with the digest hash. It is
+// unknown, which leaves the choice to crypto/x509, for a zero hash or a key that takes no digest.
+func csrSignatureAlgorithm(key crypto.Signer, hash crypto.Hash) x509.SignatureAlgorithm {
+	type pair struct{ rsa, ecdsa x509.SignatureAlgorithm }
+	algorithms := map[crypto.Hash]pair{
+		crypto.SHA1:   {x509.SHA1WithRSA, x509.ECDSAWithSHA1},
+		crypto.SHA256: {x509.SHA256WithRSA, x509.ECDSAWithSHA256},
+		crypto.SHA384: {x509.SHA384WithRSA, x509.ECDSAWithSHA384},
+		crypto.SHA512: {x509.SHA512WithRSA, x509.ECDSAWithSHA512},
+	}
+	switch key.Public().(type) {
+	case *rsa.PublicKey:
+		return algorithms[hash].rsa
+	case *ecdsa.PublicKey:
+		return algorithms[hash].ecdsa
+	}
+	return x509.UnknownSignatureAlgorithm
 }
 
 // send performs the exchange for the requested type.

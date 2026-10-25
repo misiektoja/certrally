@@ -2,17 +2,24 @@ package cli
 
 import (
 	"context"
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/asn1"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/misiektoja/go-pki-cmp/client"
@@ -27,8 +34,40 @@ import (
 	"github.com/misiektoja/certrally/internal/trace"
 )
 
+// macPBM is the --mac value that selects PasswordBasedMac.
+const macPBM = "pbm"
+
 // macAlgorithms lists the --mac values.
-var macAlgorithms = []string{"pbmac1", "pbm"}
+var macAlgorithms = []string{"pbmac1", macPBM}
+
+// hashChoices lists the --hash values with their digests.
+var hashChoices = []struct {
+	name string
+	hash crypto.Hash
+}{
+	{"sha1", crypto.SHA1},
+	{"sha256", crypto.SHA256},
+	{"sha384", crypto.SHA384},
+	{"sha512", crypto.SHA512},
+}
+
+// hashNames lists the --hash values.
+var hashNames = func() []string {
+	names := make([]string, 0, len(hashChoices))
+	for _, c := range hashChoices {
+		names = append(names, c.name)
+	}
+	return names
+}()
+
+// hashes maps the --hash values to digests.
+var hashes = func() map[string]crypto.Hash {
+	m := make(map[string]crypto.Hash, len(hashChoices))
+	for _, c := range hashChoices {
+		m[c.name] = c.hash
+	}
+	return m
+}()
 
 // connection holds the flags that say how to reach a CMP server and which CA to trust.
 type connection struct {
@@ -110,6 +149,11 @@ type protection struct {
 	keyFile    string
 	extraCerts string
 	sender     string
+	// iterations is the MAC iteration count. Zero keeps the default of go-pki-cmp.
+	iterations int
+	// hash names the digest of the signatures and of a PasswordBasedMac. Empty keeps the defaults.
+	hash        string
+	generalInfo []string
 	// secret is a shared secret typed into the enroll wizard. It takes the place of the sources that
 	// --secret-file names.
 	secret []byte
@@ -125,9 +169,15 @@ func (p *protection) addFlags(cmd *cobra.Command) {
 	f.StringVar(&p.keyFile, "key", "", "private key for --cert")
 	f.StringVar(&p.extraCerts, "extra-certs", "", "send the certificates in this file in extraCerts")
 	f.StringVar(&p.sender, "sender", "", "sender name in the request header")
+	f.IntVar(&p.iterations, "iterations", 0, "iteration count of the shared-secret MAC (default 10000)")
+	f.StringVar(&p.hash, "hash", "", "digest of the signatures made for the request and of --mac pbm: "+
+		"sha1, sha256, sha384 or sha512 (default by key type, sha256 for pbm)")
+	f.StringArrayVar(&p.generalInfo, "general-info", nil,
+		"add a generalInfo item to the request header: OID:int:N, OID:str:TEXT or OID:hex:DER (repeatable)")
 	cmd.MarkFlagsRequiredTogether("cert", "key")
 	_ = cmd.RegisterFlagCompletionFunc("mac", fixedCompletion(macAlgorithms))
-	for _, name := range []string{flagRef, "sender"} {
+	_ = cmd.RegisterFlagCompletionFunc("hash", fixedCompletion(hashNames))
+	for _, name := range []string{flagRef, "sender", "iterations", "general-info"} {
 		_ = cmd.RegisterFlagCompletionFunc(name, cobra.NoFileCompletions)
 	}
 }
@@ -144,8 +194,28 @@ func (p *protection) validate() error {
 		return errors.New("choose one protection: --ref with a shared secret, or --cert and --key")
 	case !p.signed() && p.ref == "":
 		return errors.New("choose a protection: --ref with a shared secret, or --cert and --key")
+	case p.iterations < 0:
+		return errors.New("--iterations must be positive")
+	case p.iterations != 0 && p.signed():
+		return errors.New("--iterations sets the shared-secret MAC, so it cannot be combined with --cert")
+	case p.hash != "" && !slices.Contains(hashNames, p.hash):
+		return fmt.Errorf("invalid --hash %q, want one of %s", p.hash, strings.Join(hashNames, ", "))
+	case p.hash != "" && !p.signed() && p.mac != macPBM:
+		return errors.New("--hash with a shared secret needs --mac pbm, because PBMAC1 always uses SHA-256")
 	}
 	return nil
+}
+
+// digest returns the digest that --hash names, or zero for the defaults.
+func (p *protection) digest() crypto.Hash { return hashes[p.hash] }
+
+// takesDigest reports whether key signs with a chosen digest, which RSA and ECDSA keys do.
+func takesDigest(key crypto.Signer) bool {
+	switch key.Public().(type) {
+	case *rsa.PublicKey, *ecdsa.PublicKey:
+		return true
+	}
+	return false
 }
 
 // protected is the loaded protection of a request.
@@ -160,6 +230,17 @@ type protected struct {
 // load reads the credentials. The shared secret may be prompted for on stdin.
 func (p *protection) load(stdin io.Reader, prompt io.Writer) (*protected, error) {
 	pr := &protected{}
+	items, err := parseGeneralInfo(p.generalInfo)
+	if err != nil {
+		return nil, err
+	}
+	if len(items) > 0 {
+		pr.reqOpts = append(pr.reqOpts, client.WithGeneralInfo(items...))
+	}
+	hash := p.digest()
+	if hash != 0 {
+		pr.reqOpts = append(pr.reqOpts, client.WithPOPHash(hash))
+	}
 	if p.signed() {
 		chain, err := pemfile.ReadCertificates(p.certFile)
 		if err != nil {
@@ -177,6 +258,15 @@ func (p *protection) load(stdin io.Reader, prompt io.Writer) (*protected, error)
 		if err != nil {
 			return nil, fmt.Errorf("--cert and --key: %w", err)
 		}
+		if hash != 0 {
+			if !takesDigest(key) {
+				return nil, fmt.Errorf("--hash applies to RSA and ECDSA keys, not to the %s key in %s",
+					keys.Describe(key.Public()), p.keyFile)
+			}
+			if creds, err = creds.WithHash(hash); err != nil {
+				return nil, fmt.Errorf("--hash: %w", err)
+			}
+		}
 		pr.creds, pr.chain = creds, chain
 	} else {
 		s := p.secret
@@ -188,8 +278,19 @@ func (p *protection) load(stdin io.Reader, prompt io.Writer) (*protected, error)
 			}
 		}
 		var macOpts []pkicmp.MACCredentialOption
-		if p.mac == "pbm" {
+		switch {
+		case hash != 0:
+			macOpts = append(macOpts, pkicmp.WithPBMAlgorithms(hash, hash))
+		case p.mac == macPBM:
 			macOpts = append(macOpts, pkicmp.WithPBM())
+		}
+		if p.iterations != 0 {
+			// The CA echoes the count in its responses, so the client must accept it too.
+			minimum := min(p.iterations, pkicmp.DefaultMinMACIterationCount)
+			maximum := max(p.iterations, pkicmp.DefaultMaxMACIterationCount)
+			macOpts = append(macOpts,
+				pkicmp.WithMACIterationCount(p.iterations), pkicmp.WithMACIterationLimits(minimum, maximum))
+			pr.clientOpts = append(pr.clientOpts, client.WithMACIterationLimits(minimum, maximum))
 		}
 		creds, err := pkicmp.NewMACCredentials(s, macOpts...)
 		if err != nil {
@@ -217,6 +318,57 @@ func (p *protection) load(stdin io.Reader, prompt io.Writer) (*protected, error)
 		pr.clientOpts = append(pr.clientOpts, client.WithExtraCerts(certs))
 	}
 	return pr, nil
+}
+
+// parseGeneralInfo parses the --general-info values into header items.
+func parseGeneralInfo(values []string) ([]pkicmp.InfoTypeAndValue, error) {
+	items := make([]pkicmp.InfoTypeAndValue, 0, len(values))
+	for _, v := range values {
+		item, err := parseInfoTypeAndValue(v)
+		if err != nil {
+			return nil, fmt.Errorf("--general-info %q: %w", v, err)
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+// parseInfoTypeAndValue parses OID:int:N, OID:str:TEXT or OID:hex:DER. An int value becomes an
+// INTEGER, a str value a UTF8String and a hex value the DER of one value as given.
+func parseInfoTypeAndValue(s string) (pkicmp.InfoTypeAndValue, error) {
+	parts := strings.SplitN(s, ":", 3)
+	if len(parts) != 3 {
+		return pkicmp.InfoTypeAndValue{}, errors.New("want OID:int:N, OID:str:TEXT or OID:hex:DER")
+	}
+	oid, err := dn.ParseOID(parts[0])
+	if err != nil {
+		return pkicmp.InfoTypeAndValue{}, err
+	}
+	var value []byte
+	switch kind, text := parts[1], parts[2]; kind {
+	case "int":
+		n, ok := new(big.Int).SetString(text, 10)
+		if !ok {
+			return pkicmp.InfoTypeAndValue{}, fmt.Errorf("%q is not an integer", text)
+		}
+		value, err = asn1.Marshal(n)
+	case "str":
+		value, err = asn1.MarshalWithParams(text, "utf8")
+	case "hex":
+		value, err = hex.DecodeString(text)
+		if err == nil {
+			var rest []byte
+			if rest, err = asn1.Unmarshal(value, &asn1.RawValue{}); err == nil && len(rest) > 0 {
+				err = errors.New("the DER holds more than one value")
+			}
+		}
+	default:
+		return pkicmp.InfoTypeAndValue{}, fmt.Errorf("unknown value type %q, want int, str or hex", kind)
+	}
+	if err != nil {
+		return pkicmp.InfoTypeAndValue{}, err
+	}
+	return pkicmp.InfoTypeAndValue{InfoType: oid, InfoValue: value}, nil
 }
 
 // session is an open connection to a CMP server: an HTTP client that records every exchange and the
