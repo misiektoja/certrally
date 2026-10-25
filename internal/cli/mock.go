@@ -447,7 +447,7 @@ func (o *mockOptions) faultFields() []ui.Field {
 		fields = append(fields, ui.Field{Name: "Rejecting", Value: ui.Sanitize(o.reject)})
 	}
 	if o.implicitConfirm {
-		fields = append(fields, ui.Field{Name: "Confirmation", Value: "implicitConfirm granted"})
+		fields = append(fields, ui.Field{Name: fieldConfirmation, Value: "implicitConfirm granted"})
 	}
 	if o.strict {
 		fields = append(fields, ui.Field{Name: "Profile", Value: "strict"})

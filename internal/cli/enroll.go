@@ -57,7 +57,9 @@ type enrollOptions struct {
 	force       bool
 	certProfile string
 	certReqID   int64
-	interactive bool
+	// implicitConfirm asks the CA to skip the certConf round trip.
+	implicitConfirm bool
+	interactive     bool
 }
 
 // newEnrollCommand returns the enroll command.
@@ -108,6 +110,8 @@ func newEnrollCommand() *cobra.Command {
 	f.StringVar(&o.certProfile, "cert-profile", "", "certificate profile to request")
 	f.Int64Var(&o.certReqID, "cert-req-id", 0,
 		"request identifier (certReqId) of an ir, cr or kur, which the CA must repeat")
+	f.BoolVar(&o.implicitConfirm, "implicit-confirm", false,
+		"ask the CA for implicit confirmation, which skips the certConf when granted")
 	f.BoolVar(&o.interactive, "interactive", false, "ask for the settings that the command line leaves out")
 
 	_ = cmd.MarkFlagRequired("cert-out")
@@ -220,6 +224,9 @@ func runEnroll(ctx context.Context, o *enrollOptions, p *printer, stdin io.Reade
 	if o.certReqID != 0 {
 		e.reqOpts = append(e.reqOpts, client.WithCertReqID(o.certReqID))
 	}
+	if o.implicitConfirm {
+		e.reqOpts = append(e.reqOpts, client.WithImplicitConfirm())
+	}
 
 	s, err := o.open(p, e.chain)
 	if err != nil {
@@ -251,14 +258,31 @@ func runEnroll(ctx context.Context, o *enrollOptions, p *printer, stdin io.Reade
 		p.warn("The response carried no issuing CA certificates, so --chain-out was not written.")
 	}
 	status := lastStatus(s.recorder)
-	p.result("Certificate issued", certificateFields(cert, status, saved), &enrollJSON{
-		Status:      status,
-		Confirmed:   true,
-		Certificate: certificateResult(cert),
-		Chain:       certificatesResult(chain),
-		Saved:       saved,
+	fields := certificateFields(cert, status, saved)
+	if confirmation := o.confirmation(result); confirmation != "" {
+		fields = append(fields, ui.Field{Name: fieldConfirmation, Value: confirmation})
+	}
+	p.result("Certificate issued", fields, &enrollJSON{
+		Status:          status,
+		Confirmed:       true,
+		ImplicitConfirm: result.ImplicitConfirm,
+		Certificate:     certificateResult(cert),
+		Chain:           certificatesResult(chain),
+		Saved:           saved,
 	})
 	return nil
+}
+
+// confirmation describes how the certificate was confirmed when that differs from the usual certConf
+// exchange, because the CA granted implicit confirmation or declined to grant the one asked for.
+func (o *enrollOptions) confirmation(result *client.EnrollResult) string {
+	switch {
+	case result.ImplicitConfirm:
+		return "implicit, no certConf sent"
+	case o.implicitConfirm:
+		return "certConf sent, because the CA did not grant implicit confirmation"
+	}
+	return ""
 }
 
 // reportUnconfirmed saves a certificate whose confirmation failed and explains the situation. The

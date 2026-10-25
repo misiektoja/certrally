@@ -68,10 +68,12 @@ type enrollJSON struct {
 	// Status is the PKIStatus of the certificate response, such as "accepted".
 	Status string `json:"status,omitempty"`
 	// Confirmed is false when the CA issued the certificate but the confirmation failed.
-	Confirmed   bool               `json:"confirmed"`
-	Certificate *certificateJSON   `json:"certificate"`
-	Chain       []*certificateJSON `json:"chain"`
-	Saved       []string           `json:"saved"`
+	Confirmed bool `json:"confirmed"`
+	// ImplicitConfirm is true when the CA granted implicit confirmation, so no certConf was sent.
+	ImplicitConfirm bool               `json:"implicitConfirm"`
+	Certificate     *certificateJSON   `json:"certificate"`
+	Chain           []*certificateJSON `json:"chain"`
+	Saved           []string           `json:"saved"`
 }
 
 // revokeJSON is the result of revoke.

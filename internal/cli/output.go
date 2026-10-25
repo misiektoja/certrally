@@ -29,8 +29,10 @@ const (
 	fieldKey     = "Key"
 	fieldServer  = "Server"
 	fieldStatus  = "Status"
-	fieldSerial  = "Serial"
-	fieldReason  = "Reason"
+	// fieldConfirmation says how an issued certificate was confirmed.
+	fieldConfirmation = "Confirmation"
+	fieldSerial       = "Serial"
+	fieldReason       = "Reason"
 	// fieldVerified says how a command checked what the server sent.
 	fieldVerified = "Verified"
 )
