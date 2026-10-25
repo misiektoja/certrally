@@ -91,7 +91,7 @@ Output is coloured only on a terminal. [docs/output.md](docs/output.md) describe
 certrally mock --ca-out ca.pem
 ```
 
-Run the printed command in another terminal. Running `certrally enroll` without flags there asks for the settings instead. The test CA keeps everything in memory, so every run starts empty. `certrally mock --help` lists its address and secret options.
+Run the printed command in another terminal. Running `certrally enroll` without flags there asks for the settings instead. The test CA keeps everything in memory, so every run starts empty. `certrally mock --help` lists its address and secret options. Fault flags such as `--waiting 2`, `--reject badCertTemplate` or `--accept sha1` make it delay, reject or relax its checks, to test how a client copes. [docs/mock.md](docs/mock.md) describes them.
 
 ### Enroll a certificate
 
@@ -155,7 +155,10 @@ Notes:
 
 * With a shared secret, the request header names `CN=<ref>` as the sender and `<ref>` as the key identifier, as RFC 9483 asks. Without `--subject` or `--san` the certificate is requested for `CN=<ref>`.
 * Requests use CMP version 2, the syntax of RFC 4210, so servers built for RFC 4210 understand them. Only messages that need a field added by RFC 9810 use version 3, such as the confirmation of a certificate that the CA signed with ML-DSA or composite ML-DSA.
-* Shared-secret requests are protected with PBMAC1. `--mac pbm` selects PasswordBasedMac for CAs that accept only that, such as Nokia NCM, Insta Certifier and the `openssl cmp` mock server.
+* Shared-secret requests are protected with PBMAC1. `--mac pbm` selects PasswordBasedMac for CAs that accept only that, such as Nokia NCM, Insta Certifier and the `openssl cmp` mock server. `--iterations` sets the MAC iteration count (default 10000).
+* `--hash sha1|sha256|sha384|sha512` selects the digest of the signatures certrally makes with an RSA or ECDSA key: the message protection with `--cert`, the proof of possession and a PKCS#10 request. With `--mac pbm` it also selects the one-way function and HMAC of the MAC. PBMAC1 always uses SHA-256. The default follows the key type. CAs refuse SHA-1 unless configured to accept it.
+* `--general-info OID:int:N`, `OID:str:TEXT` or `OID:hex:DER` (repeatable) adds an item to the generalInfo field of the request header, for example a vendor profile identifier that a CA keys its policy on. `--cert-req-id N` sets the certReqId of an `ir`, `cr` or `kur` (default 0), which the CA must repeat. RFC 9483 requires 0, so most CAs refuse other values.
+* `--hash`, `--iterations` and `--general-info` also apply to `revoke` and the `genm` commands.
 * Private keys are written as unencrypted PKCS#8 PEM with mode 0600. `certrally keygen --list` prints the key types.
 
 ### Trust the CA
