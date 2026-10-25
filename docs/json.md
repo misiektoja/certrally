@@ -121,7 +121,7 @@ A certificate in a result has `subject`, `issuer`, `serial`, `notBefore`, `notAf
 | Command | Result fields |
 |---|---|
 | `enroll` | `status`, `confirmed`, `implicitConfirm`, `certificate`, `chain`, `saved`. With exit status 5 the result is present and `confirmed` is `false`. `implicitConfirm` is `true` when the CA granted implicit confirmation, so no `certConf` was sent |
-| `revoke` | `certificate`, `reason` |
+| `revoke` | `certificate`, `issuer`, `serial`, `reason`, `invalidityDate`. `certificate` is `null` when the certificate was named with `--serial` and `--issuer`. `invalidityDate` is present when `--invalidity-date` was given |
 | `cacerts`, `cmp genm cacerts` | `certificates`, `saved` |
 | `cmp genm rootupdate` | `update` with `newWithNew`, `newWithOld` and `oldWithNew`. It is `null` when no update is available. `saved` |
 | `cmp genm template` | `template` with `subject`, `extensions` and `keyTypes`. It is `null` when the CA imposes nothing. An attribute without a value in `subject` is one the requester fills in. Each extension has `oid`, `name` and `critical` |

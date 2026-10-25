@@ -181,6 +181,13 @@ certrally revoke --server https://ca.example.com/.well-known/cmp \
 
 `--reason` takes an RFC 5280 reason name and defaults to `unspecified`. `certificateHold` suspends a certificate and `removeFromCRL` releases it, if the CA supports holds. An authority that revokes for someone else names the certificate with `--revoke-cert` and signs with its own `--cert` or a shared secret. On a terminal certrally asks before it sends the request. `--yes` skips the question.
 
+An authority that has no copy of the certificate names it with `--serial` and `--issuer`. `--serial` takes a decimal number, hex with `0x` or the colon-separated hex that certrally prints. `--invalidity-date` tells the CA when the key was compromised or the certificate became invalid, as RFC 3339 or `YYYY-MM-DD`, for the CRL entry:
+
+```bash
+certrally revoke --server https://ca.example.com/.well-known/cmp \
+  --ref ra-1 --serial 0x1A2B --issuer 'CN=Example CA' --reason keyCompromise --invalidity-date 2026-10-01
+```
+
 ### Ask the CA for information
 
 `cacerts` and the `cmp genm` commands send the RFC 9483 support messages. They are protected like enroll requests:
