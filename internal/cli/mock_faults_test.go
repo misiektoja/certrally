@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -75,34 +76,104 @@ func TestMockReject(t *testing.T) {
 }
 
 // TestMockImplicitConfirm checks that --grant-implicit-confirm grants implicitConfirm to a request
-// that asks for it, which certrally does through --general-info, and not to one that does not.
+// that asks for it with --implicit-confirm, which then ends without certConf, and not to one that
+// does not ask. Without the fault flag the request is confirmed as usual.
 func TestMockImplicitConfirm(t *testing.T) {
 	useSecret(t, testSecret)
-	m := startMock(t, "--listen", "127.0.0.1:0", "--ref", testRef, "--grant-implicit-confirm")
-	reportHas(t, m, "implicitConfirm granted")
 	implicitConfirm := pkicmp.ImplicitConfirmInfoValue().InfoType
-	granted := func(capture string) bool {
+	hasImplicitConfirm := func(h pkicmp.PKIHeader) bool {
+		return slices.ContainsFunc(h.GeneralInfo, func(item pkicmp.InfoTypeAndValue) bool { return item.InfoType.Equal(implicitConfirm) })
+	}
+	// exchange returns the number of messages in a capture and whether the request asked for
+	// implicit confirmation and the response granted it.
+	exchange := func(capture string) (n int, requested, granted bool) {
 		t.Helper()
-		ip, err := pkicmp.ParsePKIMessage(readCapture(t, capture)[1].DER)
+		msgs := readCapture(t, capture)
+		ir, err := pkicmp.ParsePKIMessage(msgs[0].DER)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return slices.ContainsFunc(ip.Header.GeneralInfo, func(item pkicmp.InfoTypeAndValue) bool { return item.InfoType.Equal(implicitConfirm) })
+		ip, err := pkicmp.ParsePKIMessage(msgs[1].DER)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(msgs), hasImplicitConfirm(ir.Header), hasImplicitConfirm(ip.Header)
 	}
 
-	// certrally does not yet skip the certConf when the CA grants implicit confirmation, so the
-	// exchange ends with the CA refusing a certConf for a closed transaction. Only the grant matters here.
-	_, _, capture := mockEnroll(t, m, "--general-info", implicitConfirm.String()+":hex:0500")
-	if !granted(capture) {
-		t.Error("the ip does not grant implicitConfirm to a request that asks for it")
-	}
-
-	code, errOut, capture := mockEnroll(t, m)
+	m := startMock(t, "--listen", "127.0.0.1:0", "--ref", testRef, "--grant-implicit-confirm")
+	reportHas(t, m, "implicitConfirm granted")
+	code, errOut, capture := mockEnroll(t, m, "--implicit-confirm")
 	if code != exitOK {
 		t.Fatalf("enroll exited with %d:\n%s", code, errOut)
 	}
-	if granted(capture) {
-		t.Error("the ip grants implicitConfirm to a request that did not ask for it")
+	if n, requested, granted := exchange(capture); n != 2 || !requested || !granted {
+		t.Errorf("the exchange has %d messages, requested %v, granted %v, want 2 with the request and the grant", n, requested, granted)
+	}
+
+	code, errOut, capture = mockEnroll(t, m)
+	if code != exitOK {
+		t.Fatalf("enroll exited with %d:\n%s", code, errOut)
+	}
+	if n, requested, granted := exchange(capture); n != 4 || requested || granted {
+		t.Errorf("the exchange has %d messages, requested %v, granted %v, want 4 without a request or a grant", n, requested, granted)
+	}
+
+	plain := startMock(t, "--listen", "127.0.0.1:0", "--ref", testRef)
+	code, errOut, capture = mockEnroll(t, plain, "--implicit-confirm")
+	if code != exitOK {
+		t.Fatalf("enroll exited with %d:\n%s", code, errOut)
+	}
+	if n, requested, granted := exchange(capture); n != 4 || !requested || granted {
+		t.Errorf("the exchange has %d messages, requested %v, granted %v, want 4 with the request and no grant", n, requested, granted)
+	}
+}
+
+// TestEnrollImplicitConfirmResult checks that the result says how the certificate was confirmed.
+func TestEnrollImplicitConfirmResult(t *testing.T) {
+	useSecret(t, testSecret)
+	granting := startMock(t, "--listen", "127.0.0.1:0", "--ref", testRef, "--grant-implicit-confirm")
+	plain := startMock(t, "--listen", "127.0.0.1:0", "--ref", testRef)
+	tests := []struct {
+		name     string
+		m        *mockRun
+		args     []string
+		implicit bool
+		field    string
+	}{
+		{"granted", granting, []string{"--implicit-confirm"}, true, "implicit, no certConf sent"},
+		{"not granted", plain, []string{"--implicit-confirm"}, false, "did not grant implicit confirmation"},
+		{"not asked", plain, nil, false, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			args := append([]string{"enroll", "--server", tt.m.url, "--ref", testRef,
+				"--cert-out", filepath.Join(dir, "cert.pem"), "--key-out", filepath.Join(dir, "key.pem")}, tt.args...)
+			code, out, errOut := run(t, args...)
+			if code != exitOK {
+				t.Fatalf("enroll exited with %d:\n%s", code, errOut)
+			}
+			if got := strings.Contains(out, fieldConfirmation); got != (tt.field != "") || (tt.field != "" && !strings.Contains(out, tt.field)) {
+				t.Errorf("the report shows the confirmation as %q, want %q:\n%s", fieldConfirmation, tt.field, out)
+			}
+
+			code, out, errOut = run(t, append(args, "--json", "--force")...)
+			if code != exitOK {
+				t.Fatalf("enroll --json exited with %d:\n%s", code, errOut)
+			}
+			var doc struct {
+				Result struct {
+					Confirmed       bool `json:"confirmed"`
+					ImplicitConfirm bool `json:"implicitConfirm"`
+				} `json:"result"`
+			}
+			if err := json.Unmarshal([]byte(out), &doc); err != nil {
+				t.Fatalf("standard output is not JSON: %v\n%s", err, out)
+			}
+			if !doc.Result.Confirmed || doc.Result.ImplicitConfirm != tt.implicit {
+				t.Errorf("confirmed = %v, implicitConfirm = %v, want true and %v", doc.Result.Confirmed, doc.Result.ImplicitConfirm, tt.implicit)
+			}
+		})
 	}
 }
 
