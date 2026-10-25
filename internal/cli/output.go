@@ -33,6 +33,8 @@ const (
 	fieldConfirmation = "Confirmation"
 	fieldSerial       = "Serial"
 	fieldReason       = "Reason"
+	// fieldInvalidityDate is the time a revocation request gives for the compromise.
+	fieldInvalidityDate = "Invalidity date"
 	// fieldVerified says how a command checked what the server sent.
 	fieldVerified = "Verified"
 )

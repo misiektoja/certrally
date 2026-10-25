@@ -78,8 +78,13 @@ type enrollJSON struct {
 
 // revokeJSON is the result of revoke.
 type revokeJSON struct {
+	// Certificate is null when the certificate was named by issuer and serial number only.
 	Certificate *certificateJSON `json:"certificate"`
+	Issuer      string           `json:"issuer"`
+	Serial      string           `json:"serial"`
 	Reason      string           `json:"reason"`
+	// InvalidityDate is the time sent with the request. It is absent when none was given.
+	InvalidityDate time.Time `json:"invalidityDate,omitzero"`
 }
 
 // caCertsJSON is the result of cacerts.
