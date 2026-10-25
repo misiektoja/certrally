@@ -267,6 +267,25 @@ func TestMockMACRevocation(t *testing.T) {
 	if code != exitOK {
 		t.Errorf("revoke exited with %d:\n%s", code, errOut)
 	}
+	if !strings.Contains(lenient.stdout.String(), "revoked  serial "+formatSerial(readCert(t, certOut))+"  unspecified") {
+		t.Errorf("mock log lacks the revocation:\n%s", lenient.stdout)
+	}
+
+	// An authority that has only the serial number names the certificate with --serial and --issuer.
+	code, _, errOut = run(t, "enroll", "--server", lenient.url, "--ref", testRef, "--cert-out", certOut, "--key-out", keyOut, "--force")
+	if code != exitOK {
+		t.Fatalf("enroll exited with %d:\n%s", code, errOut)
+	}
+	cert := readCert(t, certOut)
+	code, _, errOut = run(t, "revoke", "--server", lenient.url, "--ref", testRef, "--serial", formatSerial(cert),
+		"--issuer", "CN=Test CA", "--reason", "keyCompromise", "--invalidity-date", "2026-10-01", "--yes")
+	if code != exitOK {
+		t.Errorf("revoke by serial exited with %d:\n%s", code, errOut)
+	}
+	want := "revoked  serial " + formatSerial(cert) + "  keyCompromise  invalidity date 2026-10-01T00:00:00Z"
+	if !strings.Contains(lenient.stdout.String(), want) {
+		t.Errorf("mock log lacks %q:\n%s", want, lenient.stdout)
+	}
 }
 
 // TestMockFaultErrors checks that the mock CA refuses bad fault flags before it listens.
