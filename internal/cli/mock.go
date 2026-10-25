@@ -14,12 +14,15 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/misiektoja/go-pki-cmp/examples/mockserver"
+	"github.com/misiektoja/go-pki-cmp/pkicmp"
 	"github.com/misiektoja/go-pki-cmp/server"
 	"github.com/spf13/cobra"
 
@@ -36,6 +39,9 @@ const mockPath = "/.well-known/cmp"
 // mockRequestLimit bounds the request body the request log reads, like the response limit of the client.
 const mockRequestLimit = 10 * 1024 * 1024
 
+// mockConfirmWait is the default confirmWaitTime, that of go-pki-cmp.
+const mockConfirmWait = 10 * time.Second
+
 // mockOptions holds the mock command line.
 type mockOptions struct {
 	listen     string
@@ -43,7 +49,61 @@ type mockOptions struct {
 	secretFile string
 	caOut      string
 	force      bool
+	// The fault flags change how the CA answers, to test how a client copes.
+	waiting         int
+	checkAfter      time.Duration
+	reject          string
+	implicitConfirm bool
+	strict          bool
+	macIterations   string
+	confirmWait     time.Duration
+	accept          []string
 }
+
+// acceptOption is a --accept value: a deviation from RFC 9483 that the mock CA accepts on request.
+type acceptOption struct {
+	name   string
+	help   string
+	option func() server.Option
+}
+
+// acceptOptions lists the --accept values.
+var acceptOptions = []acceptOption{
+	{"missing-pollreq-nonce", "a pollReq without recipNonce", server.WithOptionalPollReqRecipNonce},
+	{"missing-certconf-nonce", "a certConf without recipNonce", server.WithOptionalCertConfRecipNonce},
+	{"missing-subject", "a certificate template without subject", server.WithOptionalSubject},
+	{"any-cert-req-id", "a certReqId other than 0, repeated in the response", server.WithAnyCertReqID},
+	{"missing-revocation-reason", "a revocation request without reason code", server.WithOptionalRevocationReason},
+	{"missing-revocation-issuer", "a revocation request without issuer", server.WithOptionalRevocationIssuer},
+	{"poposkinput", "a signature proof of possession over poposkInput", server.WithPoposkInputVariants},
+	{"signature-pop", "no proof of possession in a request signed with a certificate for the key",
+		server.WithSignatureProtectionPOP},
+	{"sha1", "SHA-1 signatures in the protection and the proof of possession", server.WithSHA1Signatures},
+	{"mac-revocation", "revocation requests not signed with the revoked certificate, such as MAC-protected ones",
+		server.WithMACRevocation},
+	{"raw-subject", "the subject as encoded in the request, keeping every attribute, order and string type",
+		server.WithRawSubject},
+	{"encrypted-cert-pop", "the encrypted certificate proof of possession", server.WithEncryptedCertificatePOP},
+	{"challenge-pop", "the challenge-response proof of possession", server.WithChallengeResponsePOP},
+}
+
+// acceptNames lists the --accept values in the order of acceptOptions.
+var acceptNames = func() []string {
+	names := make([]string, 0, len(acceptOptions))
+	for _, a := range acceptOptions {
+		names = append(names, a.name)
+	}
+	return names
+}()
+
+// failInfoNames lists the --reject values, the PKIFailureInfo names in bit order.
+var failInfoNames = func() []string {
+	names := make([]string, 0, 27)
+	for i := range 27 {
+		names = append(names, trace.FailureNames(pkicmp.PKIFailureInfo(1)<<(31-i))...)
+	}
+	return names
+}()
 
 // newMockCommand returns the mock command.
 func newMockCommand() *cobra.Command {
@@ -56,9 +116,14 @@ func newMockCommand() *cobra.Command {
 			"and CRLs. It accepts the shared secret for --ref and signatures made with certificates it issued.\n\n" +
 			"The shared secret comes from --secret-file or " + secret.EnvVar + ". Without either, a random secret " +
 			"is generated and printed. The CA key and everything it issued live in memory and are lost when it " +
-			"stops. Stop it with Ctrl-C.",
+			"stops. Stop it with Ctrl-C.\n\n" +
+			"The fault flags make the CA delay, reject or confirm requests differently and accept deviations " +
+			"from RFC 9483, to test how a client copes. --accept takes one of:\n" + acceptHelp(),
 		Example: "  certrally mock\n" +
-			"  certrally mock --listen 127.0.0.1:9000 --ref device-42 --secret-file secret.txt --ca-out ca.pem",
+			"  certrally mock --listen 127.0.0.1:9000 --ref device-42 --secret-file secret.txt --ca-out ca.pem\n" +
+			"  certrally mock --waiting 2 --check-after 5s\n" +
+			"  certrally mock --reject badCertTemplate:'subject not allowed'\n" +
+			"  certrally mock --strict --mac-iterations 100-10000 --accept sha1",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runMock(cmd, o)
@@ -70,10 +135,117 @@ func newMockCommand() *cobra.Command {
 	f.StringVar(&o.secretFile, "secret-file", "", "read the shared secret from a file, or - for standard input")
 	f.StringVar(&o.caOut, "ca-out", "", "save the CA certificate to this file, for --ca-cert")
 	f.BoolVar(&o.force, "force", false, "replace an existing --ca-out file")
-	for _, name := range []string{"listen", flagRef} {
+	f.IntVar(&o.waiting, "waiting", 0,
+		"answer certificate and revocation requests with status waiting and decide them on poll N")
+	f.DurationVar(&o.checkAfter, "check-after", time.Second,
+		"time a waiting response tells the client to wait before it polls")
+	f.StringVar(&o.reject, "reject", "",
+		"reject every certificate and revocation request with this failInfo, such as badRequest or badCertTemplate:TEXT")
+	f.BoolVar(&o.implicitConfirm, "grant-implicit-confirm", false,
+		"grant implicitConfirm, so a certificate needs no certConf")
+	f.BoolVar(&o.strict, "strict", false,
+		"refuse requests that break RFC 9483 instead of accepting the usual deviations")
+	f.StringVar(&o.macIterations, "mac-iterations", "",
+		"accept only MAC iteration counts from MIN to MAX, such as 100-10000")
+	f.DurationVar(&o.confirmWait, "confirm-wait", mockConfirmWait,
+		"time the client has to confirm a certificate, sent as confirmWaitTime")
+	f.StringArrayVar(&o.accept, "accept", nil,
+		"accept a deviation from RFC 9483, one of the names listed above (repeatable)")
+	_ = cmd.RegisterFlagCompletionFunc("accept", fixedCompletion(acceptNames))
+	_ = cmd.RegisterFlagCompletionFunc("reject", fixedCompletion(failInfoNames))
+	for _, name := range []string{"listen", flagRef, "waiting", "check-after", "mac-iterations", "confirm-wait"} {
 		_ = cmd.RegisterFlagCompletionFunc(name, cobra.NoFileCompletions)
 	}
 	return cmd
+}
+
+// acceptHelp lists the --accept values with their meaning, one per line.
+func acceptHelp() string {
+	var b strings.Builder
+	for _, a := range acceptOptions {
+		fmt.Fprintf(&b, "  %-26s %s\n", a.name, a.help)
+	}
+	return strings.TrimSuffix(b.String(), "\n")
+}
+
+// faults holds the parsed fault flags.
+type faults struct {
+	reject        *server.Error
+	minIterations int
+	maxIterations int
+	options       []server.Option
+}
+
+// parseFaults checks the fault flags and returns the server options and CA behaviour they select.
+func (o *mockOptions) parseFaults() (*faults, error) {
+	f := &faults{}
+	switch {
+	case o.waiting < 0:
+		return nil, errors.New("--waiting must not be negative")
+	case o.checkAfter < 0:
+		return nil, errors.New("--check-after must not be negative")
+	case o.confirmWait <= 0:
+		return nil, errors.New("--confirm-wait must be positive")
+	}
+	if o.reject != "" {
+		rejection, err := parseRejection(o.reject)
+		if err != nil {
+			return nil, err
+		}
+		f.reject = rejection
+	}
+	if o.macIterations != "" {
+		minimum, maximum, err := parseIterationRange(o.macIterations)
+		if err != nil {
+			return nil, err
+		}
+		f.minIterations, f.maxIterations = minimum, maximum
+		f.options = append(f.options, server.WithMACIterationLimits(minimum, maximum))
+	}
+	if o.implicitConfirm {
+		f.options = append(f.options, server.WithImplicitConfirm())
+	}
+	if o.strict {
+		f.options = append(f.options, server.WithStrictProfileValidation())
+	}
+	f.options = append(f.options, server.WithConfirmWaitTime(o.confirmWait))
+	for _, name := range o.accept {
+		i := slices.IndexFunc(acceptOptions, func(a acceptOption) bool { return a.name == name })
+		if i < 0 {
+			return nil, fmt.Errorf("invalid --accept %q, want one of %s", name, strings.Join(acceptNames, ", "))
+		}
+		f.options = append(f.options, acceptOptions[i].option())
+	}
+	return f, nil
+}
+
+// parseRejection parses a --reject value: a failInfo name, optionally followed by a colon and the
+// statusString text.
+func parseRejection(s string) (*server.Error, error) {
+	name, text, _ := strings.Cut(s, ":")
+	for i := range 27 {
+		bit := pkicmp.PKIFailureInfo(1) << (31 - i)
+		if strings.EqualFold(bit.String(), name) {
+			return &server.Error{Status: pkicmp.StatusRejection, FailureInfo: bit, StatusText: text}, nil
+		}
+	}
+	return nil, fmt.Errorf("invalid --reject %q, want a failInfo name, optionally followed by :TEXT: %s",
+		s, strings.Join(failInfoNames, ", "))
+}
+
+// parseIterationRange parses a --mac-iterations value of the form MIN-MAX.
+func parseIterationRange(s string) (minimum, maximum int, err error) {
+	first, second, ok := strings.Cut(s, "-")
+	if ok {
+		minimum, err = strconv.Atoi(first)
+		if err == nil {
+			maximum, err = strconv.Atoi(second)
+		}
+	}
+	if !ok || err != nil || minimum < 1 || maximum < minimum {
+		return 0, 0, fmt.Errorf("invalid --mac-iterations %q, want MIN-MAX with 1 <= MIN <= MAX, such as 100-10000", s)
+	}
+	return minimum, maximum, nil
 }
 
 // mockSecret is the shared secret of the mock CA and where it came from.
@@ -114,6 +286,10 @@ func runMock(cmd *cobra.Command, o *mockOptions) error {
 			return err
 		}
 	}
+	flt, err := o.parseFaults()
+	if err != nil {
+		return err
+	}
 	sec, err := o.readSecret(cmd.InOrStdin())
 	if err != nil {
 		return err
@@ -122,13 +298,21 @@ func runMock(cmd *cobra.Command, o *mockOptions) error {
 	if err != nil {
 		return err
 	}
-	srv := server.NewCAServer(ca,
-		server.LightweightPolicy(),
+	faultCA := &faultCA{
+		MockCA:              ca,
+		waiting:             o.waiting,
+		checkAfter:          o.checkAfter,
+		reject:              flt.reject,
+		authorizeRevocation: slices.Contains(o.accept, "mac-revocation"),
+		pending:             map[string]*pendingDecision{},
+	}
+	opts := []server.Option{
 		server.WithSigner(ca.Key(), ca.Cert()),
 		server.WithExtraCerts([]*x509.Certificate{ca.Cert()}),
 		server.WithSecretLookup(ca),
 		server.WithCertificateLookup(ca),
-	)
+	}
+	srv := server.NewCAServer(faultCA, server.LightweightPolicy(), slices.Concat(opts, flt.options)...)
 	if err := srv.Err(); err != nil {
 		return err
 	}
@@ -228,13 +412,14 @@ func (o *mockOptions) report(p *printer, url string, caCert *x509.Certificate, s
 	case o.secretFile != "":
 		secretField = "from " + o.secretFile
 	}
-	p.result("Mock CA running", []ui.Field{
+	fields := []ui.Field{
 		{Name: fieldServer, Value: url},
 		{Name: "CA", Value: dn.Format(caCert.RawSubject)},
 		{Name: "Reference", Value: o.ref},
 		{Name: "Secret", Value: secretField},
 		{Name: fieldSaved, Value: o.caOut},
-	}, nil)
+	}
+	p.result("Mock CA running", slices.Concat(fields, o.faultFields()), nil)
 
 	args := []string{programName, "enroll", "--server", url, "--ref", shellQuote(o.ref)}
 	if o.caOut != "" {
@@ -249,6 +434,132 @@ func (o *mockOptions) report(p *printer, url string, caCert *x509.Certificate, s
 		command = secret.EnvVar + "=" + string(sec.value) + " " + command
 	}
 	p.line("\nEnroll a certificate from another terminal:\n  " + command + "\n\nPress Ctrl-C to stop.\n")
+}
+
+// faultFields describes the fault flags in use, for the startup report.
+func (o *mockOptions) faultFields() []ui.Field {
+	var fields []ui.Field
+	if o.waiting > 0 {
+		fields = append(fields, ui.Field{Name: "Waiting",
+			Value: fmt.Sprintf("decides on poll %d, checkAfter %s", o.waiting, o.checkAfter)})
+	}
+	if o.reject != "" {
+		fields = append(fields, ui.Field{Name: "Rejecting", Value: ui.Sanitize(o.reject)})
+	}
+	if o.implicitConfirm {
+		fields = append(fields, ui.Field{Name: "Confirmation", Value: "implicitConfirm granted"})
+	}
+	if o.strict {
+		fields = append(fields, ui.Field{Name: "Profile", Value: "strict"})
+	}
+	if o.macIterations != "" {
+		fields = append(fields, ui.Field{Name: "MAC iterations", Value: o.macIterations})
+	}
+	if o.confirmWait != mockConfirmWait {
+		fields = append(fields, ui.Field{Name: "Confirm wait", Value: o.confirmWait.String()})
+	}
+	if len(o.accept) > 0 {
+		fields = append(fields, ui.Field{Name: "Accepting", Value: strings.Join(o.accept, ", ")})
+	}
+	return fields
+}
+
+// faultCA wraps the example CA with the delays and rejections of the fault flags. Everything else,
+// such as confirmation and the secret lookup, passes through to the example CA.
+type faultCA struct {
+	*mockserver.MockCA
+	// waiting is the poll on which a request is decided. Zero decides it at once.
+	waiting    int
+	checkAfter time.Duration
+	// reject, when set, is the answer to every certificate and revocation request.
+	reject *server.Error
+	// authorizeRevocation allows revocation requests that are not signed with the certificate they
+	// revoke.
+	authorizeRevocation bool
+	mu                  sync.Mutex
+	// pending holds the delayed requests by pollRef.
+	pending map[string]*pendingDecision
+	nextRef int
+}
+
+// pendingDecision is a request that waits for polls before the CA decides it.
+type pendingDecision struct {
+	polls  int
+	decide func(context.Context) (*server.Response, error)
+}
+
+// IssueCertificate issues the certificate, after the configured polls, unless every request is rejected.
+func (c *faultCA) IssueCertificate(ctx context.Context, reqType server.RequestType, tmpl *x509.Certificate, sender *server.SenderIdentity) (*server.Response, error) {
+	return c.delay(ctx, func(ctx context.Context) (*server.Response, error) {
+		return c.MockCA.IssueCertificate(ctx, reqType, tmpl, sender)
+	})
+}
+
+// RevokeCertificate revokes the certificate, after the configured polls, unless every request is rejected.
+func (c *faultCA) RevokeCertificate(ctx context.Context, req *server.RevocationRequest, sender *server.SenderIdentity) error {
+	resp, err := c.delay(ctx, func(ctx context.Context) (*server.Response, error) {
+		return nil, c.MockCA.RevokeCertificate(ctx, req, sender)
+	})
+	if resp != nil && resp.Waiting != nil {
+		return &server.WaitingError{WaitingResponse: *resp.Waiting}
+	}
+	return err
+}
+
+// AuthorizeRevocation decides on a revocation request that is not signed with the certificate it
+// revokes. The example CA has no such policy, so the request is refused unless --accept
+// mac-revocation allows every such request.
+func (c *faultCA) AuthorizeRevocation(context.Context, *server.RevocationRequest, *server.SenderIdentity) error {
+	if c.authorizeRevocation {
+		return nil
+	}
+	return &server.Error{Status: pkicmp.StatusRejection, FailureInfo: pkicmp.FailNotAuthorized,
+		StatusText: "only the certificate holder may revoke it"}
+}
+
+// delay applies the fault flags to a decision. It rejects the request when --reject is set and
+// otherwise decides it at once or, with --waiting, keeps it for the polls.
+func (c *faultCA) delay(ctx context.Context, decide func(context.Context) (*server.Response, error)) (*server.Response, error) {
+	if c.reject != nil {
+		rejection := *c.reject
+		decide = func(context.Context) (*server.Response, error) { return nil, &rejection }
+	}
+	if c.waiting == 0 {
+		return decide(ctx)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.nextRef++
+	ref := strconv.Itoa(c.nextRef)
+	c.pending[ref] = &pendingDecision{decide: decide}
+	return c.waitingResponse(ref), nil
+}
+
+// waitingResponse tells the client to poll for the request ref.
+func (c *faultCA) waitingResponse(ref string) *server.Response {
+	return &server.Response{
+		Waiting: &server.WaitingResponse{CheckAfter: c.checkAfter, Reason: "waiting for approval", PollRef: ref},
+	}
+}
+
+// CheckPending answers a poll: the request keeps waiting until the configured poll, which decides it.
+func (c *faultCA) CheckPending(ctx context.Context, pollRef string, _ *server.SenderIdentity) (*server.Response, error) {
+	c.mu.Lock()
+	d, ok := c.pending[pollRef]
+	if !ok {
+		c.mu.Unlock()
+		return nil, &server.Error{
+			Status: pkicmp.StatusRejection, FailureInfo: pkicmp.FailBadRequest, StatusText: "unknown pollRef",
+		}
+	}
+	d.polls++
+	if d.polls < c.waiting {
+		c.mu.Unlock()
+		return c.waitingResponse(pollRef), nil
+	}
+	delete(c.pending, pollRef)
+	c.mu.Unlock()
+	return d.decide(ctx)
 }
 
 // mockLog prints one line for every request the mock CA answers.
