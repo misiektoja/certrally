@@ -17,7 +17,7 @@ Later versions may add fields. Existing fields keep their names and meaning.
 
 ## JSON output
 
-`--json` works with `enroll`, `revoke`, `cacerts`, `cmp genm` and its subcommands, `ping`, `inspect`, `lint`, `keygen` and the `est` commands except `est mock`. Standard output then holds exactly one JSON document, whatever the outcome. The ladder diagram and the text report are not printed. The exit status is the same as without `--json`.
+`--json` works with `enroll`, `poll`, `revoke`, `cacerts`, `cmp genm` and its subcommands, `ping`, `inspect`, `lint`, `keygen` and the `est` commands except `est mock`. Standard output then holds exactly one JSON document, whatever the outcome. The ladder diagram and the text report are not printed. The exit status is the same as without `--json`.
 
 When certrally cannot parse the command line, for example because of an unknown flag or a missing required flag, the document holds the error and the error is also printed on standard error. `--json` cannot be combined with `--quiet` or with an output file of `-`.
 
@@ -120,7 +120,7 @@ A certificate in a result has `subject`, `issuer`, `serial`, `notBefore`, `notAf
 
 | Command | Result fields |
 |---|---|
-| `enroll` | `status`, `confirmed`, `implicitConfirm`, `certificate`, `chain`, `saved`. With exit status 5 the result is present and `confirmed` is `false`. `implicitConfirm` is `true` when the CA granted implicit confirmation, so no `certConf` was sent |
+| `enroll`, `poll` | `status`, `confirmed`, `implicitConfirm`, `certificate`, `chain`, `saved`, `transactionId`. With exit status 5 the result is present and `confirmed` is `false`. `implicitConfirm` is `true` when the CA granted implicit confirmation, so no `certConf` was sent. When the CA keeps the request waiting, under `enroll --poll-later` or when polling ends at `--timeout` with `--capture`, `status` is `waiting`, `certificate` is `null`, `saved` lists only a new key and `nextPoll` tells when the CA asked for the next poll, if it did |
 | `revoke` | `certificate`, `issuer`, `serial`, `reason`, `invalidityDate`. `certificate` is `null` when the certificate was named with `--serial` and `--issuer`. `invalidityDate` is present when `--invalidity-date` was given |
 | `cacerts`, `cmp genm cacerts` | `certificates`, `saved` |
 | `cmp genm rootupdate` | `update` with `newWithNew`, `newWithOld` and `oldWithNew`. It is `null` when no update is available. `saved` |
@@ -170,8 +170,9 @@ A certificate in a result has `subject`, `issuer`, `serial`, `notBefore`, `notAf
 
 1. A `start` line with `format` (currently 1), `tool`, `version`, `command`, `server` and `time`. A run of an EST command adds `protocol` with the value `est`.
 2. One [message record](#message-records) per request, response, failure or EST connection, including `der`.
-3. An `end` line with `time` and `exitStatus`.
+3. A `transaction` line with `time`, `id`, `state` and `resume` when the run leaves a waiting transaction for `poll` (`state` is `waiting`) or `poll` ends one (`ended`). `id` is the transaction ID. `resume` holds what `poll` needs: the server, the protection settings and the names of their files, the trusted CA certificates, the output files and the state of the CMP transaction. It holds no secret or private key. `poll` uses the last line of a transaction.
+4. An `end` line with `time` and `exitStatus`.
 
-Each run appends its own lines, so one file can hold several runs. `--capture` works together with `--json` and `--quiet`. `certrally inspect` and `certrally lint` read capture files.
+Each run appends its own lines, so one file can hold several runs. Readers should skip lines of other kinds, which later versions may add. `--capture` works together with `--json` and `--quiet`. `certrally inspect` and `certrally lint` read capture files.
 
 certrally creates the file with mode 0600. Keep capture files private: anyone who has the messages of a MAC-protected exchange can try to guess the shared secret offline.

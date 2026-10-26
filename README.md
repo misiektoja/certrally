@@ -79,7 +79,7 @@ certrally --version
 
 `certrally completion bash|zsh|fish|powershell` prints a shell completion script. `certrally man` prints a man page.
 
-The CMP commands also run under `certrally cmp`, such as `certrally cmp enroll`. Without the prefix, `enroll`, `revoke`, `cacerts`, `ping` and `mock` use CMP. The EST commands run under [`certrally est`](#enroll-over-est).
+The CMP commands also run under `certrally cmp`, such as `certrally cmp enroll`. Without the prefix, `enroll`, `poll`, `revoke`, `cacerts`, `ping` and `mock` use CMP. The EST commands run under [`certrally est`](#enroll-over-est).
 
 Output is coloured only on a terminal. [docs/output.md](docs/output.md) describes `--color`, `NO_COLOR` and `FORCE_COLOR`.
 
@@ -161,6 +161,34 @@ Notes:
 * `--implicit-confirm` asks the CA for implicit confirmation, as RFC 9483 recommends. A CA that grants it repeats `implicitConfirm` in its response and certrally skips the `certConf` exchange, so the run ends with the response. A CA that wants the confirmation leaves it out and certrally confirms as usual. The result says which happened.
 * `--hash`, `--iterations` and `--general-info` also apply to `revoke` and the `genm` commands.
 * Private keys are written as unencrypted PKCS#8 PEM with mode 0600. `certrally keygen --list` prints the key types.
+
+### Collect a certificate later
+
+A CA that needs approval answers with status `waiting`. `enroll` then polls until the CA decides or `--timeout` ends, 5 minutes by default. With `--poll-later` it stops at that answer instead, saves the new key and records the transaction in the `--capture` file:
+
+```bash
+certrally enroll --server https://ca.example.com/.well-known/cmp \
+  --ref device-42 --secret-file secret.txt --subject CN=device-42 \
+  --cert-out device.pem --key-out device.key \
+  --poll-later --capture device.jsonl
+```
+
+```text
+✓ Request waiting for the CA
+  Status          waiting
+  Transaction ID  d503c4aad8beeb7b34b820adb1809771
+  Saved           device.key
+  Note            Collect the certificate with: certrally poll --transaction-id d503c4aad8beeb7b34b820adb1809771 --capture device.jsonl
+```
+
+`poll` collects the certificate later, also from another directory. It takes the server, the protection, the trusted CA certificates and the output files from the capture file and reads the shared secret again. It polls until the CA decides, confirms the certificate and saves it:
+
+```bash
+certrally poll --transaction-id d503c4aad8beeb7b34b820adb1809771 \
+  --capture device.jsonl --secret-file secret.txt
+```
+
+A poll that ends at `--timeout` while the CA still waits records the new state, so the same command can run again. An `enroll` whose polling ends at `--timeout` records the transaction the same way when it has `--capture`. `--server`, `--cert-out` and `--chain-out` replace the values from the capture file. Once the CA issues the certificate or rejects the request, the transaction ends and `poll` refuses it. After other failures, such as a wrong shared secret, the same command can run again.
 
 ### Trust the CA
 

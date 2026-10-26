@@ -10,7 +10,7 @@ The startup report shows the address, the CA name, the secret source and the fau
 
 ## Delayed answers
 
-`--waiting N` answers each certificate and revocation request with status `waiting` and decides it on the Nth poll. `--check-after` sets the time the response tells the client to wait before it polls (default 1s). certrally polls when asked and waits at least one second between polls.
+`--waiting N` answers each certificate and revocation request with status `waiting` and decides it on the Nth poll. `--check-after` sets the time the response tells the client to wait before it polls (default 1s). certrally polls when asked and waits at least one second between polls. `enroll --poll-later` and `poll` collect the certificate in a later run.
 
 ```bash
 certrally mock --waiting 2 --check-after 5s
