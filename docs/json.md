@@ -38,7 +38,7 @@ certrally enroll --server https://ca.example.com/.well-known/cmp --ref device-42
 | `exchange` | array | One [message record](#message-records) per request, response or failure, and per connection of an EST command, in order. Absent when nothing was sent |
 | `result` | object | The [result](#results) of the command. Present on success and with some failures |
 | `error` | object | The [error](#errors) when `ok` is `false` |
-| `faults` | array | One entry per [`enroll --fault`](faults.md) value, in the order of the help text. `name` is the fault and `messages` lists the body types it changed, such as `certConf`. An empty `messages` means the fault found no message to change. Absent without `--fault` |
+| `faults` | array | One entry per [`enroll` or `poll --fault`](faults.md) value, in the order of the help text. `name` is the fault and `messages` lists the body types it changed, such as `certConf`. An empty `messages` means the fault found no message to change. Absent without `--fault` |
 | `warnings` | array of strings | Problems that did not fail the command, such as a CRL signature that does not verify or a response that breaks a rule of the `compatible` profile |
 
 An enrollment produces a document like this, shortened:

@@ -1,6 +1,6 @@
 # The CMP test CA
 
-The [README](../README.md#try-it-with-a-test-ca) introduces `certrally mock`, a CMP test CA for trying certrally and test scripts without a real CA. This page describes what it does and the fault flags that make it delay, reject or confirm requests differently and accept deviations from RFC 9483, to test how a client copes. To test a CA the other way around, `certrally enroll --fault` sends deliberately wrong messages. [faults.md](faults.md) describes them and how the test CA answers each one.
+The [README](../README.md#try-it-with-a-test-ca) introduces `certrally mock`, a CMP test CA for trying certrally and test scripts without a real CA. This page describes what it does and the fault flags that make it delay, reject or confirm requests differently and accept deviations from RFC 9483, to test how a client copes. To test a CA the other way around, `certrally enroll --fault` and `poll --fault` send deliberately wrong messages. [faults.md](faults.md) describes them and how the test CA answers each one.
 
 ## What it does
 

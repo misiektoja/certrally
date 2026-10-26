@@ -253,7 +253,7 @@ certrally enroll --server https://ca.example.com/.well-known/cmp \
 
 ### Test how a CA copes with faulty messages
 
-`--fault NAME` makes `enroll` send a deliberately wrong message, to test how a CA handles it. These flags exist to test CAs, so use them against a test CA or with the consent of the CA operator:
+`--fault NAME` makes `enroll` and `poll` send a deliberately wrong message, to test how a CA handles it. These flags exist to test CAs, so use them against a test CA or with the consent of the CA operator:
 
 ```bash
 certrally enroll --server https://ca.example.com/.well-known/cmp \
@@ -261,7 +261,7 @@ certrally enroll --server https://ca.example.com/.well-known/cmp \
   --fault wrong-cert-hash --cert-out device.pem --key-out device.key
 ```
 
-The faults are `reject-certificate`, `wrong-cert-hash`, `wrong-cert-req-id`, `reuse-sender-nonce`, `stale-recip-nonce`, `wrong-transaction-id`, `no-protection` and `late-certconf`. `--fault` is repeatable. A CA that follows RFC 9483 refuses each one except `reject-certificate`, which it must answer with `pkiConf`. The exit status follows the usual [rules](#exit-status), certrally saves the certificate it received and the report names the faults sent. `late-certconf` waits past the confirmWaitTime of the response or for `--confirm-delay` when the response sets none. [docs/faults.md](docs/faults.md) lists what each fault sends, the RFC 9483 rule it breaks and how `certrally mock` answers it.
+The faults are `reject-certificate`, `wrong-cert-hash`, `wrong-cert-req-id`, `reuse-sender-nonce`, `stale-recip-nonce`, `wrong-transaction-id`, `no-protection` and `late-certconf`. `--fault` is repeatable. A CA that follows RFC 9483 refuses each one except `reject-certificate`, which it must answer with `pkiConf`. The exit status follows the usual [rules](#exit-status), certrally saves the certificate it received and the report names the faults sent. `late-certconf` waits past the confirmWaitTime of the response or for `--confirm-delay` when the response sets none. `poll --fault` changes the messages of a transaction that the CA kept waiting. [docs/faults.md](docs/faults.md) lists what each fault sends, the RFC 9483 rule it breaks and how `certrally mock` answers it.
 
 ### Trust the CA
 
