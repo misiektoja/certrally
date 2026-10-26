@@ -39,14 +39,17 @@ func firstMessage(t *testing.T, capture string) *pkicmp.PKIMessage {
 	return msg
 }
 
-// certReqMsg returns the single certificate request of an ir or cr.
+// certReqMsg returns the single certificate request of an ir, cr or kur.
 func certReqMsg(t *testing.T, msg *pkicmp.PKIMessage) *pkicmp.CertReqMsg {
 	t.Helper()
 	var reqs *pkicmp.CertReqMessages
 	var err error
-	if msg.Body.Type == pkicmp.BodyTypeCR {
+	switch msg.Body.Type {
+	case pkicmp.BodyTypeCR:
 		reqs, err = msg.Body.CR()
-	} else {
+	case pkicmp.BodyTypeKUR:
+		reqs, err = msg.Body.KUR()
+	default:
 		reqs, err = msg.Body.IR()
 	}
 	if err != nil {
