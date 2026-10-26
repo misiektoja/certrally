@@ -125,6 +125,11 @@ func TestCheck(t *testing.T) {
 		change(m)
 		return m
 	}
+	// forwarded wraps req in a nested message that a registration authority signs.
+	ra, _ := newCertificate(t, pkix.Name{CommonName: "RA"}, ca, caKey)
+	forwarded := func(req *pkicmp.PKIMessage) *pkicmp.PKIMessage {
+		return signedBy(message(pkicmp.NewNestedBody(req), pkix.Name{CommonName: "RA"}, nil), ra)
+	}
 
 	tests := []struct {
 		name      string
@@ -179,6 +184,13 @@ func TestCheck(t *testing.T) {
 			"carries no extraCerts, so the chain of the new certificate is missing"},
 		{"later message without extraCerts", signedBy(certConf(), device), with(signedBy(pkiconf([]byte{0xb3, 0x02, 0x05, 0x00}), ca),
 			func(m *pkicmp.PKIMessage) { m.ExtraCerts = nil }), ""},
+		{"MAC answer to forwarded MAC request", forwarded(macIR()), ip(), ""},
+		{"signed answer to forwarded MAC request", forwarded(macIR()), signedBy(ip(), ca), "is signed, but the request is MAC-protected"},
+		{"forwarded implicitConfirm", forwarded(with(macIR(), func(m *pkicmp.PKIMessage) {
+			m.Header.GeneralInfo = []pkicmp.InfoTypeAndValue{info(oidImplicitConfirm)}
+		})), with(ip(), func(m *pkicmp.PKIMessage) { m.Header.GeneralInfo = []pkicmp.InfoTypeAndValue{info(oidImplicitConfirm)} }), ""},
+		{"forwarded later message without extraCerts", forwarded(signedBy(certConf(), device)),
+			with(signedBy(pkiconf([]byte{0xb3, 0x02, 0x05, 0x00}), ca), func(m *pkicmp.PKIMessage) { m.ExtraCerts = nil }), ""},
 		{"error status", genm(), errorMsg(pkicmp.StatusAccepted), "The error response has status accepted instead of rejection"},
 		{"waiting error", genm(), errorMsg(pkicmp.StatusWaiting), ""},
 		{"empty pkiconf", certConf(), pkiconf([]byte{0xb3, 0x00}), "The pkiconf response is empty instead of holding NULL"},

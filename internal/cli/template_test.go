@@ -145,7 +145,8 @@ func TestKeyUsageExtension(t *testing.T) {
 }
 
 // TestExtKeyUsageExtension checks that the --ext-key-usage names stand for the key purposes that
-// crypto/x509 knows by those names and that a dotted OID passes through.
+// crypto/x509 knows by those names, that cmcRA stands for id-kp-cmcRA and that a dotted OID passes
+// through.
 func TestExtKeyUsageExtension(t *testing.T) {
 	ext, err := extKeyUsageExtension(slices.Concat(keyPurposeNames, []string{"SERVERAUTH", "1.2.3.4"}))
 	if err != nil {
@@ -163,8 +164,9 @@ func TestExtKeyUsageExtension(t *testing.T) {
 	if !slices.Equal(cert.ExtKeyUsage, want) {
 		t.Errorf("key purposes %v, want %v", cert.ExtKeyUsage, want)
 	}
-	if len(cert.UnknownExtKeyUsage) != 1 || !cert.UnknownExtKeyUsage[0].Equal(oidClientTest) {
-		t.Errorf("other key purposes %v, want only %v", cert.UnknownExtKeyUsage, oidClientTest)
+	wantOther := []asn1.ObjectIdentifier{oidKeyPurposeCMCRA, oidClientTest}
+	if !slices.EqualFunc(cert.UnknownExtKeyUsage, wantOther, asn1.ObjectIdentifier.Equal) {
+		t.Errorf("other key purposes %v, want %v", cert.UnknownExtKeyUsage, wantOther)
 	}
 }
 
