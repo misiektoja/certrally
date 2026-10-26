@@ -4,7 +4,11 @@ Notable changes to certrally. Versions follow the `vMAJOR.MINOR.PATCH` tags publ
 
 ## v0.2.0 - TBD
 
-This release adds collecting a waiting certificate in a later run, implicit confirmation, revocation by serial number with an invalidity date, key usages and templates copied from an existing certificate, flags that shape a request the way a test scenario needs and fault flags that make the test CA delay, reject and relax its checks.
+This release adds collecting a waiting certificate in a later run, implicit confirmation, revocation by serial number with an invalidity date, key usages and templates copied from an existing certificate, flags that shape a request the way a test scenario needs, fault flags that make the test CA delay, reject and relax its checks and `--insecure` for test servers with untrusted TLS certificates.
+
+### CMP and EST
+
+* **`--insecure`** skips the check of the TLS certificate of the server on every command that talks to a server, for a test server with a self-signed certificate. certrally warns that anyone who intercepts the connection can pose as the server and records the flag in the capture file. It cannot be combined with `--tls-ca-cert`.
 
 ### CMP
 
