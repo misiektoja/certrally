@@ -210,7 +210,17 @@ type protection struct {
 	// secret is a shared secret typed into the enroll wizard. It takes the place of the sources that
 	// --secret-file names.
 	secret []byte
+	// raCert and raKey name the certificate and key of a registration authority that forwards every
+	// request in a nested message. Only enroll and poll take them.
+	raCert string
+	raKey  string
 }
+
+// Flags of the registration authority that forwards the requests of enroll and poll.
+const (
+	flagRACert = "ra-cert"
+	flagRAKey  = "ra-key"
+)
 
 // addFlags registers the protection flags.
 func (p *protection) addFlags(cmd *cobra.Command) {
@@ -234,6 +244,15 @@ func (p *protection) addFlags(cmd *cobra.Command) {
 	for _, name := range []string{flagRef, "sender", "iterations", "general-info"} {
 		_ = cmd.RegisterFlagCompletionFunc(name, cobra.NoFileCompletions)
 	}
+}
+
+// addRAFlags registers --ra-cert and --ra-key.
+func (p *protection) addRAFlags(cmd *cobra.Command) {
+	f := cmd.Flags()
+	f.StringVar(&p.raCert, flagRACert, "",
+		"forward each request as a registration authority, signed with this certificate file, which may include the chain")
+	f.StringVar(&p.raKey, flagRAKey, "", "private key for --ra-cert")
+	cmd.MarkFlagsRequiredTogether(flagRACert, flagRAKey)
 }
 
 // signed reports whether the request is signed rather than MAC-protected.
@@ -279,6 +298,8 @@ type protected struct {
 	chain      []*x509.Certificate
 	reqOpts    []client.RequestOption
 	clientOpts []client.Option
+	// ra is the certificate of the registration authority that forwards the requests, nil without one.
+	ra *x509.Certificate
 }
 
 // load reads the credentials. The shared secret may be prompted for on stdin.
@@ -360,6 +381,11 @@ func (p *protection) load(stdin io.Reader, prompt io.Writer) (*protected, error)
 		}
 		pr.reqOpts = append(pr.reqOpts, client.WithSender(name))
 	}
+	if p.raCert != "" {
+		if err := p.loadRA(pr, stdin, prompt); err != nil {
+			return nil, err
+		}
+	}
 	if p.extraCerts != "" {
 		certs, err := pemfile.ReadCertificates(p.extraCerts)
 		if err != nil {
@@ -368,6 +394,26 @@ func (p *protection) load(stdin io.Reader, prompt io.Writer) (*protected, error)
 		pr.clientOpts = append(pr.clientOpts, client.WithExtraCerts(certs))
 	}
 	return pr, nil
+}
+
+// loadRA reads the registration authority certificate and key and makes the client of pr wrap every
+// request in a nested message signed with them.
+func (p *protection) loadRA(pr *protected, stdin io.Reader, prompt io.Writer) error {
+	chain, err := pemfile.ReadCertificates(p.raCert)
+	if err != nil {
+		return err
+	}
+	key, err := p.keyPassword.loadSigner(p.raKey, stdin, prompt)
+	if err != nil {
+		return err
+	}
+	creds, err := pkicmp.NewSignatureCredentials(key, chain[0], chain[1:]...)
+	if err != nil {
+		return fmt.Errorf("--%s and --%s: %w", flagRACert, flagRAKey, err)
+	}
+	pr.clientOpts = append(pr.clientOpts, client.WithRegistrationAuthority(creds))
+	pr.ra = chain[0]
+	return nil
 }
 
 // parseGeneralInfo parses the --general-info values into header items.
@@ -436,6 +482,8 @@ type session struct {
 	caCerts []*x509.Certificate
 	// tlsRoots are the --tls-ca-cert certificates.
 	tlsRoots []*x509.Certificate
+	// ra is the certificate of the registration authority that forwards the requests, nil without one.
+	ra *x509.Certificate
 }
 
 // open prepares a session and registers it with p. Certificates after the first one in chain, the

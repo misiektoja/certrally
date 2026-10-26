@@ -75,11 +75,13 @@ type enrollJSON struct {
 	ProofOfPossession string `json:"proofOfPossession,omitempty"`
 	// CentralKeyGeneration is true when the CA generated the key pair. KeyGenerationAuthority is the
 	// subject of the certificate that signed the private key.
-	CentralKeyGeneration   bool               `json:"centralKeyGeneration,omitempty"`
-	KeyGenerationAuthority string             `json:"keyGenerationAuthority,omitempty"`
-	Certificate            *certificateJSON   `json:"certificate"`
-	Chain                  []*certificateJSON `json:"chain"`
-	Saved                  []string           `json:"saved"`
+	CentralKeyGeneration   bool   `json:"centralKeyGeneration,omitempty"`
+	KeyGenerationAuthority string `json:"keyGenerationAuthority,omitempty"`
+	// RegistrationAuthority is the subject of the --ra-cert certificate that forwarded the requests.
+	RegistrationAuthority string             `json:"registrationAuthority,omitempty"`
+	Certificate           *certificateJSON   `json:"certificate"`
+	Chain                 []*certificateJSON `json:"chain"`
+	Saved                 []string           `json:"saved"`
 	// TransactionID is the transaction ID of the request in hex, which poll takes.
 	TransactionID string `json:"transactionId,omitempty"`
 	// NextPoll is when the CA asked for the next poll of a waiting request. It is absent when the CA

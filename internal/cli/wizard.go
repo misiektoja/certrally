@@ -216,7 +216,7 @@ func (a *formAsker) show(title, value string) {
 
 // enrollFlagOrder is the order of the flags in the command that the wizard prints.
 var enrollFlagOrder = []string{
-	"server", "ca-cert", "tls-ca-cert", flagRef, "secret-file", "mac", "cert", "key", "type",
+	"server", "ca-cert", "tls-ca-cert", flagRef, "secret-file", "mac", "cert", "key", flagRACert, flagRAKey, "type",
 	flagTemplateCert, flagSubject, flagSAN, flagKeyUsage, flagExtKeyUsage, flagCentralKeygen, "key-type", "new-key", "csr",
 	"cert-out", "key-out", "chain-out", flagOutFormat,
 }

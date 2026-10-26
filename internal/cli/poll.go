@@ -43,6 +43,9 @@ type pollOptions struct {
 	chainOut string
 	// keyOut overrides the file that enroll named for a key the CA generates.
 	keyOut string
+	// raCert and raKey override the registration authority that enroll used.
+	raCert string
+	raKey  string
 	force  bool
 	format outFormat
 }
@@ -66,6 +69,8 @@ func newPollCommand() *cobra.Command {
 			"to read the certificate. poll reads it from the file enroll saved or read, or from --new-key.\n\n" +
 			"A request with --central-keygen gets the key the CA generates with the certificate. poll saves it " +
 			"where enroll was asked to, unless --key-out names another file.\n\n" +
+			"A request that enroll forwarded as a registration authority is polled and confirmed through the " +
+			"same authority, unless --ra-cert and --ra-key name another one.\n\n" +
 			enrollExitStatusHelp,
 		Example: "  certrally enroll --server https://ca.example.com/.well-known/cmp --ref device-42 \\\n" +
 			"    --subject CN=device-42 --cert-out device.pem --key-out device.key \\\n" +
@@ -93,6 +98,10 @@ func newPollCommand() *cobra.Command {
 		"write the issuing CA certificates from the response to this file instead of the one enroll named")
 	f.StringVar(&o.keyOut, "key-out", "",
 		"write the key the CA generates to this file instead of the one enroll named (central key generation)")
+	f.StringVar(&o.raCert, flagRACert, "",
+		"forward the requests as the registration authority with this certificate file instead of the one enroll used")
+	f.StringVar(&o.raKey, flagRAKey, "", "private key for --ra-cert")
+	cmd.MarkFlagsRequiredTogether(flagRACert, flagRAKey)
 	o.format.addFlags(cmd, "", "format of the output files instead of the one enroll used: pem or der")
 	f.BoolVar(&o.force, "force", false, "replace existing output files")
 	_ = cmd.MarkFlagRequired("transaction-id")
@@ -135,6 +144,9 @@ type pendingRecord struct {
 	NewKey string `json:"newKey,omitempty"`
 	// KeyOut is the file enroll was asked to save a key the CA generates to.
 	KeyOut string `json:"keyOut,omitempty"`
+	// RACert and RAKey name the files of the registration authority that forwards the requests.
+	RACert string `json:"raCert,omitempty"`
+	RAKey  string `json:"raKey,omitempty"`
 	// State is the transaction state of go-pki-cmp.
 	State *client.PendingEnrollment `json:"state"`
 }
@@ -156,13 +168,15 @@ func newPendingRecord(s *session, prot *protection, out certOutputs, implicitCon
 		rec.Ref, rec.MAC = prot.ref, prot.mac
 	}
 	rec.CertOut, rec.ChainOut, rec.OutFormat = out.certOut, out.chainOut, out.format.name
+	rec.RACert, rec.RAKey = prot.raCert, prot.raKey
 	if pending.IndirectPOP == client.EncryptedCertificate {
 		rec.NewKey = newKeyFile
 	}
 	if pending.CentralKeyGeneration {
 		rec.KeyOut = out.keyOut
 	}
-	for _, path := range []*string{&rec.Cert, &rec.Key, &rec.CertOut, &rec.ChainOut, &rec.NewKey, &rec.KeyOut} {
+	paths := []*string{&rec.Cert, &rec.Key, &rec.CertOut, &rec.ChainOut, &rec.NewKey, &rec.KeyOut, &rec.RACert, &rec.RAKey}
+	for _, path := range paths {
 		if *path == "" || *path == stdoutPath {
 			continue
 		}
@@ -230,6 +244,8 @@ func (r *pendingRecord) protection(secretFile string, password keyPassword) *pro
 		keyPassword: password,
 		iterations:  r.Iterations,
 		hash:        r.Hash,
+		raCert:      r.RACert,
+		raKey:       r.RAKey,
 	}
 }
 
@@ -401,7 +417,11 @@ func runPoll(ctx context.Context, o *pollOptions, p *printer, stdin io.Reader) e
 	if err := checkOutputs(out.force, out.certOut, out.keyOut, out.chainOut); err != nil {
 		return err
 	}
-	pr, err := rec.protection(o.secretFile, o.keyPassword).load(stdin, p.stderr)
+	prot := rec.protection(o.secretFile, o.keyPassword)
+	if o.raCert != "" {
+		prot.raCert, prot.raKey = o.raCert, o.raKey
+	}
+	pr, err := prot.load(stdin, p.stderr)
 	if err != nil {
 		return err
 	}
@@ -413,6 +433,7 @@ func runPoll(ctx context.Context, o *pollOptions, p *printer, stdin io.Reader) e
 	if err != nil {
 		return err
 	}
+	s.ra = pr.ra
 	c, err := s.client(pr.clientOpts...)
 	if err != nil {
 		return err

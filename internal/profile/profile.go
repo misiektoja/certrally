@@ -56,14 +56,27 @@ const minNonceBytes = 16
 
 // Check returns the rules that resp breaks as the answer to req. trusted are the certificates the
 // client trusts. A new certificate issued by a self-signed certificate in trusted or caPubs needs no chain.
+// When a registration authority forwards req in a nested message, resp answers the request inside.
 func Check(req, resp *pkicmp.PKIMessage, trusted []*x509.Certificate) []Finding {
-	c := &checker{req: req, resp: resp, body: resp.Body.Type.String(), trusted: trusted}
+	c := &checker{req: forwarded(req), resp: resp, body: resp.Body.Type.String(), trusted: trusted}
 	c.header()
 	c.generalInfo()
 	c.protection()
 	c.extraCerts()
 	c.content()
 	return c.findings
+}
+
+// forwarded returns the request inside a nested message that holds exactly one. It returns req otherwise.
+func forwarded(req *pkicmp.PKIMessage) *pkicmp.PKIMessage {
+	if req.Body.Type != pkicmp.BodyTypeNested {
+		return req
+	}
+	inner, err := req.Body.Nested()
+	if err != nil || len(inner) != 1 {
+		return req
+	}
+	return inner[0]
 }
 
 // CheckReply returns the rules that resp breaks in referring to the request it answers. requests

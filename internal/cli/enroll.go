@@ -132,6 +132,10 @@ func newEnrollCommand() *cobra.Command {
 			"an RSA or ECDSA key. enroll checks that the key belongs to the certificate and saves it to " +
 			"--key-out. --key-type names the algorithm to ask for. Without it the CA chooses. An RSA request " +
 			"cannot name the key size.\n\n" +
+			"With --ra-cert and --ra-key enroll acts as a registration authority (RFC 9483 section 5.2.2.1). " +
+			"It wraps every request, including the certConf and pollReq, in a nested message signed with that " +
+			"certificate. The request inside keeps its own protection. The CA must accept the authority, " +
+			"usually by its cmcRA extended key usage.\n\n" +
 			"Run without flags on a terminal, or with --interactive, to be asked for each setting. The " +
 			"equivalent command is printed before the request is sent.\n\n" +
 			enrollExitStatusHelp,
@@ -152,6 +156,7 @@ func newEnrollCommand() *cobra.Command {
 	}
 	o.connection.addFlags(cmd, 5*time.Minute, "limit for the whole exchange, including polling")
 	o.protection.addFlags(cmd)
+	o.protection.addRAFlags(cmd)
 	o.outputOptions.addFlags(cmd)
 
 	f := cmd.Flags()
@@ -163,7 +168,7 @@ func newEnrollCommand() *cobra.Command {
 			"keyEncipherment, dataEncipherment, keyAgreement, keyCertSign, cRLSign, encipherOnly, decipherOnly")
 	f.StringArrayVar(&o.extKeyUsage, flagExtKeyUsage, nil,
 		"extended key usages to request, comma-separated: serverAuth, clientAuth, codeSigning, emailProtection, "+
-			"timeStamping, ocspSigning, anyExtendedKeyUsage or a dotted OID")
+			"timeStamping, ocspSigning, anyExtendedKeyUsage, cmcRA or a dotted OID")
 	f.StringVar(&o.templateCert, flagTemplateCert, "",
 		"copy the subject, alternative names and key usages of the certificate in this file (ir, cr or p10cr)")
 	f.StringVar(&o.keyType, "key-type", keys.DefaultType,
@@ -398,6 +403,7 @@ func runEnroll(ctx context.Context, o *enrollOptions, p *printer, stdin io.Reade
 	if err != nil {
 		return err
 	}
+	s.ra = e.ra
 	c, err := s.client(e.clientOpts...)
 	if err != nil {
 		return err
@@ -451,6 +457,10 @@ func reportIssued(s *session, out certOutputs, result *client.EnrollResult, key 
 	if kga != "" {
 		fields = append(fields, ui.Field{Name: fieldKeyGeneratedBy, Value: kga})
 	}
+	ra := s.registrationAuthority()
+	if ra != "" {
+		fields = append(fields, ui.Field{Name: fieldForwardedBy, Value: ra})
+	}
 	s.p.result("Certificate issued", append(fields, extra...), &enrollJSON{
 		Status:                 status,
 		Confirmed:              true,
@@ -458,12 +468,22 @@ func reportIssued(s *session, out certOutputs, result *client.EnrollResult, key 
 		ProofOfPossession:      popName(pop),
 		CentralKeyGeneration:   result.GeneratedKey != nil,
 		KeyGenerationAuthority: kga,
+		RegistrationAuthority:  ra,
 		Certificate:            certificateResult(cert),
 		Chain:                  certificatesResult(chain),
 		Saved:                  saved,
 		TransactionID:          transactionID(s.recorder),
 	})
 	return nil
+}
+
+// registrationAuthority returns the subject of the registration authority certificate that forwarded
+// the requests, "" when there is none.
+func (s *session) registrationAuthority() string {
+	if s.ra == nil {
+		return ""
+	}
+	return ui.Sanitize(dn.Format(s.ra.RawSubject))
 }
 
 // keyGenerationAuthority returns the subject of the certificate that signed a key the CA generated,
@@ -591,6 +611,7 @@ func reportUnconfirmed(s *session, out certOutputs, confErr *client.Confirmation
 		Status:                 lastStatus(s.recorder),
 		CentralKeyGeneration:   confErr.GeneratedKey != nil,
 		KeyGenerationAuthority: keyGenerationAuthority(confErr.GeneratedKey),
+		RegistrationAuthority:  s.registrationAuthority(),
 		Certificate:            certificateResult(confErr.Certificate),
 		Chain:                  []*certificateJSON{},
 		Saved:                  saved,

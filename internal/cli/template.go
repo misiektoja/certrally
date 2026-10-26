@@ -43,7 +43,11 @@ type keyPurpose struct {
 	oid  asn1.ObjectIdentifier
 }
 
-// keyPurposes lists the --ext-key-usage names of RFC 5280 §4.2.1.12.
+// oidKeyPurposeCMCRA is the id-kp-cmcRA extended key usage of a registration authority.
+var oidKeyPurposeCMCRA = asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 3, 28}
+
+// keyPurposes lists the --ext-key-usage names of RFC 5280 §4.2.1.12 and the registration authority
+// purpose of RFC 6402 §2.10.
 var keyPurposes = []keyPurpose{
 	{"serverAuth", asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 3, 1}},
 	{"clientAuth", asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 3, 2}},
@@ -52,6 +56,7 @@ var keyPurposes = []keyPurpose{
 	{"timeStamping", asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 3, 8}},
 	{"ocspSigning", asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 3, 9}},
 	{"anyExtendedKeyUsage", asn1.ObjectIdentifier{2, 5, 29, 37, 0}},
+	{"cmcRA", oidKeyPurposeCMCRA},
 }
 
 // keyPurposeNames lists the --ext-key-usage names in the order of keyPurposes.

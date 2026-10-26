@@ -93,7 +93,7 @@ func requestLabel(ev trace.Event) string {
 	if ev.Message == nil {
 		return label(request, "request", formatSize(ev.Size))
 	}
-	return label(request, ev.Message.Body, ev.Message.Protection+"  "+formatSize(ev.Size))
+	return label(request, ev.Message.Label(), ev.Message.Protection+"  "+formatSize(ev.Size))
 }
 
 // responseLabel describes a response and returns the style its arrow uses.
@@ -111,7 +111,7 @@ func responseLabel(ev trace.Event) (string, lipgloss.Style) {
 		return label(bad, head, formatSize(ev.Size)+"  "+timing), bad
 	}
 	style := good
-	parts := []string{m.Body}
+	parts := []string{m.Label()}
 	switch {
 	case m.Body == "error" || m.Status == "rejection":
 		style = bad
