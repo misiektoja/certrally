@@ -4,13 +4,14 @@ Notable changes to certrally. Versions follow the `vMAJOR.MINOR.PATCH` tags publ
 
 ## v0.2.0 - TBD
 
-This release adds collecting a waiting certificate in a later run, implicit confirmation, revocation by serial number with an invalidity date, key usages and templates copied from an existing certificate, flags that shape a request the way a test scenario needs, fault flags that make the test CA delay, reject and relax its checks, `--insecure` for test servers with untrusted TLS certificates, encrypted private key files and DER output files.
+This release adds collecting a waiting certificate in a later run, implicit confirmation, revocation by serial number with an invalidity date, key usages and templates copied from an existing certificate, flags that shape a request the way a test scenario needs, fault flags that make the test CA delay, reject and relax its checks, `--insecure` for test servers with untrusted TLS certificates, encrypted private key files, DER output files and HTTP proxies.
 
 ### CMP and EST
 
 * **`--insecure`** skips the check of the TLS certificate of the server on every command that talks to a server, for a test server with a self-signed certificate. certrally warns that anyone who intercepts the connection can pose as the server and records the flag in the capture file. It cannot be combined with `--tls-ca-cert`.
 * **Encrypted private keys.** `--key` and `--new-key` take a PKCS#8 key encrypted the way `openssl pkcs8 -topk8` writes it, PBES2 with PBKDF2 and AES. The password comes from **`--key-password-file`** (`-` reads standard input), the `CERTRALLY_KEY_PASSWORD` environment variable or a prompt on a terminal. `poll` takes the same flag for the signing key of the enroll run. A key encrypted with `Proc-Type` PEM headers is still refused.
 * **`--out-format der`** writes the output files as DER instead of PEM, on `enroll`, `poll`, `cacerts` and the `cmp genm` commands, `est enroll`, `est reenroll`, `est serverkeygen`, `est cacerts` and `keygen`. A certificate, a PKCS#8 key, a public key, a request and a CRL are written as is. A file that holds several certificates, such as `--chain-out` and the `--out` of the cacerts commands, becomes PKCS#7. `poll` keeps the format of the enroll run unless the flag replaces it. The default stays `pem`.
+* **`--proxy URL`** connects through an http or https proxy, on every command that talks to a server. Without the flag, the `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` environment variables apply, which the EST commands ignored before. The EST commands tunnel through the proxy with CONNECT, so TLS-SRP and `--tls-unique` work through it.
 
 ### CMP
 
