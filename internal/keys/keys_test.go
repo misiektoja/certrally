@@ -7,11 +7,15 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
+	"encoding/asn1"
 	"encoding/hex"
 	"encoding/pem"
 	"errors"
 	"strings"
 	"testing"
+
+	"golang.org/x/crypto/cryptobyte"
+	cbasn1 "golang.org/x/crypto/cryptobyte/asn1"
 )
 
 // TestGenerateRoundTrip checks that every key type generates, encodes and parses back unchanged.
@@ -47,7 +51,72 @@ func TestGenerateRoundTrip(t *testing.T) {
 			if Describe(Public(key)) == "" {
 				t.Error("no description")
 			}
+			typ, err := LookupType(name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			oid, params := typ.Algorithm()
+			gotOID, gotParams := spkiAlgorithm(t, want)
+			if !gotOID.Equal(oid) || !bytes.Equal(gotParams, params) {
+				t.Errorf("Algorithm() = %v %x, the key encodes %v %x", oid, params, gotOID, gotParams)
+			}
 		})
+	}
+}
+
+// spkiAlgorithm returns the algorithm object identifier and the DER parameters of a
+// SubjectPublicKeyInfo, nil when it has none.
+func spkiAlgorithm(t *testing.T, spki []byte) (asn1.ObjectIdentifier, []byte) {
+	t.Helper()
+	s := cryptobyte.String(spki)
+	var seq, alg cryptobyte.String
+	var oid asn1.ObjectIdentifier
+	if !s.ReadASN1(&seq, cbasn1.SEQUENCE) || !seq.ReadASN1(&alg, cbasn1.SEQUENCE) || !alg.ReadASN1ObjectIdentifier(&oid) {
+		t.Fatal("malformed SubjectPublicKeyInfo")
+	}
+	if alg.Empty() {
+		return oid, nil
+	}
+	return oid, alg
+}
+
+// TestTypeForAlgorithm checks that every key type is found by its algorithm, that RSA and EC without
+// parameters select the default size and curve and that unknown algorithms are not found.
+func TestTypeForAlgorithm(t *testing.T) {
+	for _, name := range TypeNames() {
+		tp, err := LookupType(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := name
+		if strings.HasPrefix(name, "rsa-") {
+			want = "rsa-2048"
+		}
+		got, ok := TypeForAlgorithm(tp.Algorithm())
+		if !ok || got.Name != want {
+			t.Errorf("TypeForAlgorithm(%s) = %q, %v, want %q", name, got.Name, ok, want)
+		}
+	}
+	unknownCurve, err := asn1.Marshal(asn1.ObjectIdentifier{1, 3, 132, 0, 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name   string
+		oid    asn1.ObjectIdentifier
+		params []byte
+		want   string
+	}{
+		{"EC without curve", oidECPublicKey, nil, DefaultType},
+		{"RSA without NULL", oidRSA, nil, "rsa-2048"},
+		{"secp256k1", oidECPublicKey, unknownCurve, ""},
+		{"ML-DSA with parameters", oidMLDSA44, asn1NULL, ""},
+		{"DSA", asn1.ObjectIdentifier{1, 2, 840, 10040, 4, 1}, nil, ""},
+	} {
+		got, ok := TypeForAlgorithm(tt.oid, tt.params)
+		if ok != (tt.want != "") || got.Name != tt.want {
+			t.Errorf("%s: TypeForAlgorithm = %q, %v, want %q", tt.name, got.Name, ok, tt.want)
+		}
 	}
 }
 
