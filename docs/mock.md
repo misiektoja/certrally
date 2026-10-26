@@ -6,7 +6,7 @@ The [README](../README.md#try-it-with-a-test-ca) introduces `certrally mock`, a 
 
 `certrally mock` listens on `127.0.0.1:8080` (`--listen`) and answers at `/.well-known/cmp`. It issues certificates for `ir`, `cr`, `kur` and `p10cr`, confirms and revokes them and answers the requests for CA certificates, a request template and CRLs. It accepts the shared secret for `--ref` (default `demo`) and signatures made with certificates it issued. The secret comes from `--secret-file` or `CERTRALLY_SECRET`. Without either, a random secret is generated and printed. `--ca-out` saves the CA certificate for `--ca-cert`. Everything lives in memory and is lost when the CA stops.
 
-The startup report shows the address, the CA name, the secret source and the fault flags in use, then an `enroll` command that works against the CA. Every request is logged on one line: the time, the request body and its protection, the response and how long it took. A revocation adds a line with the serial number, the reason and the invalidity date when the request gave one. The CRL lists the invalidity date too.
+The startup report shows the address, the CA name, the secret source and the fault flags in use, then an `enroll` command that works against the CA. Every request is logged on one line: the time, the request body and its protection, the response and how long it took. A revocation adds a line below its request with the serial number, the reason and the invalidity date when the request gave one. The CRL lists the invalidity date too.
 
 ## Delayed answers
 
