@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/misiektoja/go-pki-cmp/pkicmp"
+
+	"github.com/misiektoja/certrally/internal/capture"
 )
 
 // TestEnrollFaults checks that certrally mock answers every --fault the way RFC 9483 asks and that
@@ -66,7 +69,7 @@ func TestEnrollFaults(t *testing.T) {
 				if !errorContains(errOut, tc.failInfo) || !errorContains(errOut, tc.reason) {
 					t.Errorf("the report lacks %s and %q:\n%s", tc.failInfo, tc.reason, errOut)
 				}
-				if !strings.Contains(log, tc.failInfo+`  "`) || !strings.Contains(log, tc.reason) {
+				if !strings.Contains(log, tc.failInfo+`  "`+tc.reason+`"`) {
 					t.Errorf("the mock log does not say why it refused the certConf:\n%s", log)
 				}
 			}
@@ -77,16 +80,114 @@ func TestEnrollFaults(t *testing.T) {
 	}
 }
 
+// TestPollFaults checks that poll sends the --fault values in the messages of a resumed enrollment
+// and that certrally mock refuses them the way RFC 9483 asks.
+func TestPollFaults(t *testing.T) {
+	useSecret(t, testSecret)
+	mockArgs := []string{"--listen", "127.0.0.1:0", "--ref", testRef, "--waiting", "1", "--check-after", "0s",
+		"--confirm-wait", "1s"}
+	m := startMock(t, mockArgs...)
+	strict := startMock(t, slices.Concat(mockArgs, []string{"--strict"})...)
+	for _, tc := range []struct {
+		fault string
+		mock  *mockRun
+		code  int
+		// reason is in the error report and the mock log. An empty reason expects success.
+		failInfo, reason string
+		// sent lists the messages the report names for the fault.
+		sent string
+		// note is a line of the mock log below the certConf.
+		note string
+	}{
+		{fault: faultRejectCertificate, mock: m, code: exitOK, sent: "certConf", note: "certificate rejected"},
+		{fault: faultWrongCertHash, mock: m, code: exitUnconfirmed, failInfo: "badCertId", reason: "certHash mismatch",
+			sent: "certConf"},
+		{fault: faultWrongCertReqID, mock: m, code: exitUnconfirmed, failInfo: "badCertId",
+			reason: "certReqId does not match the issued certificate", sent: "certConf"},
+		{fault: faultReuseSenderNonce, mock: m, code: exitOK, sent: "pollReq, certConf"},
+		{fault: faultReuseSenderNonce, mock: strict, code: exitRejected, failInfo: "badSenderNonce",
+			reason: "senderNonce reused", sent: "pollReq"},
+		{fault: faultStaleRecipNonce, mock: m, code: exitRejected, failInfo: "badRecipientNonce",
+			reason: "recipNonce mismatch", sent: "pollReq"},
+		{fault: faultWrongTransactionID, mock: m, code: exitRejected, failInfo: "badRequest",
+			reason: "no pending certificate", sent: "pollReq"},
+		{fault: faultNoProtection, mock: m, code: exitUnconfirmed, failInfo: "badMessageCheck",
+			reason: "message not protected", sent: "certConf"},
+		{fault: faultLateCertConf, mock: m, code: exitUnconfirmed, failInfo: "badRequest",
+			reason: "certConf after confirmWaitTime", sent: "certConf", note: "certificate not confirmed in time"},
+	} {
+		name := tc.fault
+		if tc.mock == strict {
+			name += "-strict"
+		}
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			captureFile := filepath.Join(dir, "run.jsonl")
+			code, out, errOut := run(t, "enroll", "--server", tc.mock.url, "--ref", testRef, "--sender", "CN="+testRef,
+				"--cert-out", filepath.Join(dir, "cert.pem"), "--key-out", filepath.Join(dir, "key.pem"),
+				"--poll-later", "--capture", captureFile)
+			if code != exitOK {
+				t.Fatalf("enroll exited with %d:\n%s%s", code, out, errOut)
+			}
+			id := transactionIDIn(t, out)
+			before := len(tc.mock.stdout.String())
+			code, out, errOut = run(t, "poll", "--transaction-id", id, "--capture", captureFile, "--fault", tc.fault)
+			if code != tc.code {
+				t.Fatalf("poll exited with %d, want %d:\n%s%s", code, tc.code, out, errOut)
+			}
+			report := out + errOut
+			if !errorContains(report, fieldFaults+" "+tc.fault+" ("+tc.sent+")") {
+				t.Errorf("the report does not name the fault:\n%s", report)
+			}
+			log := tc.mock.stdout.String()[before:]
+			if tc.reason != "" {
+				if !errorContains(report, tc.failInfo) || !errorContains(report, tc.reason) {
+					t.Errorf("the report lacks %s and %q:\n%s", tc.failInfo, tc.reason, report)
+				}
+				if !strings.Contains(log, tc.failInfo+`  "`+tc.reason+`"`) {
+					t.Errorf("the mock log does not say why it refused the request:\n%s", log)
+				}
+			}
+			if tc.note != "" && !strings.Contains(log, tc.note) {
+				t.Errorf("the mock log lacks %q:\n%s", tc.note, log)
+			}
+			if tc.code == exitRejected {
+				if got := lastTransactionState(t, captureFile, id); got != capture.TransactionWaiting {
+					t.Errorf("a refused pollReq left the transaction recorded as %q, want waiting", got)
+				}
+			}
+		})
+	}
+}
+
+// TestPollFaultFlags checks that poll refuses fault flags it cannot send before it reads the capture.
+func TestPollFaultFlags(t *testing.T) {
+	useSecret(t, testSecret)
+	base := []string{"poll", "--transaction-id", "00", "--capture", filepath.Join(t.TempDir(), "missing.jsonl")}
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--fault", "wrong-nonce"}, `invalid --fault "wrong-nonce"`},
+		{[]string{"--confirm-delay", "5s"}, "--confirm-delay sets the wait of --fault late-certconf"},
+	} {
+		code, _, errOut := run(t, append(base, tc.args...)...)
+		if code != exitLocal || !errorContains(errOut, tc.want) {
+			t.Errorf("%v: exit %d, want %d with %q:\n%s", tc.args, code, exitLocal, tc.want, errOut)
+		}
+	}
+}
+
 // TestEnrollFaultRejectCertificate checks that the certConf of reject-certificate rejects the
 // certificate with a statusString and that the report says so.
 func TestEnrollFaultRejectCertificate(t *testing.T) {
 	useSecret(t, testSecret)
 	m := startMock(t, "--listen", "127.0.0.1:0", "--ref", testRef)
-	code, errOut, capture := mockEnroll(t, m, "--fault", faultRejectCertificate)
+	code, errOut, captureFile := mockEnroll(t, m, "--fault", faultRejectCertificate)
 	if code != exitOK {
 		t.Fatalf("enroll exited with %d:\n%s", code, errOut)
 	}
-	msgs := readCapture(t, capture)
+	msgs := readCapture(t, captureFile)
 	conf, err := pkicmp.ParsePKIMessage(msgs[2].DER)
 	if err != nil {
 		t.Fatal(err)
