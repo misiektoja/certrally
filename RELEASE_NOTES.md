@@ -4,7 +4,7 @@ Notable changes to certrally. Versions follow the `vMAJOR.MINOR.PATCH` tags publ
 
 ## v0.2.0 - TBD
 
-This release adds collecting a waiting certificate in a later run, implicit confirmation, revocation by serial number with an invalidity date, key usages and templates copied from an existing certificate, flags that shape a request the way a test scenario needs, fault flags that make the test CA delay, reject and relax its checks, `--insecure` for test servers with untrusted TLS certificates, encrypted private key files, DER output files and HTTP proxies.
+This release adds collecting a waiting certificate in a later run, implicit confirmation, revocation by serial number with an invalidity date, key usages and templates copied from an existing certificate, flags that shape a request the way a test scenario needs, fault flags that make the test CA delay, reject and relax its checks, `--insecure` for test servers with untrusted TLS certificates, encrypted private key files, DER output files, HTTP proxies and bearer tokens for EST.
 
 ### CMP and EST
 
@@ -21,10 +21,15 @@ This release adds collecting a waiting certificate in a later run, implicit conf
 * **`enroll --key-usage` and `--ext-key-usage`** ask for the keyUsage and extendedKeyUsage extensions as comma-separated names, such as `digitalSignature,keyEncipherment` and `serverAuth,clientAuth`. `--ext-key-usage` also takes a dotted OID. **`enroll --template-cert`** copies the subject, subjectAltName, keyUsage and extendedKeyUsage of an existing certificate, to request one shaped like a certificate the CA already issued. `--subject`, `--san`, `--key-usage` and `--ext-key-usage` replace the copied parts. `--template-cert` works with `ir`, `cr` and `p10cr`. The key usage flags also work with `kur`.
 * **`enroll --cert-req-id`**, **`--general-info`**, **`--hash`** and **`--iterations`** set the certReqId, add generalInfo items such as a vendor profile identifier, select the digest of the signatures and of a PasswordBasedMac and set the MAC iteration count. `--hash`, `--iterations` and `--general-info` also apply to `revoke` and the `genm` commands.
 
+### EST
+
+* **`est --token` and `--token-file`** sign in with an HTTP bearer token (RFC 6750) instead of a password, on every `est` command. The token comes from `--token-file` (`-` reads standard input), the `CERTRALLY_TOKEN` environment variable or a prompt on a terminal, never from the command line. `--token` cannot be combined with `--user`. Renewal without a TLS client key still needs `--user`.
+
 ### Testing and troubleshooting
 
 * **`certrally mock` fault flags** make the test CA answer with status `waiting` until a chosen poll (`--waiting`, `--check-after`), reject every request with a chosen failInfo (`--reject`), grant implicit confirmation (`--grant-implicit-confirm`), set the confirmation deadline (`--confirm-wait`), enforce RFC 9483 strictly (`--strict`), bound the MAC iteration count (`--mac-iterations`) and accept deviations from the profile on request (`--accept`, such as `sha1` or `any-cert-req-id`). The startup report shows the flags in use. [docs/mock.md](docs/mock.md) describes them.
 * **`certrally mock` logs each revocation** with the serial number, the reason and the invalidity date the request gave, and lists the invalidity date in its CRL.
+* **`certrally est mock --token-file`** or `CERTRALLY_TOKEN` makes the EST test CA also accept that bearer token. The startup report shows where the token comes from and prints the matching `est enroll --token` command.
 
 ## v0.1.1 - 22 Oct 2026
 
