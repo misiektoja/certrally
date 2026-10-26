@@ -129,7 +129,7 @@ A certificate in a result has `subject`, `issuer`, `serial`, `notBefore`, `notAf
 | `cmp genm raw` | `items`, each with `infoType`, `oid` and `value` |
 | `ping` | `sent`, `answered`, `sender`, `protection`, `rttMs` with `min`, `avg` and `max`. With `--ca-cert`, `verified` tells whether every answer was signed by that CA |
 | `keygen` | `keyType`, `key`, `publicKey`, `csr`, `saved`. With `--list`, `keyTypes` |
-| `est cacerts` | `certificates`, `saved` and `verified`, which says how the certificates were checked: `tls` by the TLS certificate of the server, `srp` by a TLS-SRP sign-in, `fingerprint` by `--fingerprint`, `confirmed` by a person at the prompt or `none` after `--bootstrap`. `tlsIssued` tells whether these certificates issued the TLS certificate of the server |
+| `est cacerts` | `certificates`, `saved` and `verified`, which says how the certificates were checked: `tls` by the TLS certificate of the server, `srp` by a TLS-SRP sign-in, `fingerprint` by `--fingerprint`, `confirmed` by a person at the prompt or `none` after `--bootstrap` or `--insecure`. `tlsIssued` tells whether these certificates issued the TLS certificate of the server |
 | `est csrattrs` | `attributes`, each with `oid`, `name` when certrally knows one and `values` for an attribute that has them |
 | `est enroll`, `est reenroll`, `est serverkeygen` | `certificate`, `key` with the type of a new key and `saved`. `key` is absent when `--new-key` or `--csr` supplied the key |
 | `inspect` | `messages`, one [inspected message](#inspected-messages) per message in file order |
@@ -168,7 +168,7 @@ A certificate in a result has `subject`, `issuer`, `serial`, `notBefore`, `notAf
 
 `--capture FILE` works with every command that talks to a server. It appends the run to `FILE` as JSON Lines, one JSON object per line:
 
-1. A `start` line with `format` (currently 1), `tool`, `version`, `command`, `server` and `time`. A run of an EST command adds `protocol` with the value `est`.
+1. A `start` line with `format` (currently 1), `tool`, `version`, `command`, `server` and `time`. A run of an EST command adds `protocol` with the value `est`. A run with `--insecure` adds `insecure` with the value `true`, because it did not check the TLS certificate of the server.
 2. One [message record](#message-records) per request, response, failure or EST connection, including `der`.
 3. A `transaction` line with `time`, `id`, `state` and `resume` when the run leaves a waiting transaction for `poll` (`state` is `waiting`) or `poll` ends one (`ended`). `id` is the transaction ID. `resume` holds what `poll` needs: the server, the protection settings and the names of their files, the trusted CA certificates, the output files and the state of the CMP transaction. It holds no secret or private key. `poll` uses the last line of a transaction.
 4. An `end` line with `time` and `exitStatus`.
