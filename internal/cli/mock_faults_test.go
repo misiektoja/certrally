@@ -267,8 +267,8 @@ func TestMockMACRevocation(t *testing.T) {
 	if code != exitOK {
 		t.Errorf("revoke exited with %d:\n%s", code, errOut)
 	}
-	if !strings.Contains(lenient.stdout.String(), "revoked  serial "+formatSerial(readCert(t, certOut))+"  unspecified") {
-		t.Errorf("mock log lacks the revocation:\n%s", lenient.stdout)
+	if !mockLogged(lenient, "rr  PBMAC1", "revoked  serial "+formatSerial(readCert(t, certOut))+"  unspecified") {
+		t.Errorf("mock log lacks the revocation below its request:\n%s", lenient.stdout)
 	}
 
 	// An authority that has only the serial number names the certificate with --serial and --issuer.
@@ -283,9 +283,22 @@ func TestMockMACRevocation(t *testing.T) {
 		t.Errorf("revoke by serial exited with %d:\n%s", code, errOut)
 	}
 	want := "revoked  serial " + formatSerial(cert) + "  keyCompromise  invalidity date 2026-10-01T00:00:00Z"
-	if !strings.Contains(lenient.stdout.String(), want) {
-		t.Errorf("mock log lacks %q:\n%s", want, lenient.stdout)
+	if !mockLogged(lenient, "rr  PBMAC1", want) {
+		t.Errorf("mock log lacks %q below its request:\n%s", want, lenient.stdout)
 	}
+}
+
+// mockLogged reports whether the mock log has a request line containing request followed by an
+// indented note line that ends with note.
+func mockLogged(m *mockRun, request, note string) bool {
+	lines := strings.Split(m.stdout.String(), "\n")
+	for i := 1; i < len(lines); i++ {
+		if strings.Contains(lines[i-1], request) && strings.HasPrefix(lines[i], "          ") &&
+			strings.HasSuffix(lines[i], note) {
+			return true
+		}
+	}
+	return false
 }
 
 // TestMockFaultErrors checks that the mock CA refuses bad fault flags before it listens.
