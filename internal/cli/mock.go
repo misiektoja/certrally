@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/x509"
+	"encoding/asn1"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -59,6 +60,7 @@ type mockOptions struct {
 	macIterations   string
 	confirmWait     time.Duration
 	accept          []string
+	requireRA       bool
 }
 
 // acceptOption is a --accept value: a deviation from RFC 9483 that the mock CA accepts on request.
@@ -116,7 +118,8 @@ func newMockCommand() *cobra.Command {
 			"confirms and revokes certificates and answers the requests for CA certificates, a request template " +
 			"and CRLs. It accepts the shared secret for --ref and signatures made with certificates it issued. " +
 			"It generates the key pair for enroll --central-keygen and signs it with a key generation authority " +
-			"certificate it issued.\n\n" +
+			"certificate it issued. It accepts requests that a registration authority forwards in a nested " +
+			"message signed with a certificate it issued with the cmcRA extended key usage.\n\n" +
 			"The shared secret comes from --secret-file or " + secret.EnvVar + ". Without either, a random secret " +
 			"is generated and printed. The CA key and everything it issued live in memory and are lost when it " +
 			"stops. Stop it with Ctrl-C.\n\n" +
@@ -126,7 +129,8 @@ func newMockCommand() *cobra.Command {
 			"  certrally mock --listen 127.0.0.1:9000 --ref device-42 --secret-file secret.txt --ca-out ca.pem\n" +
 			"  certrally mock --waiting 2 --check-after 5s\n" +
 			"  certrally mock --reject badCertTemplate:'subject not allowed'\n" +
-			"  certrally mock --strict --mac-iterations 100-10000 --accept sha1",
+			"  certrally mock --strict --mac-iterations 100-10000 --accept sha1\n" +
+			"  certrally mock --require-ra",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runMock(cmd, o)
@@ -154,6 +158,8 @@ func newMockCommand() *cobra.Command {
 		"time the client has to confirm a certificate, sent as confirmWaitTime")
 	f.StringArrayVar(&o.accept, "accept", nil,
 		"accept a deviation from RFC 9483, one of the names listed above (repeatable)")
+	f.BoolVar(&o.requireRA, "require-ra", false,
+		"refuse certificate requests that no registration authority forwarded")
 	_ = cmd.RegisterFlagCompletionFunc("accept", fixedCompletion(acceptNames))
 	_ = cmd.RegisterFlagCompletionFunc("reject", fixedCompletion(failInfoNames))
 	for _, name := range []string{"listen", flagRef, "waiting", "check-after", "mac-iterations", "confirm-wait"} {
@@ -307,6 +313,7 @@ func runMock(cmd *cobra.Command, o *mockOptions) error {
 		checkAfter:          o.checkAfter,
 		reject:              flt.reject,
 		authorizeRevocation: slices.Contains(o.accept, "mac-revocation"),
+		requireRA:           o.requireRA,
 		pending:             map[string]*pendingDecision{},
 	}
 	opts := []server.Option{
@@ -315,6 +322,7 @@ func runMock(cmd *cobra.Command, o *mockOptions) error {
 		server.WithSecretLookup(ca),
 		server.WithCertificateLookup(ca),
 		server.WithCentralKeyGeneration(mockKeyGenerator{}, ca.KGAKey(), ca.KGACert()),
+		server.WithRAAuthorizer(faultCA),
 	}
 	srv := server.NewCAServer(faultCA, server.LightweightPolicy(), slices.Concat(opts, flt.options)...)
 	if err := srv.Err(); err != nil {
@@ -465,6 +473,9 @@ func (o *mockOptions) faultFields() []ui.Field {
 	if len(o.accept) > 0 {
 		fields = append(fields, ui.Field{Name: "Accepting", Value: strings.Join(o.accept, ", ")})
 	}
+	if o.requireRA {
+		fields = append(fields, ui.Field{Name: "Registration", Value: "only requests a registration authority forwards"})
+	}
 	return fields
 }
 
@@ -480,7 +491,9 @@ type faultCA struct {
 	// authorizeRevocation allows revocation requests that are not signed with the certificate they
 	// revoke.
 	authorizeRevocation bool
-	mu                  sync.Mutex
+	// requireRA refuses certificate requests that no registration authority forwarded.
+	requireRA bool
+	mu        sync.Mutex
 	// pending holds the delayed requests by pollRef.
 	pending map[string]*pendingDecision
 	nextRef int
@@ -492,11 +505,41 @@ type pendingDecision struct {
 	decide func(context.Context) (*server.Response, error)
 }
 
-// IssueCertificate issues the certificate, after the configured polls, unless every request is rejected.
+// IssueCertificate issues the certificate, after the configured polls, unless every request is rejected
+// or --require-ra refuses a request that no registration authority forwarded. A request for a
+// registration authority certificate needs no RA, so the first RA can enroll.
 func (c *faultCA) IssueCertificate(ctx context.Context, reqType server.RequestType, tmpl *x509.Certificate, sender *server.SenderIdentity) (*server.Response, error) {
+	if c.requireRA && sender.RA == nil && !requestsRA(tmpl) {
+		return nil, &server.Error{Status: pkicmp.StatusRejection, FailureInfo: pkicmp.FailNotAuthorized,
+			StatusText: "the mock CA accepts only requests that a registration authority forwards"}
+	}
 	return c.delay(ctx, func(ctx context.Context) (*server.Response, error) {
 		return c.MockCA.IssueCertificate(ctx, reqType, tmpl, sender)
 	})
+}
+
+// requestsRA reports whether tmpl asks for the id-kp-cmcRA extended key usage.
+func requestsRA(tmpl *x509.Certificate) bool {
+	for _, ext := range tmpl.ExtraExtensions {
+		if !ext.Id.Equal(oidExtKeyUsage) {
+			continue
+		}
+		var purposes []asn1.ObjectIdentifier
+		if _, err := asn1.Unmarshal(ext.Value, &purposes); err == nil {
+			return slices.ContainsFunc(purposes, oidKeyPurposeCMCRA.Equal)
+		}
+	}
+	return false
+}
+
+// AuthorizeRA accepts the registration authorities the example CA accepts and notes the RA in the
+// request log.
+func (c *faultCA) AuthorizeRA(ctx context.Context, ra *server.SenderIdentity, req *pkicmp.PKIMessage, sender *server.SenderIdentity) error {
+	if err := c.MockCA.AuthorizeRA(ctx, ra, req, sender); err != nil {
+		return err
+	}
+	addMockNote(ctx, "forwarded by RA  "+ui.Sanitize(dn.Format(ra.Certificate.RawSubject)))
+	return nil
 }
 
 // mockKeyGenerator generates the key pairs of requests for central key generation.
@@ -676,7 +719,7 @@ func describeRequest(r *http.Request, body []byte) string {
 	if m == nil {
 		return ui.Sanitize(r.Method + " " + r.URL.Path)
 	}
-	parts := []string{m.Body, m.Protection}
+	parts := []string{m.Label(), m.Protection}
 	if m.Sender != "" {
 		parts = append(parts, ui.Sanitize(m.Sender))
 	}
@@ -690,7 +733,7 @@ func describeResponse(rec *responseCapture) string {
 	if m == nil {
 		return fmt.Sprintf("HTTP %d", rec.status)
 	}
-	parts := []string{m.Body}
+	parts := []string{m.Label()}
 	if m.Status != "" {
 		parts = append(parts, m.Status)
 	}
