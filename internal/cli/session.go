@@ -543,12 +543,13 @@ func (c *connection) open(p *printer, chain []*x509.Certificate) (*session, erro
 	// A resumed transaction keeps the trust of the run that started it, which already had its first
 	// response.
 	trustFirst := !s.pinned && c.resumed == nil
+	plainHTTP := strings.HasPrefix(strings.ToLower(c.server), schemeHTTP+"://")
 	s.observe = func(ev trace.Event) {
 		// The recorder reports a response before the client verifies it, so certificates added here
 		// already count for that response.
 		if trustFirst && ev.Kind == trace.Response && ev.Message != nil {
 			trustFirst = false
-			s.trustResponse(ev.DER)
+			s.trustResponse(ev.DER, plainHTTP)
 		}
 	}
 	s.recorder.Inspect = s.inspect
@@ -599,9 +600,15 @@ func (s *session) inspect(request, response trace.Event) error {
 	return s.report(findings, response.Message.Status != pkicmp.StatusRejection.String())
 }
 
-// trustResponse adds the certificates of a response to the trust anchors. This trusts the CA the
-// user pointed certrally at, as identified by the TLS certificate of an https server.
-func (s *session) trustResponse(der []byte) {
+// plainHTTPTrustWarning is the warning of a session that trusted its first response over plain HTTP.
+const plainHTTPTrustWarning = "The certificates of the first response were trusted over plain HTTP, " +
+	"which nothing authenticates. Name the CA with --ca-cert unless you trust the network."
+
+// trustResponse adds the certificates of a response to the trust anchors and reports them with
+// their fingerprints, so the user can compare them with what the CA published. This trusts the CA
+// the user pointed certrally at, as identified by the TLS certificate of an https server. Over
+// plain HTTP, which plainHTTP reports, nothing identifies the server, so the report warns.
+func (s *session) trustResponse(der []byte, plainHTTP bool) {
 	msg, err := pkicmp.ParsePKIMessage(der)
 	if err != nil {
 		return
@@ -610,10 +617,22 @@ func (s *session) trustResponse(der []byte) {
 	if rep := certRep(msg.Body); rep != nil {
 		certs = append(certs, rep.CAPubs...)
 	}
+	var trusted []*x509.Certificate
 	for _, c := range certs {
-		if cert, err := c.Parse(); err == nil {
-			s.trust(cert)
+		cert, err := c.Parse()
+		// A response often carries the CA certificate in both extraCerts and caPubs.
+		if err != nil || slices.ContainsFunc(s.anchors, cert.Equal) {
+			continue
 		}
+		s.trust(cert)
+		trusted = append(trusted, cert)
+	}
+	if len(trusted) == 0 {
+		return
+	}
+	s.p.trustedOnFirstResponse(trusted)
+	if plainHTTP {
+		s.warnAfterLadder(plainHTTPTrustWarning)
 	}
 }
 

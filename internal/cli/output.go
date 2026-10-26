@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"crypto/sha256"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"io"
@@ -13,6 +15,7 @@ import (
 	"github.com/charmbracelet/colorprofile"
 	"github.com/spf13/cobra"
 
+	"github.com/misiektoja/certrally/internal/dn"
 	"github.com/misiektoja/certrally/internal/pemfile"
 	"github.com/misiektoja/certrally/internal/trace"
 	"github.com/misiektoja/certrally/internal/ui"
@@ -88,8 +91,11 @@ type jsonDocument struct {
 	Result     any            `json:"result,omitempty"`
 	Error      *failure       `json:"error,omitempty"`
 	// Faults lists the --fault values of enroll with the messages each changed.
-	Faults   []faultJSON `json:"faults,omitempty"`
-	Warnings []string    `json:"warnings,omitempty"`
+	Faults []faultJSON `json:"faults,omitempty"`
+	// TrustedOnFirstResponse lists the certificates a CMP command trusted from its first response,
+	// when no --ca-cert names the CA.
+	TrustedOnFirstResponse []*certificateJSON `json:"trustedOnFirstResponse,omitempty"`
+	Warnings               []string           `json:"warnings,omitempty"`
 }
 
 // printer reports the outcome of a command, as text or as one JSON document.
@@ -106,6 +112,8 @@ type printer struct {
 	doc jsonDocument
 	// trailer ends the text report of the outcome, whatever it is, such as the faults enroll sent.
 	trailer []ui.Field
+	// trusted lists the certificates trusted on the first response, as a section under the report.
+	trusted []ui.Field
 }
 
 // newPrinter returns the printer for a command.
@@ -150,6 +158,7 @@ func (p *printer) result(title string, fields []ui.Field, result any) {
 	p.doc.Result = result
 	if p.showProgress() {
 		ui.Report(p.reportWriter(), true, title, slices.Concat(fields, p.trailer))
+		p.trustSection(p.reportWriter())
 	}
 }
 
@@ -175,6 +184,28 @@ func (p *printer) warn(text string) {
 	}
 }
 
+// trustedOnFirstResponse reports the certificates a session trusted from its first response, as a
+// section under the report and in the JSON document, so the user can compare their fingerprints
+// with what the CA published.
+func (p *printer) trustedOnFirstResponse(certs []*x509.Certificate) {
+	p.doc.TrustedOnFirstResponse = certificatesResult(certs)
+	for _, cert := range certs {
+		sum := sha256.Sum256(cert.Raw)
+		p.trusted = append(p.trusted, ui.Field{
+			Name:  ui.Sanitize(dn.Format(cert.RawSubject)),
+			Value: "SHA-256 " + hexBytes(sum[:]),
+		})
+	}
+}
+
+// trustSection writes the certificates trusted on the first response under a report, when there
+// are any.
+func (p *printer) trustSection(w io.Writer) {
+	if len(p.trusted) > 0 {
+		ui.Section(w, "Trusted on first response", p.trusted)
+	}
+}
+
 // fail reports a failure and returns the error that carries its exit status. fields replace the
 // text form of f when they are given.
 func (p *printer) fail(f *failure, err error, fields ...ui.Field) error {
@@ -184,6 +215,7 @@ func (p *printer) fail(f *failure, err error, fields ...ui.Field) error {
 			fields = f.fields(p.rec)
 		}
 		ui.Report(p.stderr, false, f.Title, slices.Concat(fields, p.trailer))
+		p.trustSection(p.stderr)
 	}
 	return &exitError{code: f.code, err: err}
 }

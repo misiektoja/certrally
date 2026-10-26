@@ -151,16 +151,22 @@ func (rec *recording) report(findings []profile.Finding, stop bool) error {
 	}
 	for _, f := range findings {
 		text := f.String()
-		switch {
-		case rec.warned[text]:
-		case rec.ladder != nil:
-			rec.pending = append(rec.pending, text)
-		default:
-			rec.p.warn(text)
+		if !rec.warned[text] {
+			rec.warnAfterLadder(text)
 		}
 		rec.warned[text] = true
 	}
 	return nil
+}
+
+// warnAfterLadder reports a warning. While the ladder is being drawn the warning waits for its end,
+// so that it does not break the drawing.
+func (rec *recording) warnAfterLadder(text string) {
+	if rec.ladder != nil {
+		rec.pending = append(rec.pending, text)
+		return
+	}
+	rec.p.warn(text)
 }
 
 // startLadder starts drawing the exchange in text output without --quiet.
