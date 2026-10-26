@@ -9,6 +9,8 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
+	"log"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -45,6 +47,18 @@ type testCA struct {
 // startCA serves a mock CA over HTTP. wrap, when set, replaces the CA behaviour the test changes.
 func startCA(t *testing.T, wrap func(*mockserver.MockCA) server.CA) *testCA {
 	t.Helper()
+	return serveCA(t, wrap, false)
+}
+
+// startTLSCA serves a mock CA over HTTPS with a certificate that no root trusts.
+func startTLSCA(t *testing.T, wrap func(*mockserver.MockCA) server.CA) *testCA {
+	t.Helper()
+	return serveCA(t, wrap, true)
+}
+
+// serveCA serves a mock CA over HTTP, or over HTTPS when overTLS is set.
+func serveCA(t *testing.T, wrap func(*mockserver.MockCA) server.CA, overTLS bool) *testCA {
+	t.Helper()
 	mock, err := mockserver.New(map[string][]byte{testRef: []byte(testSecret)}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
@@ -65,10 +79,17 @@ func startCA(t *testing.T, wrap func(*mockserver.MockCA) server.CA) *testCA {
 	}
 	tc := &testCA{caFile: filepath.Join(t.TempDir(), "ca.pem")}
 	writeFile(t, tc.caFile, pemfile.EncodeCertificates([]*x509.Certificate{mock.Cert()}))
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tc.requests.Add(1)
 		srv.ServeHTTP(w, r)
 	}))
+	if overTLS {
+		// Handshake failures are part of some tests.
+		ts.Config.ErrorLog = log.New(io.Discard, "", 0)
+		ts.StartTLS()
+	} else {
+		ts.Start()
+	}
 	t.Cleanup(ts.Close)
 	tc.url = ts.URL + "/cmp"
 	return tc
