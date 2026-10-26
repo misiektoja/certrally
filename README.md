@@ -163,6 +163,7 @@ Notes:
 * `--implicit-confirm` asks the CA for implicit confirmation, as RFC 9483 recommends. A CA that grants it repeats `implicitConfirm` in its response and certrally skips the `certConf` exchange, so the run ends with the response. A CA that wants the confirmation leaves it out and certrally confirms as usual. The result says which happened.
 * `--hash`, `--iterations` and `--general-info` also apply to `revoke` and the `genm` commands.
 * Private keys are written as unencrypted PKCS#8 PEM with mode 0600. `certrally keygen --list` prints the key types.
+* `--key` and `--new-key` also take an encrypted PKCS#8 key, as `openssl pkcs8 -topk8` writes it (PBES2 with PBKDF2 and AES). The password comes from `--key-password-file` (`-` reads standard input), the `CERTRALLY_KEY_PASSWORD` environment variable or a prompt on a terminal, in that order. A key encrypted the older way, with `Proc-Type` headers in the PEM file, is not supported. `openssl pkcs8 -topk8 -in old.key -out device.p8` converts one.
 
 ### Collect a certificate later
 
@@ -183,7 +184,7 @@ certrally enroll --server https://ca.example.com/.well-known/cmp \
   Note            Collect the certificate with: certrally poll --transaction-id d503c4aad8beeb7b34b820adb1809771 --capture device.jsonl
 ```
 
-`poll` collects the certificate later, also from another directory. It takes the server, the protection, the trusted CA certificates and the output files from the capture file and reads the shared secret again. It polls until the CA decides, confirms the certificate and saves it:
+`poll` collects the certificate later, also from another directory. It takes the server, the protection, the trusted CA certificates and the output files from the capture file and reads the shared secret again. A run that signed with an encrypted key takes `--key-password-file` the same way. It polls until the CA decides, confirms the certificate and saves it:
 
 ```bash
 certrally poll --transaction-id d503c4aad8beeb7b34b820adb1809771 \
@@ -296,7 +297,7 @@ certrally est enroll --server https://est.example.com --tls-ca-cert ca.pem \
 A client signs in with one of these:
 
 * **A password** over HTTP Basic authentication with `--user`. The password comes from `--password-file` (`-` reads standard input), the `CERTRALLY_PASSWORD` environment variable or a prompt on a terminal, in that order.
-* **A TLS client certificate** with `--cert` and `--key`. `est reenroll --cert device.pem --key device.key` renews a certificate this way. Without `--key`, renewal signs in with `--user` instead, as RFC 7030 section 2.3 allows for certificates that cannot be used for TLS.
+* **A TLS client certificate** with `--cert` and `--key`. `est reenroll --cert device.pem --key device.key` renews a certificate this way. Without `--key`, renewal signs in with `--user` instead, as RFC 7030 section 2.3 allows for certificates that cannot be used for TLS. An encrypted `--key` or `--new-key` takes its password from `--key-password-file`, `CERTRALLY_KEY_PASSWORD` or a prompt, like for CMP.
 * **TLS-SRP** with `--srp` and `--user`. The password then authenticates both sides over TLS 1.2, so the server needs no certificate and `--srp` cannot be combined with `--tls-ca-cert`.
 
 The server certificate is checked against the system roots or against the CA certificates in `--tls-ca-cert`. `--insecure` skips that check, for a test server, and warns that anyone who intercepts the connection can pose as the server. When nothing can check the certificate yet, `est cacerts --bootstrap` connects without the check (RFC 7030 section 4.1.1). It saves the certificates only after the fingerprint matches `--fingerprint` or a person confirms it on a terminal:
