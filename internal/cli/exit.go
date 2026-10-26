@@ -307,7 +307,8 @@ func transportHint(err, problem error, timeout time.Duration) string {
 	case errors.Is(err, context.DeadlineExceeded):
 		return fmt.Sprintf("No answer within --timeout %s.", timeout)
 	case unknownAuthority:
-		return "The HTTPS certificate of the server is not trusted. Pass its CA with --tls-ca-cert."
+		return "The HTTPS certificate of the server is not trusted. Pass its CA with --tls-ca-cert. " +
+			"--insecure skips the check for a test."
 	case wrongHost:
 		return "The HTTPS certificate of the server is issued for another host name. " +
 			"Use a name from the certificate in --server."

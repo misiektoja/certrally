@@ -31,6 +31,7 @@ type pollOptions struct {
 	capture       string
 	server        string
 	secretFile    string
+	insecure      bool
 	timeout       time.Duration
 	certOut       string
 	chainOut      string
@@ -68,6 +69,7 @@ func newPollCommand() *cobra.Command {
 	f.StringVar(&o.capture, "capture", "", "capture file of the enroll run, to which this run is appended")
 	f.StringVar(&o.server, flagServer, "", "address of the CMP server, when it is not the one enroll used")
 	f.StringVar(&o.secretFile, "secret-file", "", "read the shared secret from a file, or - for standard input")
+	f.BoolVar(&o.insecure, flagInsecure, false, insecureHelp)
 	f.DurationVar(&o.timeout, flagTimeout, 5*time.Minute, "limit for polling and the confirmation")
 	f.StringVar(&o.certOut, "cert-out", "", "write the issued certificate to this file instead of the one enroll named")
 	f.StringVar(&o.chainOut, "chain-out", "",
@@ -290,7 +292,14 @@ func (o *pollOptions) connection(rec *pendingRecord) (*connection, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &connection{server: server, timeout: o.timeout, capture: o.capture, profile: rec.Profile, resumed: trust}, nil
+	return &connection{
+		server:   server,
+		insecure: o.insecure,
+		timeout:  o.timeout,
+		capture:  o.capture,
+		profile:  rec.Profile,
+		resumed:  trust,
+	}, nil
 }
 
 // outputs returns where to save the certificate of rec, with --cert-out and --chain-out taking

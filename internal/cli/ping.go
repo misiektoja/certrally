@@ -203,6 +203,7 @@ func (r pingReply) line() string {
 
 // report summarizes the replies and returns the error that sets the exit status.
 func report(s *session, replies []pingReply) error {
+	s.flushWarnings()
 	var answered []pingReply
 	var unverified error
 	for _, r := range replies {

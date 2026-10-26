@@ -74,6 +74,8 @@ type connection struct {
 	server    string
 	caCerts   []string
 	tlsCACert string
+	// insecure skips the check of the TLS certificate of an https server.
+	insecure  bool
 	recipient string
 	timeout   time.Duration
 	capture   string
@@ -100,18 +102,27 @@ func (c *connection) addFlags(cmd *cobra.Command, timeout time.Duration, timeout
 	f.StringVar(&c.server, "server", "", "address of the CMP server, an http or https URL")
 	f.StringArrayVar(&c.caCerts, "ca-cert", nil,
 		"verify the server with this CA certificate instead of trusting the certificates it sends (repeatable)")
-	f.StringVar(&c.tlsCACert, "tls-ca-cert", "", "verify HTTPS with these CA certificates instead of the system roots")
+	f.StringVar(&c.tlsCACert, flagTLSCACert, "", "verify HTTPS with these CA certificates instead of the system roots")
+	f.BoolVar(&c.insecure, flagInsecure, false, insecureHelp)
 	f.StringVar(&c.recipient, "recipient", "", "name of the CA in the request header")
 	f.DurationVar(&c.timeout, "timeout", timeout, timeoutHelp)
 	f.StringVar(&c.capture, "capture", "", "append the exchanged messages to this file as JSON Lines")
 	f.StringVar(&c.profile, "profile", profile.Compatible,
 		"how to treat responses that break RFC 9483: compatible warns, strict fails")
 	_ = cmd.MarkFlagRequired("server")
+	cmd.MarkFlagsMutuallyExclusive(flagTLSCACert, flagInsecure)
 	_ = cmd.RegisterFlagCompletionFunc("profile", fixedCompletion(profile.Names))
 	for _, name := range []string{"server", "recipient", "timeout"} {
 		_ = cmd.RegisterFlagCompletionFunc(name, cobra.NoFileCompletions)
 	}
 }
+
+// Names and help of the TLS flags that the CMP and EST commands share.
+const (
+	flagTLSCACert = "tls-ca-cert"
+	flagInsecure  = "insecure"
+	insecureHelp  = "skip the check of the TLS certificate of the server, which lets anyone pose as the server"
+)
 
 // validate checks the server URL, the timeout and the profile.
 func (c *connection) validate() error {
@@ -442,22 +453,17 @@ func (c *connection) open(p *printer, chain []*x509.Certificate) (*session, erro
 		}
 	}
 
-	next := http.DefaultTransport
-	if len(s.tlsRoots) > 0 {
-		roots := x509.NewCertPool()
-		for _, cert := range s.tlsRoots {
-			roots.AddCert(cert)
-		}
-		t := http.DefaultTransport.(*http.Transport).Clone()
-		t.TLSClientConfig = &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}
-		next = t
-	}
-	rec, err := openRecording(p, recordingOptions{server: c.server, profile: c.profile, capture: c.capture})
+	rec, err := openRecording(p, recordingOptions{
+		server:   c.server,
+		profile:  c.profile,
+		capture:  c.capture,
+		insecure: c.insecure,
+	})
 	if err != nil {
 		return nil, err
 	}
 	s.recording = rec
-	s.recorder.Next = next
+	s.recorder.Next = newTransport(s.tlsRoots, c.insecure)
 	// A resumed transaction keeps the trust of the run that started it, which already had its first
 	// response.
 	trustFirst := !s.pinned && c.resumed == nil
@@ -472,6 +478,27 @@ func (c *connection) open(p *printer, chain []*x509.Certificate) (*session, erro
 	s.recorder.Inspect = s.inspect
 	s.http = &http.Client{Transport: s.recorder}
 	return s, nil
+}
+
+// newTransport returns the HTTP transport of a CMP connection. roots replace the system roots for
+// HTTPS when there are any. insecure skips the check of the server certificate instead.
+func newTransport(roots []*x509.Certificate, insecure bool) http.RoundTripper {
+	if len(roots) == 0 && !insecure {
+		return http.DefaultTransport
+	}
+	cfg := &tls.Config{MinVersion: tls.VersionTLS12}
+	if insecure {
+		cfg.InsecureSkipVerify = true //nolint:gosec // G402: --insecure asks for it and the report warns.
+	} else {
+		pool := x509.NewCertPool()
+		for _, cert := range roots {
+			pool.AddCert(cert)
+		}
+		cfg.RootCAs = pool
+	}
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.TLSClientConfig = cfg
+	return t
 }
 
 // inspect checks a response against the profile. A strict session stops a response that breaks a

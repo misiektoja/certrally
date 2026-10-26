@@ -36,6 +36,8 @@ type Start struct {
 	Command  string    `json:"command"`
 	Server   string    `json:"server"`
 	Time     time.Time `json:"time"`
+	// Insecure is set when --insecure skipped the check of the TLS certificate of the server.
+	Insecure bool `json:"insecure,omitempty"`
 }
 
 // End records how a run finished. It is the last line the run writes.

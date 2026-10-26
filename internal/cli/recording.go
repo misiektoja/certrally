@@ -41,6 +41,10 @@ type recording struct {
 	pending []string
 }
 
+// insecureWarning is reported when --insecure skips the check of the server certificate.
+const insecureWarning = "The TLS certificate of the server was not checked because of --insecure. " +
+	"Anyone who intercepts the connection can pose as the server."
+
 // recordingOptions say what a recording records and where.
 type recordingOptions struct {
 	// server is the URL the user gave.
@@ -48,6 +52,9 @@ type recordingOptions struct {
 	profile  string
 	capture  string
 	protocol trace.Protocol
+	// insecure records that --insecure skipped the check of the server certificate. The capture file
+	// notes it and the report warns about it once the ladder ends.
+	insecure bool
 }
 
 // openRecording starts recording the exchange with a server and registers it with p, so that the
@@ -71,12 +78,16 @@ func openRecording(p *printer, o recordingOptions) (*recording, error) {
 			Version:  toolVersion(),
 			Command:  p.command,
 			Server:   rec.server,
+			Insecure: o.insecure,
 			Time:     time.Now().UTC(),
 		})
 		if err != nil {
 			return nil, fmt.Errorf("--capture: %w", err)
 		}
 		rec.capture = w
+	}
+	if o.insecure {
+		rec.pending = append(rec.pending, insecureWarning)
 	}
 	rec.recorder = &trace.Recorder{Protocol: o.protocol}
 	rec.recorder.OnEvent = func(ev trace.Event) {
@@ -166,6 +177,12 @@ func (rec *recording) endLadder() {
 		_, _ = fmt.Fprintln(rec.p.stderr)
 	}
 	rec.ladder = nil
+	rec.flushWarnings()
+}
+
+// flushWarnings prints the warnings that waited for the ladder to end. A command without a ladder
+// calls it before its report.
+func (rec *recording) flushWarnings() {
 	for _, text := range rec.pending {
 		rec.p.warn(text)
 	}

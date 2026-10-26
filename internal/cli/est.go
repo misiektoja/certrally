@@ -77,8 +77,12 @@ type estConnection struct {
 	timeout   time.Duration
 	capture   string
 	profile   string
-	// insecure skips the check of the server certificate, for est cacerts --bootstrap.
+	// insecure is the --insecure flag. It skips the check of the server certificate and is reported
+	// as a warning.
 	insecure bool
+	// unverified also skips the check, for est cacerts --bootstrap, which reports the missing check
+	// in its result instead.
+	unverified bool
 }
 
 // addFlags registers the connection flags with the given default timeout.
@@ -86,13 +90,15 @@ func (c *estConnection) addFlags(cmd *cobra.Command, timeout time.Duration, time
 	f := cmd.Flags()
 	f.StringVar(&c.server, flagServer, "",
 		"address of the EST server, an https URL that may end in "+estPath+"/LABEL to choose a CA")
-	f.StringVar(&c.tlsCACert, "tls-ca-cert", "",
+	f.StringVar(&c.tlsCACert, flagTLSCACert, "",
 		"verify the server with these CA certificates instead of the system roots")
+	f.BoolVar(&c.insecure, flagInsecure, false, insecureHelp)
 	f.DurationVar(&c.timeout, "timeout", timeout, timeoutHelp)
 	f.StringVar(&c.capture, "capture", "", "append the exchanged messages to this file as JSON Lines")
 	f.StringVar(&c.profile, "profile", profile.Compatible,
 		"how to treat responses that break RFC 7030: compatible warns, strict fails")
 	_ = cmd.MarkFlagRequired(flagServer)
+	cmd.MarkFlagsMutuallyExclusive(flagTLSCACert, flagInsecure)
 	_ = cmd.RegisterFlagCompletionFunc("profile", fixedCompletion(profile.Names))
 	for _, name := range []string{flagServer, "timeout"} {
 		_ = cmd.RegisterFlagCompletionFunc(name, cobra.NoFileCompletions)
@@ -183,7 +189,8 @@ func (a *estAuth) addFlags(cmd *cobra.Command, certHelp string, certAlone bool) 
 		cmd.MarkFlagsRequiredTogether("cert", "key")
 	}
 	// TLS-SRP authenticates the server with the password, so it has no certificate to check.
-	cmd.MarkFlagsMutuallyExclusive("srp", "tls-ca-cert")
+	cmd.MarkFlagsMutuallyExclusive("srp", flagTLSCACert)
+	cmd.MarkFlagsMutuallyExclusive("srp", flagInsecure)
 	_ = cmd.RegisterFlagCompletionFunc("user", cobra.NoFileCompletions)
 }
 
@@ -272,6 +279,7 @@ func (c *estConnection) open(p *printer, creds *estCredentials) (*estSession, er
 		profile:  c.profile,
 		capture:  c.capture,
 		protocol: trace.EST,
+		insecure: c.insecure,
 	})
 	if err != nil {
 		return nil, err
@@ -280,8 +288,9 @@ func (c *estConnection) open(p *printer, creds *estCredentials) (*estSession, er
 	s.client = &est.Client{
 		Host:                  srv.host,
 		AdditionalPathSegment: srv.label,
-		//nolint:gosec // G402: est cacerts --bootstrap shows the fingerprints for an out-of-band check.
-		InsecureSkipVerify: c.insecure,
+		// G402: --insecure is reported as a warning and est cacerts --bootstrap shows the fingerprints
+		// for an out-of-band check.
+		InsecureSkipVerify: c.insecure || c.unverified, //nolint:gosec
 		// The profile reports a chain in an enrollment response, so the client must accept it.
 		AllowCertificateChain: true,
 		WrapTransport:         rec.recorder.Wrap,
@@ -628,7 +637,7 @@ func (s *estSession) transportHint(err, problem error) string {
 		return "Check the path and CA label in --server."
 	case unknownAuthority:
 		return "The TLS certificate of the server is not trusted. Pass its CA with --tls-ca-cert, " +
-			"or get the CA certificates with certrally est cacerts --bootstrap."
+			"or get the CA certificates with certrally est cacerts --bootstrap. --insecure skips the check for a test."
 	case isAlert && (alert == alertBadCertificate || alert == alertUnknownCA || alert == alertCertificateRequired):
 		if s.creds.key == nil {
 			return "The server asks for a TLS client certificate. Sign in with --cert and --key."

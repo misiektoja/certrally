@@ -64,7 +64,8 @@ func newESTCACertsCommand() *cobra.Command {
 	f.BoolVar(&o.force, "force", false, "replace an existing --out file")
 	f.BoolVar(&o.bootstrap, "bootstrap", false, "connect without checking the TLS certificate of the server")
 	f.StringVar(&o.fingerprint, "fingerprint", "", "hex SHA-256 fingerprint that one of the certificates must have")
-	cmd.MarkFlagsMutuallyExclusive("bootstrap", "tls-ca-cert")
+	cmd.MarkFlagsMutuallyExclusive("bootstrap", flagTLSCACert)
+	cmd.MarkFlagsMutuallyExclusive("bootstrap", flagInsecure)
 	cmd.MarkFlagsMutuallyExclusive("bootstrap", "srp")
 	_ = cmd.RegisterFlagCompletionFunc("fingerprint", cobra.NoFileCompletions)
 	return cmd
@@ -129,7 +130,7 @@ func runESTCACerts(ctx context.Context, o *estCACertsOptions, p *printer, stdin 
 	if err != nil {
 		return err
 	}
-	o.insecure = o.bootstrap
+	o.unverified = o.bootstrap
 
 	certs, s, err := estRun(ctx, &o.estConnection, &o.estAuth, stdin, p, false,
 		func(ctx context.Context, s *estSession) ([]*x509.Certificate, error) {
@@ -140,7 +141,7 @@ func runESTCACerts(ctx context.Context, o *estCACertsOptions, p *printer, stdin 
 	}
 	result := &estCACertsJSON{Certificates: certificatesResult(certs), Saved: []string{}, Verified: verifiedTLS}
 	switch {
-	case o.bootstrap:
+	case o.bootstrap, o.insecure:
 		result.Verified = verifiedNone
 	case o.srp:
 		result.Verified = verifiedSRP
@@ -185,10 +186,16 @@ func runESTCACerts(ctx context.Context, o *estCACertsOptions, p *printer, stdin 
 		}
 		result.Saved = savedPaths(o.out)
 	}
-	fields := []ui.Field{{Name: fieldVerified, Value: verifiedText(result.Verified, certs, fingerprint)}}
+	fields := []ui.Field{{Name: fieldVerified, Value: verifiedText(result.Verified, certs, fingerprint, o.skipFlag())}}
 	fields = append(fields, s.serverCertificateFields(certs)...)
 	fields = append(fields, ui.Field{Name: fieldSaved, Value: strings.Join(result.Saved, ", ")})
-	if result.Verified == verifiedNone {
+	switch {
+	case result.Verified == verifiedNone && len(result.Saved) > 0:
+		fields = append(fields, ui.Field{
+			Name:  fieldNote,
+			Value: "Check a fingerprint with the CA before trusting the saved certificates.",
+		})
+	case result.Verified == verifiedNone:
 		fields = append(fields, ui.Field{
 			Name:  fieldNote,
 			Value: "Check a fingerprint with the CA, then save the certificates with --fingerprint and --out.",
@@ -222,8 +229,17 @@ func matchFingerprint(certs []*x509.Certificate, fp []byte) *x509.Certificate {
 	return nil
 }
 
-// verifiedText describes how the certificates were checked.
-func verifiedText(verified string, certs []*x509.Certificate, fp []byte) string {
+// skipFlag names the flag that skipped the check of the server certificate.
+func (o *estCACertsOptions) skipFlag() string {
+	if o.bootstrap {
+		return "--bootstrap"
+	}
+	return "--" + flagInsecure
+}
+
+// verifiedText describes how the certificates were checked. skipFlag names the flag that skipped
+// the check when verified is verifiedNone.
+func verifiedText(verified string, certs []*x509.Certificate, fp []byte, skipFlag string) string {
 	switch verified {
 	case verifiedFingerprint:
 		subject := dn.Format(matchFingerprint(certs, fp).RawSubject)
@@ -231,7 +247,7 @@ func verifiedText(verified string, certs []*x509.Certificate, fp []byte) string 
 	case verifiedConfirmed:
 		return "fingerprint confirmed"
 	case verifiedNone:
-		return "no, --bootstrap did not check the server"
+		return "no, " + skipFlag + " did not check the server"
 	case verifiedSRP:
 		return "the TLS-SRP sign-in, in which the server proved it holds the verifier of --user"
 	}
