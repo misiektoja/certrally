@@ -133,6 +133,31 @@ func TestPollLaterJSON(t *testing.T) {
 	parsePEMCertificate(t, get(doc, "result.certificate.pem"))
 }
 
+// TestPollLaterIssuedAtOnce checks that enroll --poll-later saves a certificate the CA issues at once
+// and that poll then refuses the transaction because it never waited.
+func TestPollLaterIssuedAtOnce(t *testing.T) {
+	useSecret(t, testSecret)
+	m := startMock(t, "--listen", "127.0.0.1:0", "--ref", testRef)
+	dir := t.TempDir()
+	captureFile := filepath.Join(dir, "run.jsonl")
+	certOut, keyOut := filepath.Join(dir, "cert.pem"), filepath.Join(dir, "key.pem")
+	code, doc := runJSON(t, "enroll", "--server", m.url, "--ref", testRef, "--cert-out", certOut, "--key-out", keyOut,
+		"--poll-later", "--capture", captureFile)
+	id, _ := get(doc, "result.transactionId").(string)
+	if code != exitOK || get(doc, "result.status") != "accepted" || id == "" {
+		t.Fatalf("enroll exited with %d:\n%v", code, doc)
+	}
+	readCert(t, certOut)
+
+	code, _, errOut := run(t, "poll", "--transaction-id", id, "--capture", captureFile)
+	if code != exitLocal || !errorContains(errOut, "did not wait for the CA") {
+		t.Errorf("poll exited with %d, want %d with the transaction not waiting:\n%s", code, exitLocal, errOut)
+	}
+	if n := strings.Count(m.stdout.String(), "pollReq"); n != 0 {
+		t.Errorf("poll sent %d polls, want none:\n%s", n, m.stdout)
+	}
+}
+
 // TestEnrollTimeoutThenPoll checks that an enroll whose polling ends at --timeout records the
 // transaction, that a poll that ends the same way records it again and that a later poll succeeds.
 func TestEnrollTimeoutThenPoll(t *testing.T) {
@@ -256,6 +281,8 @@ func TestPollErrors(t *testing.T) {
 		`{"kind":"transaction","id":"0a0b","state":"waiting","resume":{"server":"http://user:xxxxx@127.0.0.1:1/cmp","profile":"compatible","certOut":"/c.pem","state":{}}}`,
 		`{"kind":"transaction","id":"0c0d","state":"waiting","resume":{"server":"http://127.0.0.1:1/cmp","profile":"compatible","certOut":"/c.pem"}}`,
 		`{"kind":"transaction","id":"0e0f","state":"waiting","resume":{"server":"http://127.0.0.1:1/cmp","profile":"lax","certOut":"/c.pem","state":{}}}`,
+		`{"kind":"request","body":"ir","transactionId":"0a1b"}`,
+		`{"kind":"response","body":"ip","transactionId":"0a1b"}`,
 		`{"kind":"end","exitStatus":0}`,
 	}, "\n")+"\n"))
 
@@ -268,6 +295,7 @@ func TestPollErrors(t *testing.T) {
 		{"no state", []string{"poll", "--transaction-id", "0c0d", "--capture", captureFile}, "has no state to resume"},
 		{"unknown profile", []string{"poll", "--transaction-id", "0e0f", "--capture", captureFile}, `unknown profile "lax"`},
 		{"unknown transaction", []string{"poll", "--transaction-id", "1234", "--capture", captureFile}, "holds no transaction 1234"},
+		{"transaction not waiting", []string{"poll", "--transaction-id", "0a1b", "--capture", captureFile}, "did not wait for the CA"},
 		{"not hex", []string{"poll", "--transaction-id", "xyz", "--capture", captureFile}, "is not a transaction ID in hex"},
 		{"missing capture", []string{"poll", "--transaction-id", "0a0b", "--capture", filepath.Join(dir, "missing.jsonl")}, "--capture:"},
 		{"no transaction id", []string{"poll", "--capture", captureFile}, "transaction-id"},

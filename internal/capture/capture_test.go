@@ -145,6 +145,21 @@ func TestFindTransaction(t *testing.T) {
 	if _, err := FindTransaction(path, "0c0d"); !errors.Is(err, ErrNoTransaction) {
 		t.Errorf("FindTransaction(0c0d) returned %v, want ErrNoTransaction", err)
 	}
+	decided := filepath.Join(t.TempDir(), "decided.jsonl")
+	if err := os.WriteFile(decided, []byte(strings.Join([]string{
+		`{"kind":"start","tool":"certrally","command":"enroll"}`,
+		`{"kind":"request","body":"ir","transactionId":"0c0d"}`,
+		`{"kind":"response","body":"ip","transactionId":"0c0d"}`,
+		`{"kind":"end","exitStatus":0}`,
+	}, "\n")+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := FindTransaction(decided, "0c0d"); !errors.Is(err, ErrNotWaiting) {
+		t.Errorf("FindTransaction on messages without a transaction line returned %v, want ErrNotWaiting", err)
+	}
+	if _, err := FindTransaction(decided, "0a0b"); !errors.Is(err, ErrNoTransaction) {
+		t.Errorf("FindTransaction(0a0b) on another transaction's messages returned %v, want ErrNoTransaction", err)
+	}
 	if _, err := FindTransaction(filepath.Join(t.TempDir(), "missing.jsonl"), "0a0b"); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("FindTransaction on a missing file returned %v", err)
 	}
