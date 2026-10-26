@@ -26,7 +26,7 @@ This release adds ML-KEM keys, which prove possession by decryption, keys that t
 
 ### EST
 
-* **`est --token` and `--token-file`** sign in with an HTTP bearer token (RFC 6750) instead of a password, on every `est` command. The token comes from `--token-file` (`-` reads standard input), the `CERTRALLY_TOKEN` environment variable or a prompt on a terminal, never from the command line. `--token` cannot be combined with `--user`. Renewal without a TLS client key still needs `--user`.
+* **`est --token` and `--token-file`** sign in with an HTTP bearer token (RFC 6750) instead of a password, on every `est` command. The token comes from `--token-file` (`-` reads standard input), the `CERTRALLY_TOKEN` environment variable or a prompt on a terminal, never from the command line. `--token` cannot be combined with `--user`. `est reenroll` without `--key` signs in with the token, as with `--user`.
 
 ### Testing and troubleshooting
 
