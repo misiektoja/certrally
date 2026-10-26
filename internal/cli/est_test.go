@@ -898,6 +898,11 @@ func TestESTUsageErrors(t *testing.T) {
 		{append([]string{"est", "csrattrs", "--srp", "--user", "u", "--tls-ca-cert", out("ca")}, server...), "none of the others can be"},
 		{append([]string{"est", "csrattrs", "--srp", "--user", "u", "--cert", out("c"), "--key", out("k")}, server...), "Leave out --key"},
 		{append([]string{"est", "cacerts", "--bootstrap", "--srp", "--user", "u"}, server...), "none of the others can be"},
+		// A sign-in would reach the unchecked server, and the cacerts request needs none.
+		{append([]string{"est", "cacerts", "--bootstrap", "--user", "u"}, server...), "none of the others can be"},
+		{append([]string{"est", "cacerts", "--bootstrap", "--password-file", out("p")}, server...), "none of the others can be"},
+		{append([]string{"est", "cacerts", "--bootstrap", "--token"}, server...), "none of the others can be"},
+		{append([]string{"est", "cacerts", "--bootstrap", "--token-file", out("t")}, server...), "none of the others can be"},
 		{append([]string{"est", "csrattrs", "--password-file", out("p")}, server...), "--password-file needs --user"},
 		{append([]string{"est", "csrattrs", "--token", "--user", "u"}, server...), "none of the others can be"},
 		{append([]string{"est", "csrattrs", "--token-file", out("t"), "--user", "u", "--password-file", out("p")}, server...), "none of the others can be"},
