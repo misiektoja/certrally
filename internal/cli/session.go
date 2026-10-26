@@ -75,7 +75,9 @@ type connection struct {
 	caCerts   []string
 	tlsCACert string
 	// insecure skips the check of the TLS certificate of an https server.
-	insecure  bool
+	insecure bool
+	// proxy is the --proxy URL, which replaces the proxy from the environment.
+	proxy     string
 	recipient string
 	timeout   time.Duration
 	capture   string
@@ -104,6 +106,7 @@ func (c *connection) addFlags(cmd *cobra.Command, timeout time.Duration, timeout
 		"verify the server with this CA certificate instead of trusting the certificates it sends (repeatable)")
 	f.StringVar(&c.tlsCACert, flagTLSCACert, "", "verify HTTPS with these CA certificates instead of the system roots")
 	f.BoolVar(&c.insecure, flagInsecure, false, insecureHelp)
+	f.StringVar(&c.proxy, flagProxy, "", proxyHelp)
 	f.StringVar(&c.recipient, "recipient", "", "name of the CA in the request header")
 	f.DurationVar(&c.timeout, "timeout", timeout, timeoutHelp)
 	f.StringVar(&c.capture, "capture", "", "append the exchanged messages to this file as JSON Lines")
@@ -112,7 +115,7 @@ func (c *connection) addFlags(cmd *cobra.Command, timeout time.Duration, timeout
 	_ = cmd.MarkFlagRequired("server")
 	cmd.MarkFlagsMutuallyExclusive(flagTLSCACert, flagInsecure)
 	_ = cmd.RegisterFlagCompletionFunc("profile", fixedCompletion(profile.Names))
-	for _, name := range []string{"server", "recipient", "timeout"} {
+	for _, name := range []string{"server", "recipient", "timeout", flagProxy} {
 		_ = cmd.RegisterFlagCompletionFunc(name, cobra.NoFileCompletions)
 	}
 }
@@ -122,6 +125,8 @@ const (
 	flagTLSCACert = "tls-ca-cert"
 	flagInsecure  = "insecure"
 	insecureHelp  = "skip the check of the TLS certificate of the server, which lets anyone pose as the server"
+	flagProxy     = "proxy"
+	proxyHelp     = "connect through this http or https proxy instead of the one HTTPS_PROXY names"
 )
 
 // validate checks the server URL, the timeout and the profile.
@@ -135,13 +140,34 @@ func (c *connection) validate() error {
 	if !slices.Contains(profile.Names, c.profile) {
 		return fmt.Errorf("invalid --profile %q, want compatible or strict", c.profile)
 	}
+	if _, err := parseProxy(c.proxy); err != nil {
+		return err
+	}
 	return nil
 }
+
+// URL schemes of servers and proxies.
+const (
+	schemeHTTP  = "http"
+	schemeHTTPS = "https"
+)
 
 // isServerURL reports whether s is an http or https URL with a host.
 func isServerURL(s string) bool {
 	u, err := url.Parse(s)
-	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
+	return err == nil && (u.Scheme == schemeHTTP || u.Scheme == schemeHTTPS) && u.Host != ""
+}
+
+// parseProxy returns the --proxy URL, or nil when the flag is empty.
+func parseProxy(s string) (*url.URL, error) {
+	if s == "" {
+		return nil, nil
+	}
+	u, err := url.Parse(s)
+	if err != nil || (u.Scheme != schemeHTTP && u.Scheme != schemeHTTPS) || u.Host == "" {
+		return nil, fmt.Errorf("--proxy %q is not an http or https URL", s)
+	}
+	return u, nil
 }
 
 // checkCapture rejects a --capture file that is also an output of the command.
@@ -461,7 +487,11 @@ func (c *connection) open(p *printer, chain []*x509.Certificate) (*session, erro
 		return nil, err
 	}
 	s.recording = rec
-	s.recorder.Next = newTransport(s.tlsRoots, c.insecure)
+	proxy, err := parseProxy(c.proxy)
+	if err != nil {
+		return nil, err
+	}
+	s.recorder.Next = newTransport(s.tlsRoots, c.insecure, proxy)
 	// A resumed transaction keeps the trust of the run that started it, which already had its first
 	// response.
 	trustFirst := !s.pinned && c.resumed == nil
@@ -479,23 +509,29 @@ func (c *connection) open(p *printer, chain []*x509.Certificate) (*session, erro
 }
 
 // newTransport returns the HTTP transport of a CMP connection. roots replace the system roots for
-// HTTPS when there are any. insecure skips the check of the server certificate instead.
-func newTransport(roots []*x509.Certificate, insecure bool) http.RoundTripper {
-	if len(roots) == 0 && !insecure {
+// HTTPS when there are any. insecure skips the check of the server certificate instead. proxy
+// replaces the proxy from the environment when it is set.
+func newTransport(roots []*x509.Certificate, insecure bool, proxy *url.URL) http.RoundTripper {
+	if len(roots) == 0 && !insecure && proxy == nil {
 		return http.DefaultTransport
 	}
-	cfg := &tls.Config{MinVersion: tls.VersionTLS12}
-	if insecure {
-		cfg.InsecureSkipVerify = true //nolint:gosec // G402: --insecure asks for it and the report warns.
-	} else {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	if proxy != nil {
+		t.Proxy = http.ProxyURL(proxy)
+	}
+	switch {
+	case insecure:
+		t.TLSClientConfig = &tls.Config{
+			MinVersion:         tls.VersionTLS12,
+			InsecureSkipVerify: true, //nolint:gosec // G402: --insecure asks for it and the report warns.
+		}
+	case len(roots) > 0:
 		pool := x509.NewCertPool()
 		for _, cert := range roots {
 			pool.AddCert(cert)
 		}
-		cfg.RootCAs = pool
+		t.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: pool}
 	}
-	t := http.DefaultTransport.(*http.Transport).Clone()
-	t.TLSClientConfig = cfg
 	return t
 }
 

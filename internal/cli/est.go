@@ -82,6 +82,8 @@ type estConnection struct {
 	// unverified also skips the check, for est cacerts --bootstrap, which reports the missing check
 	// in its result instead.
 	unverified bool
+	// proxy is the --proxy URL, which replaces the proxy from the environment.
+	proxy string
 }
 
 // addFlags registers the connection flags with the given default timeout.
@@ -92,6 +94,7 @@ func (c *estConnection) addFlags(cmd *cobra.Command, timeout time.Duration, time
 	f.StringVar(&c.tlsCACert, flagTLSCACert, "",
 		"verify the server with these CA certificates instead of the system roots")
 	f.BoolVar(&c.insecure, flagInsecure, false, insecureHelp)
+	f.StringVar(&c.proxy, flagProxy, "", proxyHelp)
 	f.DurationVar(&c.timeout, "timeout", timeout, timeoutHelp)
 	f.StringVar(&c.capture, "capture", "", "append the exchanged messages to this file as JSON Lines")
 	f.StringVar(&c.profile, "profile", profile.Compatible,
@@ -99,12 +102,12 @@ func (c *estConnection) addFlags(cmd *cobra.Command, timeout time.Duration, time
 	_ = cmd.MarkFlagRequired(flagServer)
 	cmd.MarkFlagsMutuallyExclusive(flagTLSCACert, flagInsecure)
 	_ = cmd.RegisterFlagCompletionFunc("profile", fixedCompletion(profile.Names))
-	for _, name := range []string{flagServer, "timeout"} {
+	for _, name := range []string{flagServer, "timeout", flagProxy} {
 		_ = cmd.RegisterFlagCompletionFunc(name, cobra.NoFileCompletions)
 	}
 }
 
-// validate checks the server URL, the timeout and the profile.
+// validate checks the server URL, the timeout, the profile and the proxy.
 func (c *estConnection) validate() error {
 	if _, err := parseESTServer(c.server); err != nil {
 		return err
@@ -114,6 +117,9 @@ func (c *estConnection) validate() error {
 	}
 	if !slices.Contains(profile.Names, c.profile) {
 		return fmt.Errorf("invalid --profile %q, want compatible or strict", c.profile)
+	}
+	if _, err := parseProxy(c.proxy); err != nil {
+		return err
 	}
 	return nil
 }
@@ -135,7 +141,7 @@ type estServer struct {
 // /.well-known/est with a CA label.
 func parseESTServer(s string) (estServer, error) {
 	u, err := url.Parse(s)
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.Opaque != "" {
+	if err != nil || u.Scheme != schemeHTTPS || u.Host == "" || u.Opaque != "" {
 		return estServer{}, fmt.Errorf("--server %q is not an https URL. EST runs over HTTPS", s)
 	}
 	if u.User != nil {
@@ -315,6 +321,13 @@ func (c *estConnection) open(p *printer, creds *estCredentials) (*estSession, er
 			pool.AddCert(cert)
 		}
 		s.client.ExplicitAnchor = pool
+	}
+	proxy, err := parseProxy(c.proxy)
+	if err != nil {
+		return nil, err
+	}
+	if proxy != nil {
+		s.client.Proxy = http.ProxyURL(proxy)
 	}
 	switch {
 	case creds.srp:

@@ -33,6 +33,7 @@ type pollOptions struct {
 	secretFile    string
 	keyPassword
 	insecure bool
+	proxy    string
 	timeout  time.Duration
 	certOut  string
 	chainOut string
@@ -73,6 +74,7 @@ func newPollCommand() *cobra.Command {
 	f.StringVar(&o.secretFile, "secret-file", "", "read the shared secret from a file, or - for standard input")
 	o.keyPassword.addFlags(cmd)
 	f.BoolVar(&o.insecure, flagInsecure, false, insecureHelp)
+	f.StringVar(&o.proxy, flagProxy, "", proxyHelp)
 	f.DurationVar(&o.timeout, flagTimeout, 5*time.Minute, "limit for polling and the confirmation")
 	f.StringVar(&o.certOut, "cert-out", "", "write the issued certificate to this file instead of the one enroll named")
 	f.StringVar(&o.chainOut, "chain-out", "",
@@ -81,7 +83,7 @@ func newPollCommand() *cobra.Command {
 	f.BoolVar(&o.force, "force", false, "replace existing output files")
 	_ = cmd.MarkFlagRequired("transaction-id")
 	_ = cmd.MarkFlagRequired("capture")
-	for _, name := range []string{"transaction-id", flagServer, flagTimeout} {
+	for _, name := range []string{"transaction-id", flagServer, flagTimeout, flagProxy} {
 		_ = cmd.RegisterFlagCompletionFunc(name, cobra.NoFileCompletions)
 	}
 	return cmd
@@ -293,6 +295,9 @@ func (o *pollOptions) connection(rec *pendingRecord) (*connection, error) {
 	if o.timeout <= 0 {
 		return nil, errors.New("--timeout must be positive")
 	}
+	if _, err := parseProxy(o.proxy); err != nil {
+		return nil, err
+	}
 	if err := o.checkStdin("--secret-file", o.secretFile); err != nil {
 		return nil, err
 	}
@@ -306,6 +311,7 @@ func (o *pollOptions) connection(rec *pendingRecord) (*connection, error) {
 	return &connection{
 		server:   server,
 		insecure: o.insecure,
+		proxy:    o.proxy,
 		timeout:  o.timeout,
 		capture:  o.capture,
 		profile:  rec.Profile,
