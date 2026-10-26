@@ -4,7 +4,7 @@ Notable changes to certrally. Versions follow the `vMAJOR.MINOR.PATCH` tags publ
 
 ## v0.2.0 - TBD
 
-This release adds ML-KEM keys, which prove possession by decryption, keys that the CA generates, requests forwarded by a registration authority, collecting a waiting certificate in a later run, implicit confirmation, revocation by serial number with an invalidity date, key usages and templates copied from an existing certificate, flags that shape a request the way a test scenario needs, fault flags that make the test CA delay, reject and relax its checks, deliberately wrong messages that test how a CA copes, `--insecure` for test servers with untrusted TLS certificates, encrypted private key files, DER output files, HTTP proxies and bearer tokens for EST.
+This release adds ML-KEM keys, which prove possession by decryption, keys that the CA generates, requests forwarded by a registration authority, collecting a waiting certificate in a later run, implicit confirmation, revocation by serial number with an invalidity date, key usages and templates copied from an existing certificate, flags that shape a request the way a test scenario needs, fault flags that make the test CA delay, reject and relax its checks, deliberately wrong messages that test how a CA copes, `--insecure` for test servers with untrusted TLS certificates, encrypted private key files, DER output files, HTTP proxies and bearer tokens for EST. It also fixes what `est cacerts --bootstrap` and `--chain-out` save.
 
 ### CMP and EST
 
@@ -35,6 +35,11 @@ This release adds ML-KEM keys, which prove possession by decryption, keys that t
 * **`certrally mock` refuses a late `certConf`** that arrives after the confirmWaitTime with badRequest. Its log shows the statusString of each response, such as the reason for a refusal. A request with a bad protection or recipient gets the reason alone in the statusString, such as `message not protected`. Before, the reason followed a `server: status rejection, failInfo: ...` prefix. `--strict` also refuses a pollReq or popdecr that repeats a senderNonce. It also notes a certificate that the client rejected or did not confirm in time.
 * **`certrally mock` logs each revocation** with the serial number, the reason and the invalidity date the request gave, and lists the invalidity date in its CRL.
 * **`certrally est mock --token-file`** or `CERTRALLY_TOKEN` makes the EST test CA also accept that bearer token. The startup report shows where the token comes from and prints the matching `est enroll --token` command.
+
+### Bug fixes
+
+* **`est cacerts --bootstrap` saves only the checked certificate.** With `--fingerprint`, or after a person confirms a fingerprint on a terminal, certrally saves the certificate with that fingerprint and the certificates it issued. The other certificates of the response are reported as unverified, with a warning, and left out of `--out`. Before, every certificate of the response was saved once one of them matched, so whoever answered the unchecked connection could add a CA to the file that `--tls-ca-cert` trusts later. On a terminal, when the response holds several certificates, certrally asks which one has the published fingerprint. The `--json` result gains `unverified`.
+* **`--chain-out` holds only CA certificates that signed the new certificate.** `enroll` and `poll` check the signature of each link before writing the chain. Before, a certificate from extraCerts, which nothing protects, entered the chain file when it carried the name and key identifier of the CA, also with `--ca-cert`.
 
 ## v0.1.1 - 22 Oct 2026
 
