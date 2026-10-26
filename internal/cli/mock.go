@@ -542,6 +542,19 @@ func (c *faultCA) AuthorizeRA(ctx context.Context, ra *server.SenderIdentity, re
 	return nil
 }
 
+// ConfirmCertificate passes a confirmation to the example CA and notes in the request log a
+// certificate that the client rejected or failed to confirm in time.
+func (c *faultCA) ConfirmCertificate(ctx context.Context, cert *x509.Certificate, status server.ConfirmStatus, issueRef any) error {
+	switch status {
+	case server.ConfirmRejected:
+		addMockNote(ctx, "certificate rejected  serial "+formatSerial(cert))
+	case server.ConfirmExpired:
+		addMockNote(ctx, "certificate not confirmed in time  serial "+formatSerial(cert))
+	default:
+	}
+	return c.MockCA.ConfirmCertificate(ctx, cert, status, issueRef)
+}
+
 // mockKeyGenerator generates the key pairs of requests for central key generation.
 type mockKeyGenerator struct{}
 
@@ -726,8 +739,8 @@ func describeRequest(r *http.Request, body []byte) string {
 	return strings.Join(parts, "  ")
 }
 
-// describeResponse names a response by its body type and status, or by its HTTP status when it is
-// not a CMP message.
+// describeResponse names a response by its body type, status and the reason the CA gives, or by its
+// HTTP status when it is not a CMP message.
 func describeResponse(rec *responseCapture) string {
 	m := trace.Summarize(rec.body.Bytes())
 	if m == nil {
@@ -738,6 +751,9 @@ func describeResponse(rec *responseCapture) string {
 		parts = append(parts, m.Status)
 	}
 	parts = append(parts, trace.FailureNames(m.FailInfo)...)
+	if text := quoteText(m.StatusText); text != "" {
+		parts = append(parts, text)
+	}
 	return strings.Join(parts, "  ")
 }
 

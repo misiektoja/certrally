@@ -71,6 +71,7 @@ type enrollOptions struct {
 	centralKeygen bool
 	keyTypeSet    bool
 	interactive   bool
+	faultOptions
 }
 
 // flagCentralKeygen names the flag that asks the CA to generate the key pair.
@@ -136,6 +137,7 @@ func newEnrollCommand() *cobra.Command {
 			"It wraps every request, including the certConf and pollReq, in a nested message signed with that " +
 			"certificate. The request inside keeps its own protection. The CA must accept the authority, " +
 			"usually by its cmcRA extended key usage.\n\n" +
+			faultHelp + "\n\n" +
 			"Run without flags on a terminal, or with --interactive, to be asked for each setting. The " +
 			"equivalent command is printed before the request is sent.\n\n" +
 			enrollExitStatusHelp,
@@ -192,6 +194,7 @@ func newEnrollCommand() *cobra.Command {
 	f.BoolVar(&o.pollLater, "poll-later", false,
 		"stop when the CA answers that the request waits and record the transaction in --capture for poll")
 	f.BoolVar(&o.interactive, "interactive", false, "ask for the settings that the command line leaves out")
+	o.faultOptions.addFlags(cmd)
 
 	_ = cmd.MarkFlagRequired("cert-out")
 	cmd.MarkFlagsMutuallyExclusive("key-type", "new-key", "csr")
@@ -251,6 +254,9 @@ func (o *enrollOptions) validate() error {
 		return errors.New("--poll-later records the transaction in the --capture file, so --capture is required")
 	}
 	if err := o.validateKey(); err != nil {
+		return err
+	}
+	if err := o.faultOptions.validate(o.pollLater); err != nil {
 		return err
 	}
 	if err := o.format.validate(); err != nil {
@@ -410,9 +416,14 @@ func runEnroll(ctx context.Context, o *enrollOptions, p *printer, stdin io.Reade
 	}
 	ctx, cancel := context.WithTimeout(ctx, o.timeout)
 	defer cancel()
+	inj := newInjector(ctx, &o.faultOptions)
+	if inj != nil {
+		e.reqOpts = append(e.reqOpts, inj.requestOptions()...)
+	}
 	s.startLadder()
 	result, err := o.send(ctx, c, e)
 	s.endLadder()
+	inj.report(p)
 	if err != nil {
 		if confErr, ok := errors.AsType[*client.ConfirmationError](err); ok {
 			return reportUnconfirmed(s, o.certOutputs, confErr, e.newKey)
@@ -425,14 +436,15 @@ func runEnroll(ctx context.Context, o *enrollOptions, p *printer, stdin io.Reade
 	if result.Pending != nil {
 		return o.reportWaiting(s, e, result.Pending)
 	}
-	return reportIssued(s, o.certOutputs, result, e.newKey, o.implicitConfirm, e.indirect)
+	return reportIssued(s, o.certOutputs, result, e.newKey, o.implicitConfirm, e.indirect, inj.rejected())
 }
 
 // reportIssued saves an issued certificate with its new key and the issuing CA certificates and
 // reports it. The new key is key or the one the CA generated. implicitAsked says whether the request
-// asked for implicit confirmation and pop how a key that cannot sign proved possession. The fields in
-// extra follow those of the certificate.
-func reportIssued(s *session, out certOutputs, result *client.EnrollResult, key crypto.PrivateKey, implicitAsked bool, pop client.IndirectPOP, extra ...ui.Field) error {
+// asked for implicit confirmation and pop how a key that cannot sign proved possession. rejected says
+// that the certConf rejected the certificate on --fault reject-certificate. The fields in extra
+// follow those of the certificate.
+func reportIssued(s *session, out certOutputs, result *client.EnrollResult, key crypto.PrivateKey, implicitAsked bool, pop client.IndirectPOP, rejected bool, extra ...ui.Field) error {
 	cert := result.Certificate
 	chain := issuerChain(cert, append(result.CAPubs, result.ExtraCertificates...))
 	if result.GeneratedKey != nil {
@@ -447,7 +459,12 @@ func reportIssued(s *session, out certOutputs, result *client.EnrollResult, key 
 	}
 	status := lastStatus(s.recorder)
 	fields := certificateFields(cert, status, saved)
-	if confirmation := confirmation(result, implicitAsked); confirmation != "" {
+	title, confirmation := "Certificate issued", confirmation(result, implicitAsked)
+	if rejected {
+		title = "Certificate issued and rejected"
+		confirmation = "certConf rejected it on --fault " + faultRejectCertificate + " and the CA answered pkiConf"
+	}
+	if confirmation != "" {
 		fields = append(fields, ui.Field{Name: fieldConfirmation, Value: confirmation})
 	}
 	if pop != 0 {
@@ -461,9 +478,9 @@ func reportIssued(s *session, out certOutputs, result *client.EnrollResult, key 
 	if ra != "" {
 		fields = append(fields, ui.Field{Name: fieldForwardedBy, Value: ra})
 	}
-	s.p.result("Certificate issued", append(fields, extra...), &enrollJSON{
+	s.p.result(title, append(fields, extra...), &enrollJSON{
 		Status:                 status,
-		Confirmed:              true,
+		Confirmed:              !rejected,
 		ImplicitConfirm:        result.ImplicitConfirm,
 		ProofOfPossession:      popName(pop),
 		CentralKeyGeneration:   result.GeneratedKey != nil,

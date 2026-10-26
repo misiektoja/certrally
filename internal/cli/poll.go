@@ -468,7 +468,7 @@ func runPoll(ctx context.Context, o *pollOptions, p *printer, stdin io.Reader) e
 		}
 		return s.fail(err)
 	}
-	return reportIssued(s, out, result, nil, rec.ImplicitConfirm, rec.State.IndirectPOP,
+	return reportIssued(s, out, result, nil, rec.ImplicitConfirm, rec.State.IndirectPOP, false,
 		ui.Field{Name: fieldTransactionID, Value: id})
 }
 
