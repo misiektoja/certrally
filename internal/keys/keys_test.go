@@ -1,6 +1,7 @@
 package keys
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -34,10 +35,16 @@ func TestGenerateRoundTrip(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !key.Public().(interface{ Equal(crypto.PublicKey) bool }).Equal(parsed.Public()) {
-				t.Error("parsed key differs")
+			// ML-KEM public keys have no Equal method, so the encodings are compared.
+			want, err := MarshalPublicKey(Public(key))
+			if err != nil {
+				t.Fatal(err)
 			}
-			if Describe(key.Public()) == "" {
+			got, err := MarshalPublicKey(Public(parsed))
+			if err != nil || !bytes.Equal(got, want) {
+				t.Errorf("parsed key differs: %v", err)
+			}
+			if Describe(Public(key)) == "" {
 				t.Error("no description")
 			}
 		})
@@ -46,12 +53,14 @@ func TestGenerateRoundTrip(t *testing.T) {
 
 // TestDescribe checks the names shown for common key types.
 func TestDescribe(t *testing.T) {
-	for name, want := range map[string]string{"ecdsa-p384": "ECDSA P-384", "ed25519": "Ed25519", "ml-dsa-87": "ML-DSA-87"} {
+	for name, want := range map[string]string{
+		"ecdsa-p384": "ECDSA P-384", "ed25519": "Ed25519", "ml-dsa-87": "ML-DSA-87", "ml-kem-1024": "ML-KEM-1024",
+	} {
 		key, err := Generate(name)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := Describe(key.Public()); got != want {
+		if got := Describe(Public(key)); got != want {
 			t.Errorf("Describe(%s) = %q, want %q", name, got, want)
 		}
 	}
@@ -77,7 +86,7 @@ func TestParseLegacyForms(t *testing.T) {
 		"PKCS#8 DER": pkcs8,
 	} {
 		parsed, err := Parse(data)
-		if err != nil || !key.PublicKey.Equal(parsed.Public()) {
+		if err != nil || !key.PublicKey.Equal(Public(parsed)) {
 			t.Errorf("%s: %v", name, err)
 		}
 	}
@@ -169,7 +178,7 @@ func TestParseEncrypted(t *testing.T) {
 			t.Errorf("%s: %v", name, err)
 			continue
 		}
-		if !key.Public().(interface{ Equal(crypto.PublicKey) bool }).Equal(pub) {
+		if !Public(key).(interface{ Equal(crypto.PublicKey) bool }).Equal(pub) {
 			t.Errorf("%s: decrypted key differs", name)
 		}
 	}

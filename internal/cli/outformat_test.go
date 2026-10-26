@@ -47,7 +47,7 @@ func checkDERPair(t *testing.T, certPath, keyPath string) *x509.Certificate {
 	if err != nil {
 		t.Fatalf("%s: %v", keyPath, err)
 	}
-	if !key.Public().(interface{ Equal(crypto.PublicKey) bool }).Equal(cert.PublicKey) {
+	if !keys.Public(key).(interface{ Equal(crypto.PublicKey) bool }).Equal(cert.PublicKey) {
 		t.Errorf("%s does not belong to %s", keyPath, certPath)
 	}
 	return cert
@@ -193,7 +193,7 @@ func TestOutFormatDERKeygen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !key.Public().(interface{ Equal(crypto.PublicKey) bool }).Equal(pub) {
+	if !keys.Public(key).(interface{ Equal(crypto.PublicKey) bool }).Equal(pub) {
 		t.Error("the public key file does not match the key")
 	}
 	csr, err := x509.ParseCertificateRequest(readDER(t, csrOut))

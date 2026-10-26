@@ -206,7 +206,7 @@ func TestESTEnrollAndRenew(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !key.Public().(interface{ Equal(crypto.PublicKey) bool }).Equal(pub) {
+		if !keys.Public(key).(interface{ Equal(crypto.PublicKey) bool }).Equal(pub) {
 			t.Error("the saved key does not belong to the certificate")
 		}
 		info, err := os.Stat(skgKey)

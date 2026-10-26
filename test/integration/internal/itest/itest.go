@@ -146,7 +146,7 @@ func (c *Certrally) CheckKey(t *testing.T, cert *x509.Certificate, keyFile strin
 	if err != nil {
 		t.Fatal(err)
 	}
-	pub, ok := key.Public().(interface{ Equal(crypto.PublicKey) bool })
+	pub, ok := keys.Public(key).(interface{ Equal(crypto.PublicKey) bool })
 	if !ok || !pub.Equal(certKey) {
 		t.Fatalf("the certificate does not certify the key in %s", keyFile)
 	}

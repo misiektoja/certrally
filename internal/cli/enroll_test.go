@@ -180,7 +180,7 @@ func TestEnrollIR(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if pub, ok := key.Public().(interface{ Equal(crypto.PublicKey) bool }); !ok || !pub.Equal(cert.PublicKey) {
+			if pub, ok := keys.Public(key).(interface{ Equal(crypto.PublicKey) bool }); !ok || !pub.Equal(cert.PublicKey) {
 				t.Error("the saved key does not match the certificate")
 			}
 			chain, err := pemfile.ReadCertificates(chainOut)
