@@ -19,7 +19,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/misiektoja/certrally/internal/dn"
-	"github.com/misiektoja/certrally/internal/pemfile"
 	"github.com/misiektoja/certrally/internal/trace"
 	"github.com/misiektoja/certrally/internal/ui"
 )
@@ -33,6 +32,7 @@ type estCACertsOptions struct {
 	force       bool
 	bootstrap   bool
 	fingerprint string
+	format      outFormat
 }
 
 // newESTCACertsCommand returns est cacerts.
@@ -61,6 +61,7 @@ func newESTCACertsCommand() *cobra.Command {
 	o.outputOptions.addFlags(cmd)
 	f := cmd.Flags()
 	f.StringVar(&o.out, "out", "", "write the certificates to this file, or - for standard output")
+	o.format.addFlags(cmd, formatPEM, outFormatCertsHelp)
 	f.BoolVar(&o.force, "force", false, "replace an existing --out file")
 	f.BoolVar(&o.bootstrap, "bootstrap", false, "connect without checking the TLS certificate of the server")
 	f.StringVar(&o.fingerprint, "fingerprint", "", "hex SHA-256 fingerprint that one of the certificates must have")
@@ -107,6 +108,9 @@ func (o *estCACertsOptions) validate(p *printer, stdin io.Reader) ([]byte, error
 			return nil, err
 		}
 		fingerprint = fp
+	}
+	if err := o.format.validate(); err != nil {
+		return nil, err
 	}
 	if err := o.checkStdout(o.out); err != nil {
 		return nil, err
@@ -181,7 +185,11 @@ func runESTCACerts(ctx context.Context, o *estCACertsOptions, p *printer, stdin 
 	}
 
 	if o.out != "" {
-		if err := writeData(o.out, pemfile.EncodeCertificates(certs), 0o644, o.force, p.stdout); err != nil {
+		data, err := o.format.certificates(certs)
+		if err != nil {
+			return err
+		}
+		if err := writeData(o.out, data, 0o644, o.force, p.stdout); err != nil {
 			return err
 		}
 		result.Saved = savedPaths(o.out)

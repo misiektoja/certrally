@@ -8,7 +8,6 @@ import (
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"encoding/hex"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -34,19 +33,21 @@ type genmOptions struct {
 	connection
 	protection
 	outputOptions
-	out   string
-	force bool
+	out    string
+	force  bool
+	format outFormat
 }
 
-// addFlags registers the flags of a general message command. outHelp is empty for commands that
-// write no file.
-func (o *genmOptions) addFlags(cmd *cobra.Command, outHelp string) {
+// addFlags registers the flags of a general message command. outHelp and formatHelp describe --out
+// and --out-format. outHelp is empty for commands that write no file.
+func (o *genmOptions) addFlags(cmd *cobra.Command, outHelp, formatHelp string) {
 	o.connection.addFlags(cmd, 2*time.Minute, "limit for the whole exchange")
 	o.protection.addFlags(cmd)
 	o.outputOptions.addFlags(cmd)
 	if outHelp != "" {
 		cmd.Flags().StringVar(&o.out, "out", "", outHelp+", or - for standard output")
 		cmd.Flags().BoolVar(&o.force, "force", false, "replace an existing output file")
+		o.format.addFlags(cmd, formatPEM, formatHelp)
 	}
 }
 
@@ -56,6 +57,9 @@ func (o *genmOptions) validate(p *printer) error {
 		return err
 	}
 	if err := o.protection.validate(); err != nil {
+		return err
+	}
+	if err := o.format.validate(); err != nil {
 		return err
 	}
 	if err := o.checkStdout(o.out); err != nil {
@@ -84,7 +88,7 @@ func newCACertsCommand(use string) *cobra.Command {
 			return runCACerts(cmd.Context(), o, p, cmd.InOrStdin())
 		}),
 	}
-	o.addFlags(cmd, "write the certificates to this file")
+	o.addFlags(cmd, "write the certificates to this file", outFormatCertsHelp)
 	return cmd
 }
 
@@ -102,7 +106,11 @@ func runCACerts(ctx context.Context, o *genmOptions, p *printer, stdin io.Reader
 	}
 	saved := []string{}
 	if o.out != "" && len(certs) > 0 {
-		if err := writeData(o.out, pemfile.EncodeCertificates(certs), 0o644, o.force, p.stdout); err != nil {
+		data, err := o.format.certificates(certs)
+		if err != nil {
+			return err
+		}
+		if err := writeData(o.out, data, 0o644, o.force, p.stdout); err != nil {
 			return err
 		}
 		saved = savedPaths(o.out)
@@ -208,7 +216,7 @@ func newRootUpdateCommand() *cobra.Command {
 			return reportRootUpdate(o, p, update)
 		}),
 	}
-	o.addFlags(cmd, "write the new root CA certificate to this file")
+	o.addFlags(cmd, "write the new root CA certificate to this file", outFormatOutHelp)
 	cmd.Flags().StringVar(&oldRoot, "old-root", "", "the root CA certificate the update replaces")
 	return cmd
 }
@@ -221,7 +229,7 @@ func reportRootUpdate(o *genmOptions, p *printer, update *pkicmp.RootCAKeyUpdate
 		return nil
 	}
 	if o.out != "" {
-		data := pemfile.EncodeCertificates([]*x509.Certificate{update.NewWithNew})
+		data := o.format.certificate(update.NewWithNew)
 		if err := writeData(o.out, data, 0o644, o.force, p.stdout); err != nil {
 			return err
 		}
@@ -274,7 +282,7 @@ func newTemplateCommand() *cobra.Command {
 			return nil
 		}),
 	}
-	o.addFlags(cmd, "")
+	o.addFlags(cmd, "", "")
 	cmd.Flags().StringVar(&profile, "cert-profile", "", "certificate profile to get the template for")
 	return cmd
 }
@@ -422,7 +430,7 @@ func newCRLCommand() *cobra.Command {
 			return reportCRL(o, s, crl, "The CA has no CRL")
 		}),
 	}
-	o.addFlags(cmd, "write the CRL to this file")
+	o.addFlags(cmd, "write the CRL to this file", outFormatOutHelp)
 	return cmd
 }
 
@@ -454,7 +462,7 @@ func newCRLUpdateCommand() *cobra.Command {
 			return reportCRL(o, s, crl, "No newer CRL is available")
 		}),
 	}
-	o.addFlags(cmd, "write the CRL to this file")
+	o.addFlags(cmd, "write the CRL to this file", outFormatOutHelp)
 	cmd.Flags().StringVar(&crlFile, "crl", "", "the newest CRL you have")
 	cmd.Flags().StringVar(&issuerFile, "crl-issuer", "", "certificate of the CA that issues the CRL, when you have none")
 	cmd.MarkFlagsMutuallyExclusive("crl", "crl-issuer")
@@ -487,7 +495,7 @@ func reportCRL(o *genmOptions, s *session, crl *x509.RevocationList, none string
 		p.result(none, nil, result)
 		return nil
 	}
-	data := pem.EncodeToMemory(&pem.Block{Type: "X509 CRL", Bytes: crl.Raw})
+	data := o.format.block("X509 CRL", crl.Raw)
 	if o.out != "" {
 		if err := writeData(o.out, data, 0o644, o.force, p.stdout); err != nil {
 			return err
@@ -646,7 +654,7 @@ func newRawGenMCommand() *cobra.Command {
 			return nil
 		}),
 	}
-	o.addFlags(cmd, "")
+	o.addFlags(cmd, "", "")
 	return cmd
 }
 

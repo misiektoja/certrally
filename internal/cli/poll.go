@@ -37,6 +37,7 @@ type pollOptions struct {
 	certOut  string
 	chainOut string
 	force    bool
+	format   outFormat
 }
 
 // newPollCommand returns the poll command.
@@ -76,6 +77,7 @@ func newPollCommand() *cobra.Command {
 	f.StringVar(&o.certOut, "cert-out", "", "write the issued certificate to this file instead of the one enroll named")
 	f.StringVar(&o.chainOut, "chain-out", "",
 		"write the issuing CA certificates from the response to this file instead of the one enroll named")
+	o.format.addFlags(cmd, "", "format of the output files instead of the one enroll used: pem or der")
 	f.BoolVar(&o.force, "force", false, "replace existing output files")
 	_ = cmd.MarkFlagRequired("transaction-id")
 	_ = cmd.MarkFlagRequired("capture")
@@ -108,6 +110,8 @@ type pendingRecord struct {
 	// CertOut and ChainOut are the files enroll was asked to write the certificate and chain to.
 	CertOut  string `json:"certOut"`
 	ChainOut string `json:"chainOut,omitempty"`
+	// OutFormat is the --out-format of the enroll run.
+	OutFormat string `json:"outFormat,omitempty"`
 	// ImplicitConfirm records that the request asked for implicit confirmation.
 	ImplicitConfirm bool `json:"implicitConfirm,omitempty"`
 	// State is the transaction state of go-pki-cmp.
@@ -130,7 +134,7 @@ func newPendingRecord(s *session, prot *protection, out certOutputs, implicitCon
 	} else {
 		rec.Ref, rec.MAC = prot.ref, prot.mac
 	}
-	rec.CertOut, rec.ChainOut = out.certOut, out.chainOut
+	rec.CertOut, rec.ChainOut, rec.OutFormat = out.certOut, out.chainOut, out.format.name
 	for _, path := range []*string{&rec.Cert, &rec.Key, &rec.CertOut, &rec.ChainOut} {
 		if *path == "" || *path == stdoutPath {
 			continue
@@ -309,10 +313,18 @@ func (o *pollOptions) connection(rec *pendingRecord) (*connection, error) {
 	}, nil
 }
 
-// outputs returns where to save the certificate of rec, with --cert-out and --chain-out taking
-// precedence.
+// outputs returns where and how to save the certificate of rec, with --cert-out, --chain-out and
+// --out-format taking precedence.
 func (o *pollOptions) outputs(rec *pendingRecord) certOutputs {
-	out := certOutputs{certOut: rec.CertOut, chainOut: rec.ChainOut, force: o.force}
+	out := certOutputs{
+		certOut:  rec.CertOut,
+		chainOut: rec.ChainOut,
+		force:    o.force,
+		format:   outFormat{name: rec.OutFormat},
+	}
+	if o.format.name != "" {
+		out.format = o.format
+	}
 	if o.certOut != "" {
 		out.certOut = o.certOut
 	}
@@ -334,6 +346,9 @@ func runPoll(ctx context.Context, o *pollOptions, p *printer, stdin io.Reader) e
 	}
 	conn, err := o.connection(rec)
 	if err != nil {
+		return err
+	}
+	if err := o.format.validate(); err != nil {
 		return err
 	}
 	out := o.outputs(rec)

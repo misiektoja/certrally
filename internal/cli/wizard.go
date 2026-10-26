@@ -218,7 +218,7 @@ func (a *formAsker) show(title, value string) {
 var enrollFlagOrder = []string{
 	"server", "ca-cert", "tls-ca-cert", flagRef, "secret-file", "mac", "cert", "key", "type",
 	flagTemplateCert, flagSubject, flagSAN, flagKeyUsage, flagExtKeyUsage, "key-type", "new-key", "csr",
-	"cert-out", "key-out", "chain-out",
+	"cert-out", "key-out", "chain-out", flagOutFormat,
 }
 
 // enrollWizard asks for the enroll settings that the command line leaves out. Each answer is set

@@ -8,7 +8,6 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -50,6 +49,7 @@ type estEnrollOptions struct {
 	keyOut    string
 	force     bool
 	tlsUnique bool
+	format    outFormat
 }
 
 // estEnrollTimeoutHelp describes --timeout of the commands that issue a certificate.
@@ -138,6 +138,7 @@ func (o *estEnrollOptions) addCommonFlags(cmd *cobra.Command, certHelp string, c
 	f.StringVar(&o.certOut, "cert-out", "", "write the issued certificate to this file")
 	f.StringVar(&o.keyOut, "key-out", "", "write the new private key to this file")
 	f.BoolVar(&o.force, "force", false, "replace existing output files")
+	o.format.addFlags(cmd, formatPEM, outFormatHelp)
 	_ = cmd.MarkFlagRequired("cert-out")
 }
 
@@ -188,6 +189,9 @@ func (o *estEnrollOptions) validate() error {
 		return errors.New("--key-out is required to save the new key")
 	case !generated && o.keyOut != "":
 		return errors.New("--key-out is only used with a new key")
+	}
+	if err := o.format.validate(); err != nil {
+		return err
 	}
 	if err := o.checkCapture(o.certOut, o.keyOut); err != nil {
 		return err
@@ -248,7 +252,7 @@ func runESTEnroll(ctx context.Context, o *estEnrollOptions, p *printer, stdin io
 	if o.tlsUnique {
 		s.warnTLSUnique()
 	}
-	keyPEM, keyDesc, err := o.newKeyPEM(req, result.cert, result.key)
+	keyData, keyDesc, err := o.newKeyData(req, result.cert, result.key)
 	if err != nil {
 		return s.p.fail(&failure{code: exitProtocol, Title: "The response cannot be used", Message: err.Error()}, err)
 	}
@@ -256,7 +260,7 @@ func runESTEnroll(ctx context.Context, o *estEnrollOptions, p *printer, stdin io
 		err := errors.New("the certificate certifies another key than the request")
 		return s.p.fail(&failure{code: exitProtocol, Title: "The response cannot be used", Message: err.Error()}, err)
 	}
-	saved, err := o.save(result.cert, keyPEM)
+	saved, err := o.save(result.cert, keyData)
 	if err != nil {
 		return fmt.Errorf("the certificate was issued but could not be saved: %w", err)
 	}
@@ -336,14 +340,14 @@ func (o *estEnrollOptions) prepareRequest(renewed *x509.Certificate, stdin io.Re
 // oidSubjectAltName identifies the subjectAltName extension.
 var oidSubjectAltName = asn1.ObjectIdentifier{2, 5, 29, 17}
 
-// newKeyPEM returns the PEM form and description of the key to save with cert. It is the generated
+// newKeyData returns the encoded form and description of the key to save with cert. It is the generated
 // key or, for serverkeygen, the key from the server. It returns no key for --new-key and --csr.
-func (o *estEnrollOptions) newKeyPEM(req *estRequest, cert *x509.Certificate, serverKey []byte) ([]byte, string, error) {
+func (o *estEnrollOptions) newKeyData(req *estRequest, cert *x509.Certificate, serverKey []byte) ([]byte, string, error) {
 	if o.op != estServerKeyGen {
 		if o.keyOut == "" {
 			return nil, "", nil
 		}
-		data, err := keys.MarshalPEM(req.key)
+		data, err := o.format.key(req.key)
 		return data, keys.Describe(req.key.Public()), err
 	}
 	if !isPKCS8(serverKey) {
@@ -361,7 +365,7 @@ func (o *estEnrollOptions) newKeyPEM(req *estRequest, cert *x509.Certificate, se
 			desc = keys.Describe(signer.Public())
 		}
 	}
-	return pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: serverKey}), desc, nil
+	return o.format.block("PRIVATE KEY", serverKey), desc, nil
 }
 
 // isPKCS8 reports whether der is a PrivateKeyInfo or OneAsymmetricKey, which starts with a version
@@ -398,15 +402,15 @@ var keyAlgorithmNames = map[string]string{
 
 // save writes the key, then the certificate. It returns the paths written. The key comes first so
 // that a certificate file never exists without its key.
-func (o *estEnrollOptions) save(cert *x509.Certificate, keyPEM []byte) ([]string, error) {
+func (o *estEnrollOptions) save(cert *x509.Certificate, keyData []byte) ([]string, error) {
 	saved := []string{}
-	if keyPEM != nil {
-		if err := pemfile.Write(o.keyOut, keyPEM, 0o600, o.force); err != nil {
+	if keyData != nil {
+		if err := pemfile.Write(o.keyOut, keyData, 0o600, o.force); err != nil {
 			return saved, err
 		}
 		saved = append(saved, o.keyOut)
 	}
-	if err := pemfile.Write(o.certOut, pemfile.EncodeCertificates([]*x509.Certificate{cert}), 0o644, o.force); err != nil {
+	if err := pemfile.Write(o.certOut, o.format.certificate(cert), 0o644, o.force); err != nil {
 		return saved, err
 	}
 	return append(saved, o.certOut), nil

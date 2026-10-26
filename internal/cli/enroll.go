@@ -74,6 +74,8 @@ type certOutputs struct {
 	keyOut   string
 	chainOut string
 	force    bool
+	// format is the encoding of the files.
+	format outFormat
 }
 
 // newEnrollCommand returns the enroll command.
@@ -137,6 +139,7 @@ func newEnrollCommand() *cobra.Command {
 	f.StringVar(&o.certOut, "cert-out", "", "write the issued certificate to this file")
 	f.StringVar(&o.keyOut, "key-out", "", "write the generated private key to this file")
 	f.StringVar(&o.chainOut, "chain-out", "", "write the issuing CA certificates from the response to this file")
+	o.format.addFlags(cmd, formatPEM, outFormatChainHelp)
 	f.BoolVar(&o.force, "force", false, "replace existing output files")
 	f.StringVar(&o.certProfile, "cert-profile", "", "certificate profile to request")
 	f.Int64Var(&o.certReqID, "cert-req-id", 0,
@@ -209,6 +212,9 @@ func (o *enrollOptions) validate() error {
 		return errors.New("--key-out is required to save the generated key")
 	case !generated && o.keyOut != "":
 		return errors.New("--key-out is only used with a generated key")
+	}
+	if err := o.format.validate(); err != nil {
+		return err
 	}
 	if err := o.checkCapture(o.certOut, o.keyOut, o.chainOut); err != nil {
 		return err
@@ -575,12 +581,16 @@ func (o *certOutputs) save(cert *x509.Certificate, key crypto.Signer, chain []*x
 	if err != nil {
 		return saved, err
 	}
-	if err := pemfile.Write(o.certOut, pemfile.EncodeCertificates([]*x509.Certificate{cert}), 0o644, o.force); err != nil {
+	if err := pemfile.Write(o.certOut, o.format.certificate(cert), 0o644, o.force); err != nil {
 		return saved, err
 	}
 	saved = append(saved, o.certOut)
 	if o.chainOut != "" && len(chain) > 0 {
-		if err := pemfile.Write(o.chainOut, pemfile.EncodeCertificates(chain), 0o644, o.force); err != nil {
+		data, err := o.format.certificates(chain)
+		if err != nil {
+			return saved, err
+		}
+		if err := pemfile.Write(o.chainOut, data, 0o644, o.force); err != nil {
 			return saved, err
 		}
 		saved = append(saved, o.chainOut)
@@ -594,7 +604,7 @@ func (o *certOutputs) saveKey(key crypto.Signer) ([]string, error) {
 	if o.keyOut == "" || key == nil {
 		return []string{}, nil
 	}
-	data, err := keys.MarshalPEM(key)
+	data, err := o.format.key(key)
 	if err != nil {
 		return []string{}, err
 	}

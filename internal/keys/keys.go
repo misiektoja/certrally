@@ -116,11 +116,20 @@ func Describe(pub crypto.PublicKey) string {
 	return fmt.Sprintf("%T", pub)
 }
 
-// MarshalPEM encodes a private key as an unencrypted PKCS#8 PEM block.
-func MarshalPEM(key crypto.Signer) ([]byte, error) {
+// Marshal encodes a private key as unencrypted PKCS#8 DER.
+func Marshal(key crypto.Signer) ([]byte, error) {
 	der, err := compositex509.MarshalPKCS8PrivateKey(key)
 	if err != nil {
 		return nil, fmt.Errorf("encode private key: %w", err)
+	}
+	return der, nil
+}
+
+// MarshalPEM encodes a private key as an unencrypted PKCS#8 PEM block.
+func MarshalPEM(key crypto.Signer) ([]byte, error) {
+	der, err := Marshal(key)
+	if err != nil {
+		return nil, err
 	}
 	return pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), nil
 }

@@ -27,6 +27,7 @@ type keygenOptions struct {
 	sans    []string
 	force   bool
 	list    bool
+	format  outFormat
 }
 
 // newKeygenCommand returns the keygen command.
@@ -36,8 +37,8 @@ func newKeygenCommand() *cobra.Command {
 		Use:   "keygen --out FILE [flags]",
 		Short: "Generate a private key and optionally a certificate request",
 		Long: "Generate a private key, including ML-DSA and composite ML-DSA keys. It is saved as unencrypted " +
-			"PKCS#8 PEM with mode 0600. --csr-out also writes a PKCS#10 request for the key, for " +
-			"enroll --type p10cr --csr or for another CA. --list prints every key type.",
+			"PKCS#8 PEM with mode 0600. --out-format der saves DER instead. --csr-out also writes a PKCS#10 " +
+			"request for the key, for enroll --type p10cr --csr or for another CA. --list prints every key type.",
 		Example: "  certrally keygen --key-type ml-dsa-65 --out device.key\n" +
 			"  certrally keygen --out device.key --csr-out device.csr --subject CN=device-42",
 		Args: cobra.NoArgs,
@@ -55,6 +56,7 @@ func newKeygenCommand() *cobra.Command {
 	f.StringArrayVar(&o.sans, flagSAN, nil, "subject alternative name of the request (repeatable)")
 	f.BoolVar(&o.force, "force", false, "replace existing output files")
 	f.BoolVar(&o.list, "list", false, "list the key types and exit")
+	o.format.addFlags(cmd, formatPEM, outFormatHelp)
 	o.outputOptions.addFlags(cmd)
 	_ = cmd.RegisterFlagCompletionFunc("key-type", fixedCompletion(keys.TypeNames()))
 	for _, name := range []string{flagSubject, flagSAN} {
@@ -92,7 +94,7 @@ func runKeygen(o *keygenOptions, p *printer) error {
 	if err != nil {
 		return err
 	}
-	keyPEM, err := keys.MarshalPEM(key)
+	keyData, err := o.format.key(key)
 	if err != nil {
 		return err
 	}
@@ -101,12 +103,14 @@ func runKeygen(o *keygenOptions, p *printer) error {
 		return fmt.Errorf("encode public key: %w", err)
 	}
 	result := &keygenJSON{KeyType: o.keyType, Key: keys.Describe(key.Public()), PublicKey: pemString("PUBLIC KEY", pubDER)}
+	var csrData []byte
 	if o.csrOut != "" {
 		der, err := createCSR(subject, extensions, key, 0)
 		if err != nil {
 			return err
 		}
 		result.CSR = pemString("CERTIFICATE REQUEST", der)
+		csrData = o.format.block("CERTIFICATE REQUEST", der)
 	}
 
 	// The private key is written first, so that no request or public key exists without it.
@@ -114,7 +118,7 @@ func runKeygen(o *keygenOptions, p *printer) error {
 		path string
 		data []byte
 		perm fs.FileMode
-	}{{o.out, keyPEM, 0o600}, {o.pubOut, []byte(result.PublicKey), 0o644}, {o.csrOut, []byte(result.CSR), 0o644}}
+	}{{o.out, keyData, 0o600}, {o.pubOut, o.format.block("PUBLIC KEY", pubDER), 0o644}, {o.csrOut, csrData, 0o644}}
 	for _, out := range outputs {
 		if out.path == "" {
 			continue
@@ -140,6 +144,9 @@ func (o *keygenOptions) validate() error {
 		return errors.New("--subject and --san describe the request, so they need --csr-out")
 	case o.csrOut != "" && o.subject == "" && len(o.sans) == 0:
 		return errors.New("--csr-out needs --subject or --san")
+	}
+	if err := o.format.validate(); err != nil {
+		return err
 	}
 	stdoutUses := 0
 	for _, p := range []string{o.out, o.pubOut, o.csrOut} {
