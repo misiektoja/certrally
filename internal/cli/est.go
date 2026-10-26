@@ -53,10 +53,11 @@ func newESTCommand() *cobra.Command {
 			"EST runs over HTTPS. --server is the address of the server, such as https://est.example.com. " +
 			"To choose a CA on a server that offers several, add /.well-known/est/LABEL.\n\n" +
 			"A client signs in with a TLS client certificate (--cert and --key), with a password (--user) over " +
-			"HTTP Basic authentication or with both. With --srp, --user signs in with TLS-SRP (RFC 7030 " +
-			"section 3.3.3) instead, which also authenticates the server without a certificate. The password " +
-			"is read from --password-file, the " + secret.PasswordEnvVar + " environment variable or a prompt, " +
-			"never from the command line.",
+			"HTTP Basic authentication, with a bearer token (--token) or with a certificate and a password or " +
+			"token. With --srp, --user signs in with TLS-SRP (RFC 7030 section 3.3.3) instead, which also " +
+			"authenticates the server without a certificate. The password and the token are read from " +
+			"--password-file or --token-file, the " + secret.PasswordEnvVar + " or " + secret.TokenEnvVar +
+			" environment variable or a prompt, never from the command line.",
 	}
 	cmd.AddCommand(
 		newESTCACertsCommand(),
@@ -179,6 +180,10 @@ type estAuth struct {
 	keyPassword
 	// srp signs in with TLS-SRP instead of HTTP Basic authentication.
 	srp bool
+	// token signs in with a bearer token instead of a password. tokenFile names its file and implies
+	// token.
+	token     bool
+	tokenFile string
 }
 
 // addFlags registers the sign-in flags. certHelp describes --cert. Unless certAlone is set, --cert
@@ -192,14 +197,27 @@ func (a *estAuth) addFlags(cmd *cobra.Command, certHelp string, certAlone bool) 
 	a.keyPassword.addFlags(cmd)
 	f.BoolVar(&a.srp, "srp", false,
 		"sign in as --user with TLS-SRP, which also authenticates the server, instead of HTTP Basic authentication")
+	f.BoolVar(&a.token, flagToken, false, "sign in with a bearer token over HTTP Bearer authentication instead of --user")
+	f.StringVar(&a.tokenFile, flagTokenFile, "",
+		"read the bearer token from a file, or - for standard input, which implies --token")
 	if !certAlone {
 		cmd.MarkFlagsRequiredTogether("cert", "key")
 	}
 	// TLS-SRP authenticates the server with the password, so it has no certificate to check.
 	cmd.MarkFlagsMutuallyExclusive("srp", flagTLSCACert)
 	cmd.MarkFlagsMutuallyExclusive("srp", flagInsecure)
+	// A request carries one Authorization header, so a token and a password cannot both sign in.
+	cmd.MarkFlagsMutuallyExclusive(flagToken, "user")
+	cmd.MarkFlagsMutuallyExclusive(flagTokenFile, "user")
+	cmd.MarkFlagsMutuallyExclusive(flagTokenFile, "password-file")
 	_ = cmd.RegisterFlagCompletionFunc("user", cobra.NoFileCompletions)
 }
+
+// Flags of the bearer token sign-in.
+const (
+	flagToken     = "token"
+	flagTokenFile = "token-file"
+)
 
 // validate checks flags that only make sense together.
 func (a *estAuth) validate() error {
@@ -213,13 +231,18 @@ func (a *estAuth) validate() error {
 	case a.srp && a.keyFile != "":
 		return errors.New("--srp signs in without a TLS client certificate. Leave out --key")
 	}
-	return a.checkStdin("--password-file", a.passwordFile)
+	if err := a.checkStdin("--password-file", a.passwordFile); err != nil {
+		return err
+	}
+	return a.checkStdin("--token-file", a.tokenFile)
 }
 
 // estCredentials are the loaded sign-in credentials.
 type estCredentials struct {
 	user     string
 	password string
+	// token signs in with HTTP Bearer authentication instead of user and password.
+	token string
 	// srp signs in as user with TLS-SRP instead of HTTP Basic authentication.
 	srp bool
 	// chain is the --cert certificate followed by its chain. key signs in with it, when set.
@@ -242,6 +265,19 @@ func (a *estAuth) load(stdin io.Reader, prompt io.Writer) (*estCredentials, erro
 			return nil, err
 		}
 		creds.password = string(password)
+	}
+	if a.token || a.tokenFile != "" {
+		token, err := secret.Source{
+			Kind:      secret.Token,
+			File:      a.tokenFile,
+			LookupEnv: os.LookupEnv,
+			Stdin:     stdin,
+			Prompt:    prompt,
+		}.Read()
+		if err != nil {
+			return nil, err
+		}
+		creds.token = string(token)
 	}
 	if a.certFile != "" {
 		chain, err := pemfile.ReadCertificates(a.certFile)
@@ -332,6 +368,8 @@ func (c *estConnection) open(p *printer, creds *estCredentials) (*estSession, er
 	switch {
 	case creds.srp:
 		s.client.SRPUsername, s.client.SRPPassword = creds.user, creds.password
+	case creds.token != "":
+		s.client.BearerToken = creds.token
 	case creds.user != "":
 		s.client.Username, s.client.Password = creds.user, creds.password
 	}
@@ -586,10 +624,12 @@ func (s *estSession) refusalHint(status int) string {
 		switch {
 		case s.creds.user != "":
 			return "Check --user and the password."
+		case s.creds.token != "":
+			return "Check the token."
 		case s.creds.key != nil:
 			return "The server did not accept the client certificate. Try --user and a password."
 		}
-		return "Sign in with --user and a password, or with --cert and --key."
+		return "Sign in with --user and a password, with --token, or with --cert and --key."
 	case http.StatusForbidden:
 		return "The credentials are not authorized for this request."
 	case http.StatusRequestEntityTooLarge:

@@ -23,6 +23,9 @@ const PasswordEnvVar = "CERTRALLY_PASSWORD" //nolint:gosec // G101: the name of 
 // key file.
 const KeyPasswordEnvVar = "CERTRALLY_KEY_PASSWORD" //nolint:gosec // G101: the name of a variable, not a password.
 
+// TokenEnvVar is the environment variable that can hold the bearer token.
+const TokenEnvVar = "CERTRALLY_TOKEN" //nolint:gosec // G101: the name of a variable, not a token.
+
 // maxSize bounds how much is read from a secret file or standard input.
 const maxSize = 64 * 1024
 
@@ -44,6 +47,8 @@ var (
 	Password = Kind{Name: "password", EnvVar: PasswordEnvVar, Flag: "--password-file"}
 	// KeyPassword decrypts an encrypted private key file.
 	KeyPassword = Kind{Name: "key password", EnvVar: KeyPasswordEnvVar, Flag: "--key-password-file"}
+	// Token signs in to an EST server with HTTP Bearer authentication.
+	Token = Kind{Name: "token", EnvVar: TokenEnvVar, Flag: "--token-file"}
 )
 
 // Source says where the secret may come from. The first available source wins: File, then the
