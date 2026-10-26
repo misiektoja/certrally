@@ -29,7 +29,7 @@ certrally is a command line client for certificate enrollment with the Certifica
 
 * A live diagram of every message and plain explanations of failures
 * A step-by-step `enroll` that prints the matching command for scripts
-* RSA, ECDSA, Ed25519, ML-DSA and composite ML-DSA keys, also offline with `keygen`
+* RSA, ECDSA, Ed25519, ML-DSA, composite ML-DSA and ML-KEM keys, also offline with `keygen`
 * No trust setup: certrally trusts the CA it talks to or the one in `--ca-cert`
 * Warnings about responses that break the RFCs and a strict profile that rejects them
 * JSON output, capture files and exit statuses for scripts
@@ -193,6 +193,23 @@ certrally poll --transaction-id d503c4aad8beeb7b34b820adb1809771 \
 
 A poll that ends at `--timeout` while the CA still waits records the new state, so the same command can run again. An `enroll` whose polling ends at `--timeout` records the transaction the same way when it has `--capture`. `--server`, `--cert-out`, `--chain-out` and `--out-format` replace the values from the capture file. Once the CA issues the certificate or rejects the request, the transaction ends and `poll` refuses it. After other failures, such as a wrong shared secret, the same command can run again.
 
+### Enroll an ML-KEM key
+
+ML-KEM-768 and ML-KEM-1024 keys cannot sign, so they cannot prove possession of the private key with a signature. For them `enroll` proves possession by decryption instead (RFC 9810 section 5.2.8.3), with `ir`, `cr` and `kur`:
+
+```bash
+certrally enroll --server https://ca.example.com/.well-known/cmp \
+  --ref device-42 --secret-file secret.txt --subject CN=device-42 \
+  --key-type ml-kem-768 --cert-out device-kem.pem --key-out device-kem.key
+```
+
+* `--pop encrypted-cert`, the default, asks the CA to encrypt the certificate for the key. certrally decrypts it, and its `certConf` proves that it could.
+* `--pop challenge` asks the CA for a challenge encrypted for the key, which certrally answers before the CA issues the certificate.
+
+The CA must offer the method. `certrally mock --accept encrypted-cert-pop --accept challenge-pop` offers both. `--pop` with a key that can sign is an error, and a `p10cr` needs a key that signs. The result names the method in the `Proof of possession` field.
+
+The key is saved in the seed form of RFC 9935, which OpenSSL 3.5 and later read. `--new-key` takes the forms OpenSSL writes, but not a key saved without its seed. `poll` needs the key to decrypt a waiting certificate: it reads the file that `enroll` saved or read, or the file in `--new-key`.
+
 ### Trust the CA
 
 certrally needs no trust setup. It trusts the CA certificates in the first response from the server and the CA certificates in the `--cert` file, then checks every response against them. If a response does not carry the CA certificate that issued the new certificate, pass that certificate with `--ca-cert`.
@@ -274,7 +291,7 @@ certrally keygen --key-type ml-dsa-65 --out device.key \
   --csr-out device.csr --subject CN=device-42 --san device-42.example.com
 ```
 
-`--pub-out` also saves the public key. The key is saved like enroll keys, as unencrypted PKCS#8 PEM with mode 0600. `--out-format der` writes the key, the public key and the request as DER.
+`--pub-out` also saves the public key. The key is saved like enroll keys, as unencrypted PKCS#8 PEM with mode 0600. `--out-format der` writes the key, the public key and the request as DER. An ML-KEM key cannot sign a request, so `--csr-out` does not work with `--key-type ml-kem-768` or `ml-kem-1024`.
 
 ### Enroll over EST
 

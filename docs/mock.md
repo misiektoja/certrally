@@ -56,7 +56,7 @@ The failInfo names are those of RFC 9810 section 5.2.3, such as `badRequest`, `b
 | `encrypted-cert-pop` | the encrypted certificate proof of possession |
 | `challenge-pop` | the challenge-response proof of possession |
 
-`mac-revocation` authorizes every such request, because the test CA has no revocation policy of its own. `encrypted-cert-pop` and `challenge-pop` serve clients that prove possession without a signature. certrally always signs its proof of possession.
+`mac-revocation` authorizes every such request, because the test CA has no revocation policy of its own. `encrypted-cert-pop` and `challenge-pop` serve clients that prove possession without a signature, such as `enroll` with an ML-KEM key and `--pop encrypted-cert` or `--pop challenge`. The test CA certifies an ML-KEM key with keyEncipherment as its only key usage.
 
 ```bash
 certrally mock --strict --mac-iterations 100-10000 --accept sha1
