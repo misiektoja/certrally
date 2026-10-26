@@ -24,7 +24,6 @@ import (
 	srptls "github.com/misiektoja/go-tls-srp"
 	"github.com/spf13/cobra"
 
-	"github.com/misiektoja/certrally/internal/keys"
 	"github.com/misiektoja/certrally/internal/pemfile"
 	"github.com/misiektoja/certrally/internal/profile"
 	"github.com/misiektoja/certrally/internal/secret"
@@ -171,6 +170,7 @@ type estAuth struct {
 	passwordFile string
 	certFile     string
 	keyFile      string
+	keyPassword
 	// srp signs in with TLS-SRP instead of HTTP Basic authentication.
 	srp bool
 }
@@ -183,6 +183,7 @@ func (a *estAuth) addFlags(cmd *cobra.Command, certHelp string, certAlone bool) 
 	f.StringVar(&a.passwordFile, "password-file", "", "read the password from a file, or - for standard input")
 	f.StringVar(&a.certFile, "cert", "", certHelp)
 	f.StringVar(&a.keyFile, "key", "", "private key for --cert, to sign in with a TLS client certificate")
+	a.keyPassword.addFlags(cmd)
 	f.BoolVar(&a.srp, "srp", false,
 		"sign in as --user with TLS-SRP, which also authenticates the server, instead of HTTP Basic authentication")
 	if !certAlone {
@@ -206,7 +207,7 @@ func (a *estAuth) validate() error {
 	case a.srp && a.keyFile != "":
 		return errors.New("--srp signs in without a TLS client certificate. Leave out --key")
 	}
-	return nil
+	return a.checkStdin("--password-file", a.passwordFile)
 }
 
 // estCredentials are the loaded sign-in credentials.
@@ -244,13 +245,9 @@ func (a *estAuth) load(stdin io.Reader, prompt io.Writer) (*estCredentials, erro
 		creds.chain = chain
 	}
 	if a.keyFile != "" {
-		data, err := os.ReadFile(a.keyFile)
+		key, err := a.keyPassword.load(a.keyFile, stdin, prompt)
 		if err != nil {
 			return nil, err
-		}
-		key, err := keys.Parse(data)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", a.keyFile, err)
 		}
 		if _, composite := key.(*compositemldsa.PrivateKey); composite {
 			return nil, errors.New("TLS cannot sign in with a composite ML-DSA key. Use --user instead")

@@ -31,11 +31,12 @@ type pollOptions struct {
 	capture       string
 	server        string
 	secretFile    string
-	insecure      bool
-	timeout       time.Duration
-	certOut       string
-	chainOut      string
-	force         bool
+	keyPassword
+	insecure bool
+	timeout  time.Duration
+	certOut  string
+	chainOut string
+	force    bool
 }
 
 // newPollCommand returns the poll command.
@@ -69,6 +70,7 @@ func newPollCommand() *cobra.Command {
 	f.StringVar(&o.capture, "capture", "", "capture file of the enroll run, to which this run is appended")
 	f.StringVar(&o.server, flagServer, "", "address of the CMP server, when it is not the one enroll used")
 	f.StringVar(&o.secretFile, "secret-file", "", "read the shared secret from a file, or - for standard input")
+	o.keyPassword.addFlags(cmd)
 	f.BoolVar(&o.insecure, flagInsecure, false, insecureHelp)
 	f.DurationVar(&o.timeout, flagTimeout, 5*time.Minute, "limit for polling and the confirmation")
 	f.StringVar(&o.certOut, "cert-out", "", "write the issued certificate to this file instead of the one enroll named")
@@ -185,16 +187,18 @@ func (r *pendingRecord) trust() (*savedTrust, error) {
 	return &savedTrust{caCerts: caCerts, anchors: anchors, tlsRoots: tlsRoots}, nil
 }
 
-// protection returns the protection of the enroll run, with the shared secret read from secretFile.
-func (r *pendingRecord) protection(secretFile string) *protection {
+// protection returns the protection of the enroll run, with the shared secret read from secretFile
+// and the password of an encrypted key from password.
+func (r *pendingRecord) protection(secretFile string, password keyPassword) *protection {
 	return &protection{
-		ref:        r.Ref,
-		mac:        r.MAC,
-		secretFile: secretFile,
-		certFile:   r.Cert,
-		keyFile:    r.Key,
-		iterations: r.Iterations,
-		hash:       r.Hash,
+		ref:         r.Ref,
+		mac:         r.MAC,
+		secretFile:  secretFile,
+		certFile:    r.Cert,
+		keyFile:     r.Key,
+		keyPassword: password,
+		iterations:  r.Iterations,
+		hash:        r.Hash,
 	}
 }
 
@@ -285,6 +289,9 @@ func (o *pollOptions) connection(rec *pendingRecord) (*connection, error) {
 	if o.timeout <= 0 {
 		return nil, errors.New("--timeout must be positive")
 	}
+	if err := o.checkStdin("--secret-file", o.secretFile); err != nil {
+		return nil, err
+	}
 	if !slices.Contains(profile.Names, rec.Profile) {
 		return nil, fmt.Errorf("the transaction names an unknown profile %q", rec.Profile)
 	}
@@ -339,7 +346,7 @@ func runPoll(ctx context.Context, o *pollOptions, p *printer, stdin io.Reader) e
 	if err := checkOutputs(out.force, out.certOut, out.chainOut); err != nil {
 		return err
 	}
-	pr, err := rec.protection(o.secretFile).load(stdin, p.stderr)
+	pr, err := rec.protection(o.secretFile, o.keyPassword).load(stdin, p.stderr)
 	if err != nil {
 		return err
 	}

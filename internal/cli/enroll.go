@@ -13,7 +13,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -262,7 +261,7 @@ func runEnroll(ctx context.Context, o *enrollOptions, p *printer, stdin io.Reade
 		return err
 	}
 	e := &enrollment{protected: pr}
-	if err := o.prepareKey(e); err != nil {
+	if err := o.prepareKey(e, stdin, p.stderr); err != nil {
 		return err
 	}
 	if err := o.prepareTemplate(e, shape); err != nil {
@@ -432,8 +431,9 @@ func reportUnconfirmed(s *session, out certOutputs, confErr *client.Confirmation
 	return s.p.fail(f, confErr, fields...)
 }
 
-// prepareKey loads or generates the key to certify. With --csr it loads the request that carries the key.
-func (o *enrollOptions) prepareKey(e *enrollment) error {
+// prepareKey loads or generates the key to certify. With --csr it loads the request that carries the
+// key. The password of an encrypted --new-key may be prompted for on stdin.
+func (o *enrollOptions) prepareKey(e *enrollment, stdin io.Reader, prompt io.Writer) error {
 	switch {
 	case o.csr != "":
 		der, err := pemfile.ReadCSR(o.csr)
@@ -442,13 +442,9 @@ func (o *enrollOptions) prepareKey(e *enrollment) error {
 		}
 		e.csrDER = der
 	case o.newKey != "":
-		data, err := os.ReadFile(o.newKey)
+		key, err := o.keyPassword.load(o.newKey, stdin, prompt)
 		if err != nil {
 			return err
-		}
-		key, err := keys.Parse(data)
-		if err != nil {
-			return fmt.Errorf("%s: %w", o.newKey, err)
 		}
 		e.newKey = key
 	default:

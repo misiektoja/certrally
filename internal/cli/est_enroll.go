@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"time"
 
@@ -217,7 +216,7 @@ func runESTEnroll(ctx context.Context, o *estEnrollOptions, p *printer, stdin io
 		}
 		renewed = chain[0]
 	}
-	req, err := o.prepareRequest(renewed)
+	req, err := o.prepareRequest(renewed, stdin, p.stderr)
 	if err != nil {
 		return err
 	}
@@ -272,8 +271,9 @@ func runESTEnroll(ctx context.Context, o *estEnrollOptions, p *printer, stdin io
 }
 
 // prepareRequest builds the request. renewed is the certificate est reenroll renews, whose subject
-// and subjectAltName the request repeats as RFC 7030 section 4.2.2 requires.
-func (o *estEnrollOptions) prepareRequest(renewed *x509.Certificate) (*estRequest, error) {
+// and subjectAltName the request repeats as RFC 7030 section 4.2.2 requires. The password of an
+// encrypted --new-key may be prompted for on stdin.
+func (o *estEnrollOptions) prepareRequest(renewed *x509.Certificate, stdin io.Reader, prompt io.Writer) (*estRequest, error) {
 	req := &estRequest{}
 	switch {
 	case o.csr != "":
@@ -288,13 +288,9 @@ func (o *estEnrollOptions) prepareRequest(renewed *x509.Certificate) (*estReques
 		req.csr = csr
 		return req, nil
 	case o.newKey != "":
-		data, err := os.ReadFile(o.newKey)
+		key, err := o.keyPassword.load(o.newKey, stdin, prompt)
 		if err != nil {
 			return nil, err
-		}
-		key, err := keys.Parse(data)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", o.newKey, err)
 		}
 		req.key = key
 	default:

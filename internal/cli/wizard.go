@@ -724,14 +724,15 @@ func checkCertificates(s string) error {
 	return err
 }
 
-// checkKey checks that the file in s holds a private key.
+// checkKey checks that the file in s holds a private key. An encrypted key passes, because its
+// password is asked for when the request is sent.
 func checkKey(s string) error {
 	path := strings.TrimSpace(s)
 	data, err := os.ReadFile(path) //nolint:gosec // G304: the user names the file to read.
 	if err != nil {
 		return err
 	}
-	if _, err := keys.Parse(data); err != nil {
+	if _, err := keys.Parse(data); err != nil && !errors.Is(err, keys.ErrEncrypted) {
 		return fmt.Errorf("%s: %w", path, err)
 	}
 	return nil

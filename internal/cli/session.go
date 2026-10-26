@@ -173,6 +173,7 @@ type protection struct {
 	secretFile string
 	certFile   string
 	keyFile    string
+	keyPassword
 	extraCerts string
 	sender     string
 	// iterations is the MAC iteration count. Zero keeps the default of go-pki-cmp.
@@ -193,6 +194,7 @@ func (p *protection) addFlags(cmd *cobra.Command) {
 	f.StringVar(&p.secretFile, "secret-file", "", "read the shared secret from a file, or - for standard input")
 	f.StringVar(&p.certFile, "cert", "", "sign the request with this certificate file, which may include the chain")
 	f.StringVar(&p.keyFile, "key", "", "private key for --cert")
+	p.keyPassword.addFlags(cmd)
 	f.StringVar(&p.extraCerts, "extra-certs", "", "send the certificates in this file in extraCerts")
 	f.StringVar(&p.sender, "sender", "", "sender name in the request header")
 	f.IntVar(&p.iterations, "iterations", 0, "iteration count of the shared-secret MAC (default 10000)")
@@ -229,7 +231,7 @@ func (p *protection) validate() error {
 	case p.hash != "" && !p.signed() && p.mac != macPBM:
 		return errors.New("--hash with a shared secret needs --mac pbm, because PBMAC1 always uses SHA-256")
 	}
-	return nil
+	return p.checkStdin("--secret-file", p.secretFile)
 }
 
 // digest returns the digest that --hash names, or zero for the defaults.
@@ -272,13 +274,9 @@ func (p *protection) load(stdin io.Reader, prompt io.Writer) (*protected, error)
 		if err != nil {
 			return nil, err
 		}
-		keyData, err := os.ReadFile(p.keyFile)
+		key, err := p.keyPassword.load(p.keyFile, stdin, prompt)
 		if err != nil {
 			return nil, err
-		}
-		key, err := keys.Parse(keyData)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", p.keyFile, err)
 		}
 		creds, err := pkicmp.NewSignatureCredentials(key, chain[0], chain[1:]...)
 		if err != nil {

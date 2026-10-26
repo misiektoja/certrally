@@ -19,6 +19,10 @@ const EnvVar = "CERTRALLY_SECRET"
 // PasswordEnvVar is the environment variable that can hold the password.
 const PasswordEnvVar = "CERTRALLY_PASSWORD" //nolint:gosec // G101: the name of a variable, not a password.
 
+// KeyPasswordEnvVar is the environment variable that can hold the password of an encrypted private
+// key file.
+const KeyPasswordEnvVar = "CERTRALLY_KEY_PASSWORD" //nolint:gosec // G101: the name of a variable, not a password.
+
 // maxSize bounds how much is read from a secret file or standard input.
 const maxSize = 64 * 1024
 
@@ -38,6 +42,8 @@ var (
 	SharedSecret = Kind{Name: "shared secret", EnvVar: EnvVar, Flag: "--secret-file"}
 	// Password signs in to an EST server with HTTP Basic authentication or TLS-SRP.
 	Password = Kind{Name: "password", EnvVar: PasswordEnvVar, Flag: "--password-file"}
+	// KeyPassword decrypts an encrypted private key file.
+	KeyPassword = Kind{Name: "key password", EnvVar: KeyPasswordEnvVar, Flag: "--key-password-file"}
 )
 
 // Source says where the secret may come from. The first available source wins: File, then the

@@ -125,12 +125,21 @@ func MarshalPEM(key crypto.Signer) ([]byte, error) {
 	return pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), nil
 }
 
+// ErrEncrypted reports an encrypted PKCS#8 private key, which Parse cannot decode without its
+// password. The error Parse returns for one wraps it. ParseEncrypted decodes the key.
+var ErrEncrypted = errors.New("the private key is encrypted")
+
+// pemEncryptedPKCS8 is the PEM block type of an encrypted PKCS#8 key.
+const pemEncryptedPKCS8 = "ENCRYPTED PRIVATE KEY"
+
 // Parse decodes a private key from PEM or DER. It accepts PKCS#8 for every supported algorithm,
 // including ML-DSA and composite ML-DSA, and the older SEC 1 and PKCS#1 forms for ECDSA and RSA.
+// For an encrypted PKCS#8 key it returns an error that wraps ErrEncrypted. Keys encrypted the
+// legacy way, with Proc-Type PEM headers, are refused.
 func Parse(data []byte) (crypto.Signer, error) {
 	der, blockType := data, ""
 	if block, _ := pem.Decode(data); block != nil {
-		if strings.Contains(block.Type, "ENCRYPTED") || block.Headers["Proc-Type"] != "" {
+		if block.Headers["Proc-Type"] != "" {
 			return nil, errors.New("encrypted private keys are not supported")
 		}
 		der, blockType = block.Bytes, block.Type
@@ -143,14 +152,48 @@ func Parse(data []byte) (crypto.Signer, error) {
 		key, err = x509.ParseECPrivateKey(der)
 	case "RSA PRIVATE KEY":
 		key, err = x509.ParsePKCS1PrivateKey(der)
-	case "PRIVATE KEY", "":
+	case "PRIVATE KEY":
 		key, err = compositex509.ParsePKCS8PrivateKey(der)
+	case "":
+		if isEncryptedPKCS8(der) {
+			return nil, ErrEncrypted
+		}
+		key, err = compositex509.ParsePKCS8PrivateKey(der)
+	case pemEncryptedPKCS8:
+		return nil, ErrEncrypted
 	default:
 		return nil, fmt.Errorf("unexpected PEM block %q, want a private key", blockType)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("parse private key: %w", err)
 	}
+	return asSigner(key)
+}
+
+// ParseEncrypted decodes an encrypted PKCS#8 private key from PEM or DER with its password. It
+// accepts PBES2 with PBKDF2 and AES in CBC mode, the form that openssl pkcs8 -topk8 writes.
+func ParseEncrypted(data, password []byte) (crypto.Signer, error) {
+	der := data
+	if block, _ := pem.Decode(data); block != nil {
+		if block.Type != pemEncryptedPKCS8 {
+			return nil, fmt.Errorf("unexpected PEM block %q, want %s", block.Type, pemEncryptedPKCS8)
+		}
+		der = block.Bytes
+	}
+	plain, err := decryptPKCS8(der, password)
+	if err != nil {
+		return nil, err
+	}
+	key, err := compositex509.ParsePKCS8PrivateKey(plain)
+	if err != nil {
+		// A wrong password usually leaves padding that passes by chance only once in 256 tries.
+		return nil, errWrongPassword
+	}
+	return asSigner(key)
+}
+
+// asSigner returns key as a crypto.Signer.
+func asSigner(key any) (crypto.Signer, error) {
 	signer, ok := key.(crypto.Signer)
 	if !ok {
 		return nil, fmt.Errorf("a %T cannot sign", key)
