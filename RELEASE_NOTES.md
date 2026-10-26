@@ -4,11 +4,12 @@ Notable changes to certrally. Versions follow the `vMAJOR.MINOR.PATCH` tags publ
 
 ## v0.2.0 - TBD
 
-This release adds collecting a waiting certificate in a later run, implicit confirmation, revocation by serial number with an invalidity date, key usages and templates copied from an existing certificate, flags that shape a request the way a test scenario needs, fault flags that make the test CA delay, reject and relax its checks and `--insecure` for test servers with untrusted TLS certificates.
+This release adds collecting a waiting certificate in a later run, implicit confirmation, revocation by serial number with an invalidity date, key usages and templates copied from an existing certificate, flags that shape a request the way a test scenario needs, fault flags that make the test CA delay, reject and relax its checks, `--insecure` for test servers with untrusted TLS certificates and encrypted private key files.
 
 ### CMP and EST
 
 * **`--insecure`** skips the check of the TLS certificate of the server on every command that talks to a server, for a test server with a self-signed certificate. certrally warns that anyone who intercepts the connection can pose as the server and records the flag in the capture file. It cannot be combined with `--tls-ca-cert`.
+* **Encrypted private keys.** `--key` and `--new-key` take a PKCS#8 key encrypted the way `openssl pkcs8 -topk8` writes it, PBES2 with PBKDF2 and AES. The password comes from **`--key-password-file`** (`-` reads standard input), the `CERTRALLY_KEY_PASSWORD` environment variable or a prompt on a terminal. `poll` takes the same flag for the signing key of the enroll run. A key encrypted with `Proc-Type` PEM headers is still refused.
 
 ### CMP
 
