@@ -298,15 +298,12 @@ func runMock(cmd *cobra.Command, o *mockOptions) error {
 	if err != nil {
 		return err
 	}
-	p := newPrinter(cmd, outputOptions{})
-	log := &mockLog{p: p}
 	faultCA := &faultCA{
 		MockCA:              ca,
 		waiting:             o.waiting,
 		checkAfter:          o.checkAfter,
 		reject:              flt.reject,
 		authorizeRevocation: slices.Contains(o.accept, "mac-revocation"),
-		log:                 log.print,
 		pending:             map[string]*pendingDecision{},
 	}
 	opts := []server.Option{
@@ -332,6 +329,7 @@ func runMock(cmd *cobra.Command, o *mockOptions) error {
 			return err
 		}
 	}
+	p := newPrinter(cmd, outputOptions{})
 	url, remote := mockURL(ln.Addr())
 	o.report(p, url, ca.Cert(), sec)
 	if remote {
@@ -341,9 +339,8 @@ func runMock(cmd *cobra.Command, o *mockOptions) error {
 	mux := http.NewServeMux()
 	mux.Handle(mockPath, srv)
 	mux.Handle(mockPath+"/", srv)
-	log.next = mux
 	httpSrv := &http.Server{
-		Handler:           log,
+		Handler:           &mockLog{next: mux, p: p},
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -479,9 +476,7 @@ type faultCA struct {
 	// authorizeRevocation allows revocation requests that are not signed with the certificate they
 	// revoke.
 	authorizeRevocation bool
-	// log prints a line of the request log.
-	log func(string)
-	mu  sync.Mutex
+	mu                  sync.Mutex
 	// pending holds the delayed requests by pollRef.
 	pending map[string]*pendingDecision
 	nextRef int
@@ -501,13 +496,13 @@ func (c *faultCA) IssueCertificate(ctx context.Context, reqType server.RequestTy
 }
 
 // RevokeCertificate revokes the certificate, after the configured polls, unless every request is rejected.
-// A revocation is logged with what the request asked for.
+// A revocation is noted in the request log with what the request asked for.
 func (c *faultCA) RevokeCertificate(ctx context.Context, req *server.RevocationRequest, sender *server.SenderIdentity) error {
 	resp, err := c.delay(ctx, func(ctx context.Context) (*server.Response, error) {
 		if err := c.MockCA.RevokeCertificate(ctx, req, sender); err != nil {
 			return nil, err
 		}
-		c.log(describeRevocation(req))
+		addMockNote(ctx, describeRevocation(req))
 		return nil, nil
 	})
 	if resp != nil && resp.Waiting != nil {
@@ -519,8 +514,7 @@ func (c *faultCA) RevokeCertificate(ctx context.Context, req *server.RevocationR
 // describeRevocation names a revoked certificate by its serial number and the reason, with the
 // invalidity date when the request gave one.
 func describeRevocation(req *server.RevocationRequest) string {
-	line := fmt.Sprintf("%s  revoked  serial %s  %s",
-		time.Now().Format(time.TimeOnly), hexBytes(req.SerialNumber.Bytes()), req.Reason)
+	line := fmt.Sprintf("revoked  serial %s  %s", hexBytes(req.SerialNumber.Bytes()), req.Reason)
 	if !req.InvalidityDate.IsZero() {
 		line += "  invalidity date " + req.InvalidityDate.UTC().Format(time.RFC3339)
 	}
@@ -583,12 +577,34 @@ func (c *faultCA) CheckPending(ctx context.Context, pollRef string, _ *server.Se
 	return d.decide(ctx)
 }
 
-// mockLog prints one line for every request the mock CA answers.
+// mockLog prints one line for every request the mock CA answers, followed by the notes the CA
+// added while it handled the request.
 type mockLog struct {
 	next http.Handler
 	p    *printer
 	// mu keeps the lines of concurrent requests apart.
 	mu sync.Mutex
+}
+
+// mockNotes collects what the CA did for one request, such as a revocation, for the request log.
+type mockNotes struct {
+	mu    sync.Mutex
+	lines []string
+}
+
+// mockNotesKey is the context key of the mockNotes of a request.
+type mockNotesKey struct{}
+
+// addMockNote adds a line to the request log below the request that ctx belongs to. A context
+// without a request log, such as one of a test, drops the note.
+func addMockNote(ctx context.Context, line string) {
+	notes, ok := ctx.Value(mockNotesKey{}).(*mockNotes)
+	if !ok {
+		return
+	}
+	notes.mu.Lock()
+	defer notes.mu.Unlock()
+	notes.lines = append(notes.lines, line)
 }
 
 // ServeHTTP answers the request and prints what was asked and answered.
@@ -600,18 +616,24 @@ func (l *mockLog) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r.Body = io.NopCloser(bytes.NewReader(body))
+	notes := &mockNotes{}
+	r = r.WithContext(context.WithValue(r.Context(), mockNotesKey{}, notes))
 	rec := &responseCapture{ResponseWriter: w, status: http.StatusOK}
 	l.next.ServeHTTP(rec, r)
 
-	l.print(fmt.Sprintf("%s  %s  ->  %s  %s", start.Format(time.TimeOnly),
-		describeRequest(r, body), describeResponse(rec), formatRTT(time.Since(start))))
-}
-
-// print writes one line of the request log, keeping the lines of concurrent requests apart.
-func (l *mockLog) print(line string) {
+	stamp := start.Format(time.TimeOnly)
+	lines := []string{fmt.Sprintf("%s  %s  ->  %s  %s", stamp,
+		describeRequest(r, body), describeResponse(rec), formatRTT(time.Since(start)))}
+	// The notes are indented to the column of the request, below the time.
+	indent := strings.Repeat(" ", len(stamp)+2)
+	for _, note := range notes.lines {
+		lines = append(lines, indent+note)
+	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.p.line(line)
+	for _, line := range lines {
+		l.p.line(line)
+	}
 }
 
 // describeRequest names a request by its body type, protection and sender, or by method and path
