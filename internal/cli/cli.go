@@ -19,6 +19,9 @@ import (
 // programName is the name of the command and of the client in ladders and capture files.
 const programName = "certrally"
 
+// readBuildInfo returns the build information of the binary. Tests replace it to stamp a version.
+var readBuildInfo = debug.ReadBuildInfo
+
 // Run executes the command line in args and returns the process exit status.
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	// Help and usage errors are rendered before any command hook runs, so the colour mode has to be
@@ -34,10 +37,11 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	root.SetErr(stderr)
 
 	opts := []fang.Option{fang.WithErrorHandler(handleError)}
-	if info, ok := debug.ReadBuildInfo(); ok {
+	if info, ok := readBuildInfo(); ok {
 		version, commit := buildVersion(info)
 		if version != "" {
 			opts = append(opts, fang.WithVersion(version), fang.WithCommit(commit))
+			root.Long = rootDescription(version)
 		}
 	}
 	if err := fang.Execute(ctx, root, opts...); err != nil {
@@ -68,7 +72,7 @@ func writeUsageJSON(w io.Writer, root *cobra.Command, args []string, err error) 
 
 // toolVersion returns the version stamped into the binary. It returns "" when there is none.
 func toolVersion() string {
-	info, ok := debug.ReadBuildInfo()
+	info, ok := readBuildInfo()
 	if !ok {
 		return ""
 	}
@@ -86,16 +90,26 @@ func handleError(w io.Writer, styles fang.Styles, err error) {
 	fang.DefaultErrorHandler(w, styles, err)
 }
 
+// rootDescription returns the long help of the root command. A non-empty version is named in its
+// first sentence, so that help output shows which build it describes.
+func rootDescription(version string) string {
+	name := programName
+	if version != "" {
+		name += " " + version
+	}
+	return name + " is a certificate enrollment client for the Certificate Management Protocol (CMP) and " +
+		"Enrollment over Secure Transport (EST).\n\n" +
+		"It shows each exchange as a ladder diagram and explains failures. The CMP commands trust the CA " +
+		"that answers their first request, unless --ca-cert names the CA to expect. The EST commands run " +
+		"under certrally est."
+}
+
 // newRootCommand returns the certrally command with its global flags.
 func newRootCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   programName,
 		Short: "Certificate enrollment client for CMP and EST",
-		Long: "certrally is a certificate enrollment client for the Certificate Management Protocol (CMP) and " +
-			"Enrollment over Secure Transport (EST).\n\n" +
-			"It shows each exchange as a ladder diagram and explains failures. The CMP commands trust the CA " +
-			"that answers their first request, unless --ca-cert names the CA to expect. The EST commands run " +
-			"under certrally est.",
+		Long:  rootDescription(""),
 	}
 	cmd.AddCommand(
 		newEnrollCommand(),
