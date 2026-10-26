@@ -69,7 +69,7 @@ func startESTServer(t *testing.T, ca *estca.CA, h http.Handler, configure func(*
 		}
 	}
 	if h == nil {
-		router, err := newESTMockRouter(ca, estTestUser, []byte(estTestPassword))
+		router, err := newESTMockRouter(ca, estTestUser, []byte(estTestPassword), nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -698,6 +698,7 @@ func TestESTMockErrors(t *testing.T) {
 	}{
 		{[]string{"--user", ""}, "--user must not be empty"},
 		{[]string{"--retry-after", "-1"}, "--retry-after must not be negative"},
+		{[]string{"--password-file", "-", "--token-file", "-"}, "--password-file and --token-file cannot both read standard input"},
 		{[]string{"--listen", "127.0.0.1:0", "--srp-listen", "127.0.0.1:99999", "--ca-out", caOut}, "--srp-listen"},
 	}
 	for _, tt := range tests {
@@ -734,6 +735,11 @@ func TestESTUsageErrors(t *testing.T) {
 		{append([]string{"est", "csrattrs", "--srp", "--user", "u", "--cert", out("c"), "--key", out("k")}, server...), "Leave out --key"},
 		{append([]string{"est", "cacerts", "--bootstrap", "--srp", "--user", "u"}, server...), "none of the others can be"},
 		{append([]string{"est", "csrattrs", "--password-file", out("p")}, server...), "--password-file needs --user"},
+		{append([]string{"est", "csrattrs", "--token", "--user", "u"}, server...), "none of the others can be"},
+		{append([]string{"est", "csrattrs", "--token-file", out("t"), "--user", "u", "--password-file", out("p")}, server...), "none of the others can be"},
+		{append([]string{"est", "csrattrs", "--token-file", "-", "--cert", out("c"), "--key", out("k"), "--key-password-file", "-"}, server...),
+			"--token-file and --key-password-file cannot both read standard input"},
+		{append([]string{"est", "csrattrs", "--token"}, server...), "no token: use --token-file"},
 		{[]string{"est", "csrattrs", "--server", "https://127.0.0.1:1", "--timeout", "0s"}, "--timeout must be positive"},
 		{[]string{"est", "csrattrs", "--server", "https://127.0.0.1:1", "--profile", "loose"}, "invalid --profile"},
 		{[]string{"est", "csrattrs", "--server", "http://127.0.0.1:1"}, "is not an https URL"},
