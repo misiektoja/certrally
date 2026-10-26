@@ -67,6 +67,15 @@ func TestESTToken(t *testing.T) {
 			t.Errorf("exit %d, requests %q, error %v", code, estRequestOperations(doc), doc["error"])
 		}
 	})
+	t.Run("reenroll without key and a wrong token", func(t *testing.T) {
+		useToken(t, "wrong")
+		code, doc := runJSON(t, "est", "reenroll", "--server", m.url, "--tls-ca-cert", caOut, "--token",
+			"--cert", filepath.Join(dir, "file.pem"), "--cert-out", filepath.Join(dir, "refused.pem"),
+			"--key-out", filepath.Join(dir, "refused.key"))
+		if code != exitRejected || get(doc, "error.httpStatus") != float64(http.StatusUnauthorized) {
+			t.Errorf("exit %d, error %v", code, doc["error"])
+		}
+	})
 	t.Run("environment", func(t *testing.T) {
 		useToken(t, estTestToken)
 		if code, doc := enroll(t, "env", "--token"); code != exitOK {
