@@ -162,7 +162,7 @@ Notes:
 * `--template-cert device.pem` copies the subject, subjectAltName, keyUsage and extendedKeyUsage of an existing certificate, to request one shaped like a certificate the CA already issued. `--subject`, `--san`, `--key-usage` and `--ext-key-usage` replace the part they set. A `kur` already repeats the certificate in `--cert`, so it does not take `--template-cert`. A `p10cr` built by certrally carries these extensions in its PKCS#10 request. A request given with `--csr` cannot be changed.
 * `--implicit-confirm` asks the CA for implicit confirmation, as RFC 9483 recommends. A CA that grants it repeats `implicitConfirm` in its response and certrally skips the `certConf` exchange, so the run ends with the response. A CA that wants the confirmation leaves it out and certrally confirms as usual. The result says which happened.
 * `--hash`, `--iterations` and `--general-info` also apply to `revoke` and the `genm` commands.
-* Private keys are written as unencrypted PKCS#8 PEM with mode 0600. `certrally keygen --list` prints the key types.
+* Private keys are written as unencrypted PKCS#8 PEM with mode 0600. `certrally keygen --list` prints the key types. `--out-format der` writes DER instead of PEM: the certificate as is, the key as PKCS#8 and `--chain-out` as PKCS#7.
 * `--key` and `--new-key` also take an encrypted PKCS#8 key, as `openssl pkcs8 -topk8` writes it (PBES2 with PBKDF2 and AES). The password comes from `--key-password-file` (`-` reads standard input), the `CERTRALLY_KEY_PASSWORD` environment variable or a prompt on a terminal, in that order. A key encrypted the older way, with `Proc-Type` headers in the PEM file, is not supported. `openssl pkcs8 -topk8 -in old.key -out device.p8` converts one.
 
 ### Collect a certificate later
@@ -191,7 +191,7 @@ certrally poll --transaction-id d503c4aad8beeb7b34b820adb1809771 \
   --capture device.jsonl --secret-file secret.txt
 ```
 
-A poll that ends at `--timeout` while the CA still waits records the new state, so the same command can run again. An `enroll` whose polling ends at `--timeout` records the transaction the same way when it has `--capture`. `--server`, `--cert-out` and `--chain-out` replace the values from the capture file. Once the CA issues the certificate or rejects the request, the transaction ends and `poll` refuses it. After other failures, such as a wrong shared secret, the same command can run again.
+A poll that ends at `--timeout` while the CA still waits records the new state, so the same command can run again. An `enroll` whose polling ends at `--timeout` records the transaction the same way when it has `--capture`. `--server`, `--cert-out`, `--chain-out` and `--out-format` replace the values from the capture file. Once the CA issues the certificate or rejects the request, the transaction ends and `poll` refuses it. After other failures, such as a wrong shared secret, the same command can run again.
 
 ### Trust the CA
 
@@ -236,7 +236,7 @@ certrally cacerts --server https://ca.example.com/.well-known/cmp --ref device-4
 | `cmp genm crlupdate --crl ca.crl` | A CRL newer than `ca.crl`. `--crl-issuer ca.pem` asks for any CRL from that CA instead |
 | `cmp genm raw caCerts` | The answer to any info types, given by name or as dotted OIDs |
 
-`--out -` writes the certificates or the CRL to standard output and moves the summary to standard error.
+`--out -` writes the certificates or the CRL to standard output and moves the summary to standard error. `--out-format der` writes DER, with several certificates as PKCS#7.
 
 ### Check a server
 
@@ -272,7 +272,7 @@ certrally keygen --key-type ml-dsa-65 --out device.key \
   --csr-out device.csr --subject CN=device-42 --san device-42.example.com
 ```
 
-`--pub-out` also saves the public key. The key is saved like enroll keys, as unencrypted PKCS#8 PEM with mode 0600.
+`--pub-out` also saves the public key. The key is saved like enroll keys, as unencrypted PKCS#8 PEM with mode 0600. `--out-format der` writes the key, the public key and the request as DER.
 
 ### Enroll over EST
 
@@ -299,6 +299,8 @@ A client signs in with one of these:
 * **A password** over HTTP Basic authentication with `--user`. The password comes from `--password-file` (`-` reads standard input), the `CERTRALLY_PASSWORD` environment variable or a prompt on a terminal, in that order.
 * **A TLS client certificate** with `--cert` and `--key`. `est reenroll --cert device.pem --key device.key` renews a certificate this way. Without `--key`, renewal signs in with `--user` instead, as RFC 7030 section 2.3 allows for certificates that cannot be used for TLS. An encrypted `--key` or `--new-key` takes its password from `--key-password-file`, `CERTRALLY_KEY_PASSWORD` or a prompt, like for CMP.
 * **TLS-SRP** with `--srp` and `--user`. The password then authenticates both sides over TLS 1.2, so the server needs no certificate and `--srp` cannot be combined with `--tls-ca-cert`.
+
+`--out-format der` writes `--cert-out` and `--key-out` as DER and `est cacerts --out` as PKCS#7, like the CMP commands.
 
 The server certificate is checked against the system roots or against the CA certificates in `--tls-ca-cert`. `--insecure` skips that check, for a test server, and warns that anyone who intercepts the connection can pose as the server. When nothing can check the certificate yet, `est cacerts --bootstrap` connects without the check (RFC 7030 section 4.1.1). It saves the certificates only after the fingerprint matches `--fingerprint` or a person confirms it on a terminal:
 

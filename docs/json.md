@@ -170,7 +170,7 @@ A certificate in a result has `subject`, `issuer`, `serial`, `notBefore`, `notAf
 
 1. A `start` line with `format` (currently 1), `tool`, `version`, `command`, `server` and `time`. A run of an EST command adds `protocol` with the value `est`. A run with `--insecure` adds `insecure` with the value `true`, because it did not check the TLS certificate of the server.
 2. One [message record](#message-records) per request, response, failure or EST connection, including `der`.
-3. A `transaction` line with `time`, `id`, `state` and `resume` when the run leaves a waiting transaction for `poll` (`state` is `waiting`) or `poll` ends one (`ended`). `id` is the transaction ID. `resume` holds what `poll` needs: the server, the protection settings and the names of their files, the trusted CA certificates, the output files and the state of the CMP transaction. It holds no secret or private key. `poll` uses the last line of a transaction.
+3. A `transaction` line with `time`, `id`, `state` and `resume` when the run leaves a waiting transaction for `poll` (`state` is `waiting`) or `poll` ends one (`ended`). `id` is the transaction ID. `resume` holds what `poll` needs: the server, the protection settings and the names of their files, the trusted CA certificates, the output files with their format and the state of the CMP transaction. It holds no secret or private key. `poll` uses the last line of a transaction.
 4. An `end` line with `time` and `exitStatus`.
 
 Each run appends its own lines, so one file can hold several runs. Readers should skip lines of other kinds, which later versions may add. `--capture` works together with `--json` and `--quiet`. `certrally inspect` and `certrally lint` read capture files.

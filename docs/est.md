@@ -12,7 +12,7 @@ When the server answers that a request is pending, `est enroll`, `est reenroll` 
 
 ## Server-generated keys
 
-`est serverkeygen` saves an unencrypted server key like other keys, as PKCS#8 PEM with mode 0600. It cannot decrypt a key the server encrypts.
+`est serverkeygen` saves an unencrypted server key like other keys, as PKCS#8 PEM with mode 0600. `--out-format der` saves it as PKCS#8 DER. It cannot decrypt a key the server encrypts.
 
 ## Test CA
 
