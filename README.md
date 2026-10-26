@@ -201,6 +201,8 @@ To make sure you talk to a particular CA, name its certificate with `--ca-cert c
 
 Over HTTPS the server is checked against the system roots or against the CA certificates in `--tls-ca-cert`. `--insecure` skips that check, for a test server with a self-signed certificate. certrally then warns that anyone who intercepts the connection can pose as the server, and the capture file records it. `--insecure` cannot be combined with `--tls-ca-cert`. Over plain HTTP nothing authenticates the first response, so use `--ca-cert` there unless you trust the network.
 
+certrally connects through the proxy that the `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` environment variables name, like other HTTP clients. `--proxy http://proxy.example.com:3128` names a proxy on the command line instead, on every command that talks to a server. An `https` proxy works too, and credentials in the URL are sent to the proxy.
+
 ### Revoke a certificate
 
 RFC 9483 signs a revocation request with the certificate being revoked:
@@ -301,6 +303,8 @@ A client signs in with one of these:
 * **TLS-SRP** with `--srp` and `--user`. The password then authenticates both sides over TLS 1.2, so the server needs no certificate and `--srp` cannot be combined with `--tls-ca-cert`.
 
 `--out-format der` writes `--cert-out` and `--key-out` as DER and `est cacerts --out` as PKCS#7, like the CMP commands.
+
+`--proxy` and the proxy environment variables work like for CMP. The EST commands tunnel through the proxy with CONNECT, so TLS-SRP and `--tls-unique` work through it.
 
 The server certificate is checked against the system roots or against the CA certificates in `--tls-ca-cert`. `--insecure` skips that check, for a test server, and warns that anyone who intercepts the connection can pose as the server. When nothing can check the certificate yet, `est cacerts --bootstrap` connects without the check (RFC 7030 section 4.1.1). It saves the certificates only after the fingerprint matches `--fingerprint` or a person confirms it on a terminal:
 
