@@ -191,6 +191,29 @@ func TestBuildVersion(t *testing.T) {
 	}
 }
 
+// TestRunHelpVersion checks that the root help names the stamped version and leaves it out when there is none.
+func TestRunHelpVersion(t *testing.T) {
+	isolateColorEnv(t)
+	t.Cleanup(func() { readBuildInfo = debug.ReadBuildInfo })
+	tests := []struct {
+		name, version, want string
+	}{
+		{"release tag", "v0.2.0", "certrally v0.2.0 is a certificate enrollment client"},
+		{"development build", "(devel)", "certrally is a certificate enrollment client"},
+	}
+	for _, tt := range tests {
+		readBuildInfo = func() (*debug.BuildInfo, bool) {
+			return &debug.BuildInfo{Main: debug.Module{Version: tt.version}}, true
+		}
+		for _, args := range [][]string{nil, {"--help"}} {
+			code, out, _ := run(t, args...)
+			if code != 0 || !strings.Contains(removeSpace(out), removeSpace(tt.want)) {
+				t.Errorf("%s: %q exited with %d and printed %q, want %q", tt.name, args, code, out, tt.want)
+			}
+		}
+	}
+}
+
 // TestCommandHelp checks that every command has help and that the root help lists the top-level ones.
 func TestCommandHelp(t *testing.T) {
 	isolateColorEnv(t)
