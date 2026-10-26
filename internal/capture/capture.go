@@ -71,6 +71,10 @@ type Transaction struct {
 // ErrNoTransaction reports a capture file without a line for the transaction ID asked for.
 var ErrNoTransaction = errors.New("no such transaction")
 
+// ErrNotWaiting reports a capture file that holds messages of the transaction ID asked for but no
+// transaction line, because the run that started the transaction also ended it.
+var ErrNotWaiting = errors.New("transaction did not wait")
+
 // Writer appends one run to a capture file.
 type Writer struct {
 	mu   sync.Mutex
@@ -138,7 +142,8 @@ func (w *Writer) write(v any) error {
 }
 
 // FindTransaction returns the last line of the capture file at path for the transaction id, which
-// holds its latest state. It returns ErrNoTransaction when the file has none.
+// holds its latest state. It returns ErrNotWaiting when the file has messages of the transaction but
+// no line for it and ErrNoTransaction when the file has neither.
 func FindTransaction(path, id string) (*Transaction, error) {
 	f, err := os.Open(path) //nolint:gosec // G304: the user names the file.
 	if err != nil {
@@ -146,17 +151,23 @@ func FindTransaction(path, id string) (*Transaction, error) {
 	}
 	defer func() { _ = f.Close() }()
 	var found *Transaction
+	seen := false
 	r := bufio.NewReader(f)
 	for n := 1; ; n++ {
 		text, err := r.ReadBytes('\n')
 		if text = bytes.TrimSpace(text); len(text) > 0 {
-			var line Transaction
+			var line struct {
+				Transaction
+				// MessageID is the transaction ID of a message line.
+				MessageID string `json:"transactionId"`
+			}
 			if jsonErr := json.Unmarshal(text, &line); jsonErr != nil {
 				return nil, fmt.Errorf("%s:%d: not a capture line: %w", path, n, jsonErr)
 			}
 			if line.Kind == "transaction" && line.ID == id {
-				found = &line
+				found = &line.Transaction
 			}
+			seen = seen || line.MessageID == id
 		}
 		if errors.Is(err, io.EOF) {
 			break
@@ -165,8 +176,12 @@ func FindTransaction(path, id string) (*Transaction, error) {
 			return nil, fmt.Errorf("%s: %w", path, err)
 		}
 	}
-	if found == nil {
+	switch {
+	case found != nil:
+		return found, nil
+	case seen:
+		return nil, ErrNotWaiting
+	default:
 		return nil, ErrNoTransaction
 	}
-	return found, nil
 }

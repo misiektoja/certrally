@@ -246,6 +246,9 @@ func readPendingRecord(path, id string) (*pendingRecord, error) {
 	switch {
 	case errors.Is(err, capture.ErrNoTransaction):
 		return nil, fmt.Errorf("%s holds no transaction %s. Pass the --capture file of the enroll run", path, id)
+	case errors.Is(err, capture.ErrNotWaiting):
+		return nil, fmt.Errorf("transaction %s did not wait for the CA, so there is nothing to collect. "+
+			"The enroll run reported its outcome", id)
 	case err != nil:
 		return nil, fmt.Errorf("--capture: %w", err)
 	case t.State == capture.TransactionEnded:
