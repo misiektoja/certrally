@@ -59,6 +59,14 @@ func TestESTToken(t *testing.T) {
 			t.Error("the certificate has another subject")
 		}
 	})
+	t.Run("reenroll without key", func(t *testing.T) {
+		code, doc := runJSON(t, "est", "reenroll", "--server", m.url, "--tls-ca-cert", caOut, "--token-file", tokenFile,
+			"--cert", filepath.Join(dir, "file.pem"), "--cert-out", filepath.Join(dir, "renewed.pem"),
+			"--key-out", filepath.Join(dir, "renewed.key"))
+		if code != exitOK || estRequestOperations(doc) != "simplereenroll" {
+			t.Errorf("exit %d, requests %q, error %v", code, estRequestOperations(doc), doc["error"])
+		}
+	})
 	t.Run("environment", func(t *testing.T) {
 		useToken(t, estTestToken)
 		if code, doc := enroll(t, "env", "--token"); code != exitOK {

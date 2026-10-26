@@ -729,7 +729,7 @@ func TestESTUsageErrors(t *testing.T) {
 			"--key-out is only used with a new key"},
 		{append([]string{"est", "enroll", "--subject", "CN=x", "--cert-out", out("c")}, server...), "--key-out is required"},
 		{append([]string{"est", "reenroll", "--cert", out("c0"), "--cert-out", out("c"), "--key-out", out("k")}, server...),
-			"renewing without --key needs --user"},
+			"renewing without --key needs --user or --token"},
 		{append([]string{"est", "csrattrs", "--srp"}, server...), "--srp needs --user"},
 		{append([]string{"est", "csrattrs", "--srp", "--user", "u", "--tls-ca-cert", out("ca")}, server...), "none of the others can be"},
 		{append([]string{"est", "csrattrs", "--srp", "--user", "u", "--cert", out("c"), "--key", out("k")}, server...), "Leave out --key"},
