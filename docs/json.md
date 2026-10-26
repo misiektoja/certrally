@@ -131,7 +131,7 @@ A certificate in a result has `subject`, `issuer`, `serial`, `notBefore`, `notAf
 | `cmp genm raw` | `items`, each with `infoType`, `oid` and `value` |
 | `ping` | `sent`, `answered`, `sender`, `protection`, `rttMs` with `min`, `avg` and `max`. With `--ca-cert`, `verified` tells whether every answer was signed by that CA |
 | `keygen` | `keyType`, `key`, `publicKey`, `csr`, `saved`. With `--list`, `keyTypes` |
-| `est cacerts` | `certificates`, `saved` and `verified`, which says how the certificates were checked: `tls` by the TLS certificate of the server, `srp` by a TLS-SRP sign-in, `fingerprint` by `--fingerprint`, `confirmed` by a person at the prompt or `none` after `--bootstrap` or `--insecure`. `tlsIssued` tells whether these certificates issued the TLS certificate of the server |
+| `est cacerts` | `certificates`, `saved` and `verified`, which says how the certificates were checked: `tls` by the TLS certificate of the server, `srp` by a TLS-SRP sign-in, `fingerprint` by `--fingerprint`, `confirmed` by a person at the prompt or `none` after `--bootstrap` or `--insecure`. `tlsIssued` tells whether the trusted certificates issued the TLS certificate of the server. `unverified` lists the received certificates that the fingerprint check did not cover, which are not saved, and is absent otherwise |
 | `est csrattrs` | `attributes`, each with `oid`, `name` when certrally knows one and `values` for an attribute that has them |
 | `est enroll`, `est reenroll`, `est serverkeygen` | `certificate`, `key` with the type of a new key and `saved`. `key` is absent when `--new-key` or `--csr` supplied the key |
 | `inspect` | `messages`, one [inspected message](#inspected-messages) per message in file order |

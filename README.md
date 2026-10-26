@@ -269,6 +269,8 @@ certrally needs no trust setup. It trusts the CA certificates in the first respo
 
 To make sure you talk to a particular CA, name its certificate with `--ca-cert ca.pem` (repeatable). certrally then trusts nothing the server sends. Signed responses and issued certificates must chain to a CA certificate from `--ca-cert` or `--cert`.
 
+`--chain-out` holds the CA certificates that signed the new certificate and each other, as far as the response carries them. A certificate that only carries the name and key identifier of an issuer is left out, since nothing protects the extraCerts of a response.
+
 Over HTTPS the server is checked against the system roots or against the CA certificates in `--tls-ca-cert`. `--insecure` skips that check, for a test server with a self-signed certificate. certrally then warns that anyone who intercepts the connection can pose as the server, and the capture file records it. `--insecure` cannot be combined with `--tls-ca-cert`. Over plain HTTP nothing authenticates the first response, so use `--ca-cert` there unless you trust the network.
 
 certrally connects through the proxy that the `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` environment variables name, like other HTTP clients. `--proxy http://proxy.example.com:3128` names a proxy on the command line instead, on every command that talks to a server. An `https` proxy works too, and credentials in the URL are sent to the proxy.
@@ -377,7 +379,7 @@ A client signs in with one of these:
 
 `--proxy` and the proxy environment variables work like for CMP. The EST commands tunnel through the proxy with CONNECT, so TLS-SRP and `--tls-unique` work through it.
 
-The server certificate is checked against the system roots or against the CA certificates in `--tls-ca-cert`. `--insecure` skips that check, for a test server, and warns that anyone who intercepts the connection can pose as the server. When nothing can check the certificate yet, `est cacerts --bootstrap` connects without the check (RFC 7030 section 4.1.1). It saves the certificates only after the fingerprint matches `--fingerprint` or a person confirms it on a terminal:
+The server certificate is checked against the system roots or against the CA certificates in `--tls-ca-cert`. `--insecure` skips that check, for a test server, and warns that anyone who intercepts the connection can pose as the server. When nothing can check the certificate yet, `est cacerts --bootstrap` connects without the check (RFC 7030 section 4.1.1). It saves the certificate whose fingerprint matches `--fingerprint`, or the one a person confirms on a terminal, together with the certificates it issued. The other certificates of the response are listed with a note and not saved:
 
 ```bash
 certrally est cacerts --server https://est.example.com --bootstrap \
