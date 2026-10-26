@@ -20,6 +20,7 @@ certrally is a command line client for certificate enrollment with the Certifica
 * Requests forwarded by a registration authority in nested messages
 * CA certificates, root CA updates, request templates and CRLs from the CA
 * `ping` to check a server and `mock` to run a test CA on your machine
+* Deliberately wrong messages with `enroll --fault` to test how a CA copes
 
 **EST** (RFC 7030)
 
@@ -249,6 +250,18 @@ certrally enroll --server https://ca.example.com/.well-known/cmp \
 * `poll` forwards its requests through the RA that `enroll` used unless its own `--ra-cert` and `--ra-key` name another one.
 
 `certrally mock` accepts an RA whose certificate it issued with `cmcRA`. `certrally mock --require-ra` refuses requests that no RA forwarded, except a request for an RA certificate.
+
+### Test how a CA copes with faulty messages
+
+`--fault NAME` makes `enroll` send a deliberately wrong message, to test how a CA handles it. These flags exist to test CAs, so use them against a test CA or with the consent of the CA operator:
+
+```bash
+certrally enroll --server https://ca.example.com/.well-known/cmp \
+  --ref device-42 --secret-file secret.txt --subject CN=device-42 \
+  --fault wrong-cert-hash --cert-out device.pem --key-out device.key
+```
+
+The faults are `reject-certificate`, `wrong-cert-hash`, `wrong-cert-req-id`, `reuse-sender-nonce`, `stale-recip-nonce`, `wrong-transaction-id`, `no-protection` and `late-certconf`. `--fault` is repeatable. A CA that follows RFC 9483 refuses each one except `reject-certificate`, which it must answer with `pkiConf`. The exit status follows the usual [rules](#exit-status), certrally saves the certificate it received and the report names the faults sent. `late-certconf` waits past the confirmWaitTime of the response or for `--confirm-delay` when the response sets none. [docs/faults.md](docs/faults.md) lists what each fault sends, the RFC 9483 rule it breaks and how `certrally mock` answers it.
 
 ### Trust the CA
 

@@ -1,12 +1,12 @@
 # The CMP test CA
 
-The [README](../README.md#try-it-with-a-test-ca) introduces `certrally mock`, a CMP test CA for trying certrally and test scripts without a real CA. This page describes what it does and the fault flags that make it delay, reject or confirm requests differently and accept deviations from RFC 9483, to test how a client copes.
+The [README](../README.md#try-it-with-a-test-ca) introduces `certrally mock`, a CMP test CA for trying certrally and test scripts without a real CA. This page describes what it does and the fault flags that make it delay, reject or confirm requests differently and accept deviations from RFC 9483, to test how a client copes. To test a CA the other way around, `certrally enroll --fault` sends deliberately wrong messages. [faults.md](faults.md) describes them and how the test CA answers each one.
 
 ## What it does
 
 `certrally mock` listens on `127.0.0.1:8080` (`--listen`) and answers at `/.well-known/cmp`. It issues certificates for `ir`, `cr`, `kur` and `p10cr`, confirms and revokes them and answers the requests for CA certificates, a request template and CRLs. It accepts the shared secret for `--ref` (default `demo`) and signatures made with certificates it issued. It copies the requested subject and extensions, such as subjectAltName and extendedKeyUsage, into the certificate, but always sets keyUsage to digitalSignature. For `enroll --central-keygen` it generates the key pair. That is ECDSA P-256 when the request leaves the choice to it and otherwise any type that `--key-type` offers, with 2048 bits for RSA. A key generation authority certificate that it issues at startup with the id-kp-cmKGA extended key usage signs the private key. It accepts requests that a [registration authority](#registration-authorities) forwards. The secret comes from `--secret-file` or `CERTRALLY_SECRET`. Without either, a random secret is generated and printed. `--ca-out` saves the CA certificate for `--ca-cert`. Everything lives in memory and is lost when the CA stops.
 
-The startup report shows the address, the CA name, the secret source and the fault flags in use, then an `enroll` command that works against the CA. Every request is logged on one line: the time, the request body and its protection, the response and how long it took. A revocation adds a line below its request with the serial number, the reason and the invalidity date when the request gave one. A generated key pair adds a line with its key type. A forwarded request adds a line with the subject of the registration authority. The CRL lists the invalidity date too.
+The startup report shows the address, the CA name, the secret source and the fault flags in use, then an `enroll` command that works against the CA. Every request is logged on one line: the time, the request body and its protection, the response and how long it took. A response with a statusString adds it in quotes, such as the reason the CA refused a request. A revocation adds a line below its request with the serial number, the reason and the invalidity date when the request gave one. A generated key pair adds a line with its key type. A forwarded request adds a line with the subject of the registration authority. A `certConf` that rejects the certificate adds a `certificate rejected` line and a certificate whose `certConf` came too late a `certificate not confirmed in time` line, each with the serial number. The CRL lists the invalidity date too.
 
 ## Registration authorities
 
@@ -45,7 +45,7 @@ The failInfo names are those of RFC 9810 section 5.2.3, such as `badRequest`, `b
 
 `--grant-implicit-confirm` grants implicit confirmation to a request that asks for it, so that the client need not send `certConf`. A request that does not ask for it is confirmed as usual. `certrally enroll --implicit-confirm` asks for it, as does `openssl cmp -implicit_confirm`.
 
-`--confirm-wait` sets the time the client has to confirm a certificate, sent as `confirmWaitTime` (default 10s). The CA drops a transaction whose certificate is not confirmed in time.
+`--confirm-wait` sets the time the client has to confirm a certificate, sent as `confirmWaitTime` (default 10s). The CA refuses a later `certConf` with `badRequest` and drops a transaction whose certificate is not confirmed in time. `certrally enroll --fault late-certconf` tests this.
 
 ## Profile checks
 
