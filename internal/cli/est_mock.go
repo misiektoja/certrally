@@ -324,22 +324,15 @@ func newSRPMockServer(log *estMockLog) *http.Server {
 // newESTMockRouter returns the EST handler of the test CA. It accepts the password of user, the
 // bearer token when there is one, a client certificate the CA issued and a TLS-SRP sign-in.
 func newESTMockRouter(ca *estca.CA, user string, password, token []byte) (http.Handler, error) {
-	return est.NewRouter(&est.ServerConfig{
+	cfg := &est.ServerConfig{
 		CA: ca,
 		CheckBasicAuth: func(ctx context.Context, r *http.Request, _, username, pass string) error {
-			if est.SRPUsernameFromContext(ctx) != "" {
-				return nil
-			}
-			if r.TLS != nil && len(r.TLS.PeerCertificates) > 0 && ca.Verify(r.TLS.PeerCertificates[0]) == nil {
+			if signedInByTLS(ctx, r, ca) {
 				return nil
 			}
 			userOK := subtle.ConstantTimeCompare([]byte(username), []byte(user)) == 1
 			passOK := subtle.ConstantTimeCompare([]byte(pass), password) == 1
 			if userOK && passOK {
-				return nil
-			}
-			bearer, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-			if ok && len(token) > 0 && subtle.ConstantTimeCompare([]byte(bearer), token) == 1 {
 				return nil
 			}
 			return errors.New("sign in with the password, the token or a certificate of this CA")
@@ -353,7 +346,28 @@ func newESTMockRouter(ca *estca.CA, user string, password, token []byte) (http.H
 		// A browser that stores Strict-Transport-Security for localhost refuses certificate warnings
 		// on every local port.
 		OmitStrictTransportSecurity: true,
-	})
+	}
+	// The server runs CheckBearerToken in place of CheckBasicAuth for a request with a bearer token,
+	// and only a token that CheckBearerToken accepted signs in for renewal without a certificate.
+	// Without a token the hook stays unset, so a bearer token gets the usual Basic challenge.
+	if len(token) > 0 {
+		cfg.CheckBearerToken = func(ctx context.Context, r *http.Request, _, bearer string) error {
+			if signedInByTLS(ctx, r, ca) || subtle.ConstantTimeCompare([]byte(bearer), token) == 1 {
+				return nil
+			}
+			return errors.New("sign in with the token, the password or a certificate of this CA")
+		}
+	}
+	return est.NewRouter(cfg)
+}
+
+// signedInByTLS reports whether the connection of r signed in with TLS-SRP or with a client
+// certificate that ca issued.
+func signedInByTLS(ctx context.Context, r *http.Request, ca *estca.CA) bool {
+	if est.SRPUsernameFromContext(ctx) != "" {
+		return true
+	}
+	return r.TLS != nil && len(r.TLS.PeerCertificates) > 0 && ca.Verify(r.TLS.PeerCertificates[0]) == nil
 }
 
 // mockHosts returns the names the server certificate covers: localhost and the address listened
