@@ -62,6 +62,12 @@ const faultHelp = "--fault sends a deliberately wrong message to test how the CA
 	faultLateCertConf + " (certConf after the confirmWaitTime of the response or after --confirm-delay " +
 	"when the response sets none)."
 
+// pollFaultHelp explains --fault for poll --help.
+const pollFaultHelp = "--fault sends a deliberately wrong pollReq or certConf to test how the CA copes, with the " +
+	"values that certrally enroll --help lists. " + faultReuseSenderNonce + " repeats the senderNonce of the " +
+	"request that the CA keeps waiting. A pollReq that the CA refuses leaves the transaction recorded, so a " +
+	"poll without --fault can still collect the certificate."
+
 // faultOptions holds the --fault and --confirm-delay flags.
 type faultOptions struct {
 	faults []string
@@ -91,7 +97,7 @@ func (o *faultOptions) validate(pollLater bool) error {
 	switch {
 	case len(o.faults) > 0 && pollLater:
 		return fmt.Errorf("--%s changes the later messages of the transaction, which --poll-later leaves to "+
-			"certrally poll", flagFault)
+			"certrally poll. Give --%s to poll instead", flagFault, flagFault)
 	case o.confirmDelay < 0:
 		return fmt.Errorf("--%s must not be negative", flagConfirmDelay)
 	case o.confirmDelay > 0 && !slices.Contains(o.faults, faultLateCertConf):
@@ -106,7 +112,7 @@ type injector struct {
 	ctx          context.Context
 	faults       []string
 	confirmDelay time.Duration
-	// firstNonce is the senderNonce of the first request.
+	// firstNonce is the senderNonce of the first request, or of the waiting request that poll resumes.
 	firstNonce []byte
 	// sent maps each fault to the body types of the messages it changed, in order.
 	sent map[string][]string
@@ -126,6 +132,18 @@ func newInjector(ctx context.Context, o *faultOptions) *injector {
 	}
 	return &injector{ctx: ctx, faults: faults, confirmDelay: o.confirmDelay, sent: map[string][]string{}}
 }
+
+// resume prepares the injector for an enrollment that poll resumes, whose waiting request was sent
+// with senderNonce nonce in an earlier run.
+func (in *injector) resume(nonce []byte) {
+	if in != nil {
+		in.firstNonce = bytes.Clone(nonce)
+	}
+}
+
+// laterMessages are the body types that follow the first request of an enrollment. The faults change
+// only these.
+var laterMessages = []pkicmp.BodyType{pkicmp.BodyTypePopDecR, pkicmp.BodyTypePollReq, pkicmp.BodyTypeCertConf}
 
 // requestOptions returns the request options that send the faults.
 func (in *injector) requestOptions() []client.RequestOption {
@@ -152,10 +170,10 @@ func (in *injector) record(name string, msg *pkicmp.PKIMessage) {
 	in.sent[name] = append(in.sent[name], msg.Body.Type.String())
 }
 
-// beforeProtection applies the faults that the protection covers. answered is nil for the first
-// request, which every fault leaves unchanged.
+// beforeProtection applies the faults that the protection covers. Every fault leaves the first
+// request unchanged.
 func (in *injector) beforeProtection(msg, answered *pkicmp.PKIMessage) error {
-	if answered == nil {
+	if !slices.Contains(laterMessages, msg.Body.Type) {
 		in.firstNonce = bytes.Clone(msg.Header.SenderNonce)
 		return nil
 	}
@@ -164,7 +182,9 @@ func (in *injector) beforeProtection(msg, answered *pkicmp.PKIMessage) error {
 		in.record(faultReuseSenderNonce, msg)
 	}
 	if in.has(faultStaleRecipNonce) {
-		nonce, err := randomOtherThan(answered.Header.SenderNonce)
+		// The recipNonce of a later message is the senderNonce of the response it answers. Reading it
+		// from msg also covers the first pollReq of poll, whose response is not kept.
+		nonce, err := randomOtherThan(msg.Header.RecipNonce)
 		if err != nil {
 			return err
 		}
@@ -254,8 +274,8 @@ func (in *injector) waitPastConfirmTime(answered *pkicmp.PKIMessage) error {
 }
 
 // afterProtection applies the faults that change the protection itself.
-func (in *injector) afterProtection(msg, answered *pkicmp.PKIMessage) error {
-	if answered == nil || msg.Body.Type != pkicmp.BodyTypeCertConf || !in.has(faultNoProtection) {
+func (in *injector) afterProtection(msg, _ *pkicmp.PKIMessage) error {
+	if msg.Body.Type != pkicmp.BodyTypeCertConf || !in.has(faultNoProtection) {
 		return nil
 	}
 	msg.Header.ProtectionAlg = nil

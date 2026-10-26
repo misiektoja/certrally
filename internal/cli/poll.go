@@ -48,6 +48,7 @@ type pollOptions struct {
 	raKey  string
 	force  bool
 	format outFormat
+	faultOptions
 }
 
 // newPollCommand returns the poll command.
@@ -71,6 +72,7 @@ func newPollCommand() *cobra.Command {
 			"where enroll was asked to, unless --key-out names another file.\n\n" +
 			"A request that enroll forwarded as a registration authority is polled and confirmed through the " +
 			"same authority, unless --ra-cert and --ra-key name another one.\n\n" +
+			pollFaultHelp + "\n\n" +
 			enrollExitStatusHelp,
 		Example: "  certrally enroll --server https://ca.example.com/.well-known/cmp --ref device-42 \\\n" +
 			"    --subject CN=device-42 --cert-out device.pem --key-out device.key \\\n" +
@@ -104,6 +106,7 @@ func newPollCommand() *cobra.Command {
 	cmd.MarkFlagsRequiredTogether(flagRACert, flagRAKey)
 	o.format.addFlags(cmd, "", "format of the output files instead of the one enroll used: pem or der")
 	f.BoolVar(&o.force, "force", false, "replace existing output files")
+	o.faultOptions.addFlags(cmd)
 	_ = cmd.MarkFlagRequired("transaction-id")
 	_ = cmd.MarkFlagRequired("capture")
 	for _, name := range []string{"transaction-id", flagServer, flagTimeout, flagProxy} {
@@ -387,6 +390,9 @@ func (o *pollOptions) outputs(rec *pendingRecord) certOutputs {
 
 // runPoll performs the poll command.
 func runPoll(ctx context.Context, o *pollOptions, p *printer, stdin io.Reader) error {
+	if err := o.faultOptions.validate(false); err != nil {
+		return err
+	}
 	id, err := parseTransactionID(o.transactionID)
 	if err != nil {
 		return err
@@ -440,14 +446,21 @@ func runPoll(ctx context.Context, o *pollOptions, p *printer, stdin io.Reader) e
 	}
 	ctx, cancel := context.WithTimeout(ctx, o.timeout)
 	defer cancel()
+	inj := newInjector(ctx, &o.faultOptions)
+	inj.resume(rec.State.RequestNonce)
+	var reqOpts []client.RequestOption
+	if inj != nil {
+		reqOpts = inj.requestOptions()
+	}
 	s.startLadder()
 	var result *client.EnrollResult
 	if newKey != nil {
-		result, err = c.ResumeEnrollmentWithIndirectPOP(ctx, rec.State, newKey, pr.creds)
+		result, err = c.ResumeEnrollmentWithIndirectPOP(ctx, rec.State, newKey, pr.creds, reqOpts...)
 	} else {
-		result, err = c.ResumeEnrollment(ctx, rec.State, pr.creds)
+		result, err = c.ResumeEnrollment(ctx, rec.State, pr.creds, reqOpts...)
 	}
 	s.endLadder()
+	inj.report(p)
 	if pendingErr, ok := errors.AsType[*client.PendingError](err); ok {
 		return o.reportStillWaiting(s, rec, pendingErr)
 	}
@@ -468,7 +481,7 @@ func runPoll(ctx context.Context, o *pollOptions, p *printer, stdin io.Reader) e
 		}
 		return s.fail(err)
 	}
-	return reportIssued(s, out, result, nil, rec.ImplicitConfirm, rec.State.IndirectPOP, false,
+	return reportIssued(s, out, result, nil, rec.ImplicitConfirm, rec.State.IndirectPOP, inj.rejected(),
 		ui.Field{Name: fieldTransactionID, Value: id})
 }
 
