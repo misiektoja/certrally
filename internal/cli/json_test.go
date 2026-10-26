@@ -111,6 +111,9 @@ func TestEnrollJSON(t *testing.T) {
 	if get(doc, "result.status") != "accepted" || get(doc, "result.confirmed") != true {
 		t.Errorf("result = %v", doc["result"])
 	}
+	if id := get(doc, "result.transactionId"); id == nil || id != get(doc, "exchange.0.transactionId") {
+		t.Errorf("result.transactionId = %v, want that of the exchange", id)
+	}
 	cert := readCert(t, certOut)
 	if !parsePEMCertificate(t, get(doc, "result.certificate.pem")).Equal(cert) {
 		t.Error("result.certificate.pem is not the saved certificate")

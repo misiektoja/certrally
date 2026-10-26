@@ -196,10 +196,11 @@ func TestCommandHelp(t *testing.T) {
 	isolateColorEnv(t)
 	_, rootHelp, _ := run(t, "--help")
 	commands := [][]string{
-		{"enroll"}, {"revoke"}, {"cacerts"}, {"ping"}, {"inspect"}, {"lint"}, {"keygen"}, {"mock"}, {"cmp"}, {"cmp", "genm"},
+		{"enroll"}, {"poll"}, {"revoke"}, {"cacerts"}, {"ping"}, {"inspect"}, {"lint"}, {"keygen"}, {"mock"}, {"cmp"},
+		{"cmp", "genm"},
 		{"cmp", "genm", "cacerts"}, {"cmp", "genm", "rootupdate"}, {"cmp", "genm", "template"},
 		{"cmp", "genm", "crl"}, {"cmp", "genm", "crlupdate"}, {"cmp", "genm", "raw"},
-		{"cmp", "enroll"}, {"cmp", "revoke"}, {"cmp", "cacerts"}, {"cmp", "ping"}, {"cmp", "mock"},
+		{"cmp", "enroll"}, {"cmp", "poll"}, {"cmp", "revoke"}, {"cmp", "cacerts"}, {"cmp", "ping"}, {"cmp", "mock"},
 		{"est"}, {"est", "cacerts"}, {"est", "csrattrs"}, {"est", "enroll"}, {"est", "reenroll"},
 		{"est", "serverkeygen"}, {"est", "mock"},
 	}
@@ -273,12 +274,16 @@ func TestHelpWrapping(t *testing.T) {
 	}
 }
 
-// TestExitStatusHelp checks that only enroll, which confirms certificates, documents exit status 5.
+// TestExitStatusHelp checks that only enroll and poll, which confirm certificates, document exit status 5.
 func TestExitStatusHelp(t *testing.T) {
 	isolateColorEnv(t)
-	for _, args := range [][]string{{"enroll"}, {"revoke"}, {"cacerts"}, {"cmp", "genm", "crl"}, {"cmp", "enroll"}, {"cmp", "revoke"}} {
+	commands := [][]string{
+		{"enroll"}, {"poll"}, {"revoke"}, {"cacerts"}, {"cmp", "genm", "crl"}, {"cmp", "enroll"}, {"cmp", "poll"}, {"cmp", "revoke"},
+	}
+	for _, args := range commands {
 		_, out, _ := run(t, append(args, "--help")...)
-		if got, want := strings.Contains(out, "5 issued"), args[len(args)-1] == "enroll"; got != want {
+		name := args[len(args)-1]
+		if got, want := strings.Contains(out, "5 issued"), name == "enroll" || name == "poll"; got != want {
 			t.Errorf("%q --help mentions exit status 5: %v, want %v", args, got, want)
 		}
 	}

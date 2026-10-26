@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -106,5 +107,52 @@ func TestWriterProtocol(t *testing.T) {
 		if protocol == "" && ok || protocol != "" && got != protocol {
 			t.Errorf("protocol %q: start line has %v", protocol, got)
 		}
+	}
+}
+
+// TestFindTransaction checks that the last line of a transaction across runs holds its state and
+// that other files report the transaction or the line they cannot use.
+func TestFindTransaction(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "run.jsonl")
+	lines := []Transaction{
+		{ID: "0a0b", State: TransactionWaiting, Resume: json.RawMessage(`{"n":1}`)},
+		{ID: "ffee", State: TransactionWaiting, Resume: json.RawMessage(`{"n":2}`)},
+		{ID: "0a0b", State: TransactionWaiting, Resume: json.RawMessage(`{"n":3}`)},
+		{ID: "ffee", State: TransactionEnded},
+	}
+	for _, line := range lines {
+		w, err := Open(path, Start{Tool: "certrally", Command: "poll", Time: time.Now()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := w.Transaction(line); err != nil {
+			t.Fatal(err)
+		}
+		if err := w.Close(0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := FindTransaction(path, "0a0b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Kind != "transaction" || got.State != TransactionWaiting || string(got.Resume) != `{"n":3}` || got.Time.IsZero() {
+		t.Errorf("FindTransaction(0a0b) = %+v, want the third line", got)
+	}
+	if got, err := FindTransaction(path, "ffee"); err != nil || got.State != TransactionEnded || got.Resume != nil {
+		t.Errorf("FindTransaction(ffee) = %+v, %v, want the ended line", got, err)
+	}
+	if _, err := FindTransaction(path, "0c0d"); !errors.Is(err, ErrNoTransaction) {
+		t.Errorf("FindTransaction(0c0d) returned %v, want ErrNoTransaction", err)
+	}
+	if _, err := FindTransaction(filepath.Join(t.TempDir(), "missing.jsonl"), "0a0b"); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("FindTransaction on a missing file returned %v", err)
+	}
+	broken := filepath.Join(t.TempDir(), "broken.jsonl")
+	if err := os.WriteFile(broken, []byte("{\"kind\":\"start\"}\n\nnot json\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := FindTransaction(broken, "0a0b"); err == nil || !strings.Contains(err.Error(), "broken.jsonl:3") {
+		t.Errorf("FindTransaction on a broken file returned %v, want the line number", err)
 	}
 }
