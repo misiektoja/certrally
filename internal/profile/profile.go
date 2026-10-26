@@ -12,6 +12,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -257,10 +258,10 @@ func (c *checker) content() {
 	}
 }
 
-// signer returns the first certificate in extraCerts when it can be the protection certificate:
-// its subject matches the sender and its key identifier matches senderKID. It returns nil otherwise.
-// A senderKID that names none of the certificates is a deviation of its own, so it does not count
-// against the first certificate.
+// signer returns the first certificate in extraCerts when it is the protection certificate: its
+// subject matches the sender, its key identifier matches senderKID and the protection verifies with
+// its key. It returns nil otherwise. A senderKID that names none of the certificates is a deviation
+// of its own, so it does not count against the first certificate.
 func (c *checker) signer() *x509.Certificate {
 	if len(c.resp.ExtraCerts) == 0 {
 		return nil
@@ -272,7 +273,25 @@ func (c *checker) signer() *x509.Certificate {
 	if kid := c.resp.Header.SenderKID; len(kid) > 0 && !bytes.Equal(kid, cert.SubjectKeyId) && c.kidNamesCandidate() {
 		return nil
 	}
+	if c.signatureFails(cert) {
+		return nil
+	}
 	return cert
+}
+
+// signatureFails reports whether the protection of the response does not verify with the key of
+// cert. Nothing protects extraCerts, so a certificate that copies the name and key identifier of
+// the sender is told apart only by the signature. The check runs at the start of the validity of
+// cert, so that neither trust nor time decides it. A signature that cannot be checked, such as one
+// with an algorithm certrally does not support, does not count against cert.
+func (c *checker) signatureFails(cert *x509.Certificate) bool {
+	_, err := c.resp.Verify(pkicmp.VerifyOptions{
+		RequiredProtection: pkicmp.ProtectionSignature,
+		TrustedCert:        cert,
+		CurrentTime:        cert.NotBefore,
+	})
+	verifyErr, ok := errors.AsType[*pkicmp.VerificationError](err)
+	return ok && verifyErr.Reason == pkicmp.ReasonSignatureFailed
 }
 
 // namesSender reports whether the subject of cert is the sender of the response. Every certificate
