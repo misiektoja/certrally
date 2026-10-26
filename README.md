@@ -17,6 +17,7 @@ certrally is a command line client for certificate enrollment with the Certifica
 
 * `ir`, `cr`, `kur`, `p10cr` and `rr` with a shared secret or a certificate
 * Keys that the CA generates (central key generation)
+* Requests forwarded by a registration authority in nested messages
 * CA certificates, root CA updates, request templates and CRLs from the CA
 * `ping` to check a server and `mock` to run a test CA on your machine
 
@@ -159,7 +160,7 @@ Notes:
 * Shared-secret requests are protected with PBMAC1. `--mac pbm` selects PasswordBasedMac for CAs that accept only that, such as Nokia NCM, Insta Certifier and the `openssl cmp` mock server. `--iterations` sets the MAC iteration count (default 10000).
 * `--hash sha1|sha256|sha384|sha512` selects the digest of the signatures certrally makes with an RSA or ECDSA key: the message protection with `--cert`, the proof of possession and a PKCS#10 request. With `--mac pbm` it also selects the one-way function and HMAC of the MAC. PBMAC1 always uses SHA-256. The default follows the key type. CAs refuse SHA-1 unless configured to accept it.
 * `--general-info OID:int:N`, `OID:str:TEXT` or `OID:hex:DER` (repeatable) adds an item to the generalInfo field of the request header, for example a vendor profile identifier that a CA keys its policy on. `--cert-req-id N` sets the certReqId of an `ir`, `cr` or `kur` (default 0), which the CA must repeat. RFC 9483 requires 0, so most CAs refuse other values.
-* `--key-usage` and `--ext-key-usage` ask for the keyUsage and extendedKeyUsage extensions, as comma-separated lists such as `--key-usage digitalSignature,keyEncipherment --ext-key-usage serverAuth,clientAuth`. `--key-usage` takes `digitalSignature`, `nonRepudiation` (or `contentCommitment`), `keyEncipherment`, `dataEncipherment`, `keyAgreement`, `keyCertSign`, `cRLSign`, `encipherOnly` and `decipherOnly`. `--ext-key-usage` takes `serverAuth`, `clientAuth`, `codeSigning`, `emailProtection`, `timeStamping`, `ocspSigning`, `anyExtendedKeyUsage` or a dotted OID. Names are not case-sensitive. keyUsage is marked critical, as RFC 5280 recommends. The CA decides what the certificate gets, and many CAs take the key usages from their profile instead.
+* `--key-usage` and `--ext-key-usage` ask for the keyUsage and extendedKeyUsage extensions, as comma-separated lists such as `--key-usage digitalSignature,keyEncipherment --ext-key-usage serverAuth,clientAuth`. `--key-usage` takes `digitalSignature`, `nonRepudiation` (or `contentCommitment`), `keyEncipherment`, `dataEncipherment`, `keyAgreement`, `keyCertSign`, `cRLSign`, `encipherOnly` and `decipherOnly`. `--ext-key-usage` takes `serverAuth`, `clientAuth`, `codeSigning`, `emailProtection`, `timeStamping`, `ocspSigning`, `anyExtendedKeyUsage`, `cmcRA` or a dotted OID. Names are not case-sensitive. keyUsage is marked critical, as RFC 5280 recommends. The CA decides what the certificate gets, and many CAs take the key usages from their profile instead.
 * `--template-cert device.pem` copies the subject, subjectAltName, keyUsage and extendedKeyUsage of an existing certificate, to request one shaped like a certificate the CA already issued. `--subject`, `--san`, `--key-usage` and `--ext-key-usage` replace the part they set. A `kur` already repeats the certificate in `--cert`, so it does not take `--template-cert`. A `p10cr` built by certrally carries these extensions in its PKCS#10 request. A request given with `--csr` cannot be changed.
 * `--implicit-confirm` asks the CA for implicit confirmation, as RFC 9483 recommends. A CA that grants it repeats `implicitConfirm` in its response and certrally skips the `certConf` exchange, so the run ends with the response. A CA that wants the confirmation leaves it out and certrally confirms as usual. The result says which happened.
 * `--hash`, `--iterations` and `--general-info` also apply to `revoke` and the `genm` commands.
@@ -192,7 +193,7 @@ certrally poll --transaction-id d503c4aad8beeb7b34b820adb1809771 \
   --capture device.jsonl --secret-file secret.txt
 ```
 
-A poll that ends at `--timeout` while the CA still waits records the new state, so the same command can run again. An `enroll` whose polling ends at `--timeout` records the transaction the same way when it has `--capture`. `--server`, `--cert-out`, `--chain-out`, `--key-out` and `--out-format` replace the values from the capture file. Once the CA issues the certificate or rejects the request, the transaction ends and `poll` refuses it. After other failures, such as a wrong shared secret, the same command can run again.
+A poll that ends at `--timeout` while the CA still waits records the new state, so the same command can run again. An `enroll` whose polling ends at `--timeout` records the transaction the same way when it has `--capture`. `--server`, `--cert-out`, `--chain-out`, `--key-out`, `--out-format`, `--ra-cert` and `--ra-key` replace the values from the capture file. Once the CA issues the certificate or rejects the request, the transaction ends and `poll` refuses it. After other failures, such as a wrong shared secret, the same command can run again.
 
 ### Enroll an ML-KEM key
 
@@ -230,6 +231,24 @@ Without `--key-type` the CA chooses the key type. `--key-type ecdsa-p384` asks f
 * With `--poll-later` the key arrives with the certificate, so `enroll` saves nothing. `poll` saves the key to the `--key-out` that `enroll` named unless its own `--key-out` names another file. It needs the same shared secret or `--key` to decrypt the key.
 
 `certrally mock` generates every key type that `--key-type` offers, with 2048 bits for RSA.
+
+### Forward requests as a registration authority
+
+A registration authority (RA) checks requests before the CA sees them and vouches for them with its own signature. With `--ra-cert` and `--ra-key` certrally acts as the RA (RFC 9483 section 5.2.2.1). It wraps every request in a `nested` message that it signs with the RA certificate, including the `certConf` and each `pollReq`. The request inside keeps its own protection, here the shared secret of the device:
+
+```bash
+certrally enroll --server https://ca.example.com/.well-known/cmp \
+  --ref device-42 --secret-file secret.txt --subject CN=device-42 \
+  --ra-cert ra.pem --ra-key ra.key --cert-out device.pem --key-out device.key
+```
+
+* The CA must accept the RA, usually by the `cmcRA` extended key usage of its certificate (id-kp-cmcRA). `--ext-key-usage cmcRA` asks for one.
+* `--ra-cert` may hold the chain after the RA certificate. certrally sends all of them in `extraCerts`.
+* The CA answers the request inside, so the diagram shows `nested(ir)` and then a plain `ip`. The result names the RA in the `Forwarded by` field.
+* certrally sends one request per `nested` message. It does not batch requests.
+* `poll` forwards its requests through the RA that `enroll` used unless its own `--ra-cert` and `--ra-key` name another one.
+
+`certrally mock` accepts an RA whose certificate it issued with `cmcRA`. `certrally mock --require-ra` refuses requests that no RA forwarded, except a request for an RA certificate.
 
 ### Trust the CA
 

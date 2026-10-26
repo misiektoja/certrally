@@ -85,6 +85,7 @@ An EST enrollment records its connection, the request and the response:
 | `httpStatus`, `contentType` | The HTTP status and content type of a response |
 | `size` | Body size in bytes |
 | `body` | The PKIBody type, such as `ir`, `ip`, `genp` or `error`. Absent when the body is not a CMP message |
+| `nested` | The body types of the messages in a `nested` body, such as `["ir"]` for a request that a registration authority forwards |
 | `protection` | The protection algorithm, such as `PBMAC1` or `ML-DSA-65`. It is `none` for an unprotected message |
 | `sender` | The sender name in the header |
 | `transactionId`, `senderKid` | Header fields, as hex |
@@ -120,7 +121,7 @@ A certificate in a result has `subject`, `issuer`, `serial`, `notBefore`, `notAf
 
 | Command | Result fields |
 |---|---|
-| `enroll`, `poll` | `status`, `confirmed`, `implicitConfirm`, `certificate`, `chain`, `saved`, `transactionId`. With exit status 5 the result is present and `confirmed` is `false`. `implicitConfirm` is `true` when the CA granted implicit confirmation, so no `certConf` was sent. `proofOfPossession` is `encrypted-cert` or `challenge` for a key that cannot sign, such as an ML-KEM key, and absent otherwise. `centralKeyGeneration` is `true` and `keyGenerationAuthority` names the signer of the key when the CA generated the key with `--central-keygen`. Both are absent otherwise. When the CA keeps the request waiting, under `enroll --poll-later` or when polling ends at `--timeout` with `--capture`, `status` is `waiting`, `certificate` is `null`, `saved` lists only a new key and `nextPoll` tells when the CA asked for the next poll, if it did |
+| `enroll`, `poll` | `status`, `confirmed`, `implicitConfirm`, `certificate`, `chain`, `saved`, `transactionId`. With exit status 5 the result is present and `confirmed` is `false`. `implicitConfirm` is `true` when the CA granted implicit confirmation, so no `certConf` was sent. `proofOfPossession` is `encrypted-cert` or `challenge` for a key that cannot sign, such as an ML-KEM key, and absent otherwise. `centralKeyGeneration` is `true` and `keyGenerationAuthority` names the signer of the key when the CA generated the key with `--central-keygen`. Both are absent otherwise. `registrationAuthority` is the subject of the `--ra-cert` certificate that forwarded the requests, absent without one. When the CA keeps the request waiting, under `enroll --poll-later` or when polling ends at `--timeout` with `--capture`, `status` is `waiting`, `certificate` is `null`, `saved` lists only a new key and `nextPoll` tells when the CA asked for the next poll, if it did |
 | `revoke` | `certificate`, `issuer`, `serial`, `reason`, `invalidityDate`. `certificate` is `null` when the certificate was named with `--serial` and `--issuer`. `invalidityDate` is present when `--invalidity-date` was given |
 | `cacerts`, `cmp genm cacerts` | `certificates`, `saved` |
 | `cmp genm rootupdate` | `update` with `newWithNew`, `newWithOld` and `oldWithNew`. It is `null` when no update is available. `saved` |
