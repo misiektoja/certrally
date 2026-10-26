@@ -405,8 +405,12 @@ type estCACertsJSON struct {
 	Saved        []string           `json:"saved"`
 	// Verified says how the certificates were checked: "tls", "srp", "fingerprint", "confirmed" or "none".
 	Verified string `json:"verified"`
-	// TLSIssued reports whether these certificates issued the TLS certificate of the server.
+	// TLSIssued reports whether the trusted certificates issued the TLS certificate of the server.
 	TLSIssued *bool `json:"tlsIssued,omitempty"`
+	// Unverified lists the received certificates that a fingerprint check did not cover and that
+	// were therefore not saved. It is absent when no fingerprint was checked or every certificate
+	// was covered.
+	Unverified []*certificateJSON `json:"unverified,omitempty"`
 }
 
 // estEnrollJSON is the result of est enroll, est reenroll and est serverkeygen.
