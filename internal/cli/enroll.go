@@ -455,7 +455,7 @@ func reportIssued(s *session, out certOutputs, result *client.EnrollResult, key 
 		return fmt.Errorf("the certificate was issued but could not be saved: %w", err)
 	}
 	if out.chainOut != "" && len(chain) == 0 {
-		s.p.warn("The response carried no issuing CA certificates, so --chain-out was not written.")
+		s.p.warn("The response carried no CA certificate that signed the new certificate, so --chain-out was not written.")
 	}
 	status := lastStatus(s.recorder)
 	fields := certificateFields(cert, status, saved)
@@ -883,7 +883,9 @@ func (o *certOutputs) saveKey(key crypto.PrivateKey) ([]string, error) {
 }
 
 // issuerChain returns the certificates from candidates that link cert towards a root, issuer first.
-// It stops at a self-issued certificate or when no issuer is found.
+// Each link must verify by its signature, because extraCerts is outside the protection of a CMP
+// message, so anyone on the path can add a certificate that copies the name and key identifier of
+// the CA. The chain stops at a self-issued certificate or when no issuer verifies.
 func issuerChain(cert *x509.Certificate, candidates []*x509.Certificate) []*x509.Certificate {
 	var chain []*x509.Certificate
 	used := func(c *x509.Certificate) bool {
@@ -895,8 +897,12 @@ func issuerChain(cert *x509.Certificate, candidates []*x509.Certificate) []*x509
 			if c == nil || used(c) || !bytes.Equal(c.RawSubject, cur.RawIssuer) {
 				continue
 			}
-			// Prefer the key identifiers when both are present, since a CA renewal keeps the name.
+			// The key identifiers tell renewed CA certificates with the same name apart before the
+			// signature is checked.
 			if len(cur.AuthorityKeyId) > 0 && len(c.SubjectKeyId) > 0 && !bytes.Equal(cur.AuthorityKeyId, c.SubjectKeyId) {
+				continue
+			}
+			if !signedBy(cur, c) {
 				continue
 			}
 			next = c
@@ -909,6 +915,11 @@ func issuerChain(cert *x509.Certificate, candidates []*x509.Certificate) []*x509
 		cur = next
 	}
 	return chain
+}
+
+// signedBy reports whether issuer signed cert, with a classical, ML-DSA or composite ML-DSA key.
+func signedBy(cert, issuer *x509.Certificate) bool {
+	return compositex509.CheckSignatureFrom(cert, issuer) == nil
 }
 
 // transactionID returns the transaction ID of the first request in hex. It returns "" when no request
