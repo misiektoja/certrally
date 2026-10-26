@@ -233,8 +233,9 @@ func insertExtraCert(t *testing.T, der []byte, cert *x509.Certificate) []byte {
 
 // TestEnrollChainVerifiesSignatures checks that --chain-out holds the CA certificate that signed the
 // new certificate and not a certificate that only copies its name and key identifier, with and
-// without --ca-cert. extraCerts is outside the protection of a response, so someone on the path
-// can add certificates to it, and a cr response carries no caPubs to prefer.
+// without --ca-cert, and that the profile check reports the look-alike. extraCerts is outside the
+// protection of a response, so someone on the path can add certificates to it, and a cr response
+// carries no caPubs to prefer.
 func TestEnrollChainVerifiesSignatures(t *testing.T) {
 	useSecret(t, testSecret)
 	ca := startRewritingCA(t, func(caCert *x509.Certificate) func([]byte) []byte {
@@ -256,6 +257,9 @@ func TestEnrollChainVerifiesSignatures(t *testing.T) {
 			code, _, errOut := run(t, args...)
 			if code != exitOK {
 				t.Fatalf("exited with %d:\n%s", code, errOut)
+			}
+			if !strings.Contains(errOut, "does not start extraCerts with its protection certificate") {
+				t.Errorf("the report does not warn about the look-alike protection certificate:\n%s", errOut)
 			}
 			chain, err := pemfile.ReadCertificates(chainOut)
 			if err != nil {

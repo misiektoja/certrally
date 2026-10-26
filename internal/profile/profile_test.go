@@ -90,6 +90,47 @@ func signedBy(m *pkicmp.PKIMessage, cert *x509.Certificate) *pkicmp.PKIMessage {
 	return m
 }
 
+// lookalike returns a self-signed certificate with the subject and subject key identifier of model
+// but another key, as someone on the path could add to the unprotected extraCerts.
+func lookalike(t *testing.T, model *x509.Certificate) *x509.Certificate {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(2),
+		RawSubject:            model.RawSubject,
+		SubjectKeyId:          model.SubjectKeyId,
+		NotBefore:             model.NotBefore,
+		NotAfter:              model.NotAfter,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, key.Public(), key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cert
+}
+
+// protectedBy signs m with key and cert, so that the signature can be checked, and returns m.
+func protectedBy(t *testing.T, m *pkicmp.PKIMessage, cert *x509.Certificate, key crypto.Signer) *pkicmp.PKIMessage {
+	t.Helper()
+	creds, err := pkicmp.NewSignatureCredentials(key, cert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := creds.Protect(m); err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
 // info returns a generalInfo item with a NULL value.
 func info(oid asn1.ObjectIdentifier) pkicmp.InfoTypeAndValue {
 	return pkicmp.InfoTypeAndValue{InfoType: oid, InfoValue: []byte{0x05, 0x00}}
@@ -198,6 +239,40 @@ func TestCheck(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			findings := Check(tt.req, tt.resp, nil)
+			switch {
+			case tt.want == "" && len(findings) != 0:
+				t.Errorf("findings = %v, want none", findings)
+			case tt.want != "" && (len(findings) != 1 || !strings.Contains(findings[0].Text, tt.want)):
+				t.Errorf("findings = %v, want one with %q", findings, tt.want)
+			}
+		})
+	}
+}
+
+// TestCheckProtectionCertificate checks that only the certificate whose key signed the response
+// counts as its protection certificate. A certificate that copies the name and key identifier of
+// the CA passes every other test, and nothing protects extraCerts.
+func TestCheckProtectionCertificate(t *testing.T) {
+	ca, caKey := newCertificate(t, testCA, nil, nil)
+	device, deviceKey := newCertificate(t, pkix.Name{CommonName: "device"}, ca, caKey)
+	twin := lookalike(t, ca)
+	genm := protectedBy(t, message(pkicmp.NewGenMBody(), pkix.Name{CommonName: "device"}, nil), device, deviceKey)
+	tests := []struct {
+		name       string
+		extraCerts []*x509.Certificate
+		want       string
+	}{
+		{"protection certificate first", []*x509.Certificate{ca, twin}, ""},
+		{"look-alike first", []*x509.Certificate{twin, ca}, "does not start extraCerts with its protection certificate"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			genp := protectedBy(t, message(pkicmp.NewGenPBody(), testCA, nil), ca, caKey)
+			genp.ExtraCerts = nil
+			for _, c := range tt.extraCerts {
+				genp.ExtraCerts = append(genp.ExtraCerts, pkicmp.CMPCertificate{Raw: c.Raw})
+			}
+			findings := Check(genm, genp, nil)
 			switch {
 			case tt.want == "" && len(findings) != 0:
 				t.Errorf("findings = %v, want none", findings)
