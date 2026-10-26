@@ -265,13 +265,13 @@ The faults are `reject-certificate`, `wrong-cert-hash`, `wrong-cert-req-id`, `re
 
 ### Trust the CA
 
-certrally needs no trust setup. It trusts the CA certificates in the first response from the server and the CA certificates in the `--cert` file, then checks every response against them. If a response does not carry the CA certificate that issued the new certificate, pass that certificate with `--ca-cert`.
+certrally needs no trust setup. It trusts the CA certificates in the first response from the server and the CA certificates in the `--cert` file, then checks every response against them. The report lists each certificate trusted from the first response with its SHA-256 fingerprint, so you can compare it with the one the CA published. If a response does not carry the CA certificate that issued the new certificate, pass that certificate with `--ca-cert`.
 
 To make sure you talk to a particular CA, name its certificate with `--ca-cert ca.pem` (repeatable). certrally then trusts nothing the server sends. Signed responses and issued certificates must chain to a CA certificate from `--ca-cert` or `--cert`.
 
 `--chain-out` holds the CA certificates that signed the new certificate and each other, as far as the response carries them. A certificate that only carries the name and key identifier of an issuer is left out, since nothing protects the extraCerts of a response.
 
-Over HTTPS the server is checked against the system roots or against the CA certificates in `--tls-ca-cert`. `--insecure` skips that check, for a test server with a self-signed certificate. certrally then warns that anyone who intercepts the connection can pose as the server, and the capture file records it. `--insecure` cannot be combined with `--tls-ca-cert`. Over plain HTTP nothing authenticates the first response, so use `--ca-cert` there unless you trust the network.
+Over HTTPS the server is checked against the system roots or against the CA certificates in `--tls-ca-cert`. `--insecure` skips that check, for a test server with a self-signed certificate. certrally then warns that anyone who intercepts the connection can pose as the server, and the capture file records it. `--insecure` cannot be combined with `--tls-ca-cert`. Over plain HTTP nothing authenticates the first response, so certrally warns when it trusts one. Use `--ca-cert` there unless you trust the network.
 
 certrally connects through the proxy that the `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` environment variables name, like other HTTP clients. `--proxy http://proxy.example.com:3128` names a proxy on the command line instead, on every command that talks to a server. An `https` proxy works too, and credentials in the URL are sent to the proxy.
 

@@ -39,6 +39,7 @@ certrally enroll --server https://ca.example.com/.well-known/cmp --ref device-42
 | `result` | object | The [result](#results) of the command. Present on success and with some failures |
 | `error` | object | The [error](#errors) when `ok` is `false` |
 | `faults` | array | One entry per [`enroll` or `poll --fault`](faults.md) value, in the order of the help text. `name` is the fault and `messages` lists the body types it changed, such as `certConf`. An empty `messages` means the fault found no message to change. Absent without `--fault` |
+| `trustedOnFirstResponse` | array | The certificates a CMP command trusted from its first response, each with the fields of a certificate in a [result](#results), so that `sha256` can be compared with the fingerprint the CA published. Absent with `--ca-cert`, on the EST commands and on `poll`, which keeps the trust of the `enroll` run |
 | `warnings` | array of strings | Problems that did not fail the command, such as a CRL signature that does not verify or a response that breaks a rule of the `compatible` profile |
 
 An enrollment produces a document like this, shortened:
