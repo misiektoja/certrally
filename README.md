@@ -370,7 +370,7 @@ A client signs in with one of these:
 
 * **A password** over HTTP Basic authentication with `--user`. The password comes from `--password-file` (`-` reads standard input), the `CERTRALLY_PASSWORD` environment variable or a prompt on a terminal, in that order.
 * **A bearer token** over HTTP Bearer authentication (RFC 6750) with `--token`. The token comes from `--token-file` (`-` reads standard input, which implies `--token`), the `CERTRALLY_TOKEN` environment variable or a prompt on a terminal, in that order. `--token` cannot be combined with `--user`.
-* **A TLS client certificate** with `--cert` and `--key`. `est reenroll --cert device.pem --key device.key` renews a certificate this way. Without `--key`, renewal signs in with `--user` instead, as RFC 7030 section 2.3 allows for certificates that cannot be used for TLS. An encrypted `--key` or `--new-key` takes its password from `--key-password-file`, `CERTRALLY_KEY_PASSWORD` or a prompt, like for CMP.
+* **A TLS client certificate** with `--cert` and `--key`. `est reenroll --cert device.pem --key device.key` renews a certificate this way. Without `--key`, renewal signs in with `--user` or `--token` instead, as RFC 7030 section 2.3 allows for certificates that cannot be used for TLS. An encrypted `--key` or `--new-key` takes its password from `--key-password-file`, `CERTRALLY_KEY_PASSWORD` or a prompt, like for CMP.
 * **TLS-SRP** with `--srp` and `--user`. The password then authenticates both sides over TLS 1.2, so the server needs no certificate and `--srp` cannot be combined with `--tls-ca-cert`.
 
 `--out-format der` writes `--cert-out` and `--key-out` as DER and `est cacerts --out` as PKCS#7, like the CMP commands.
