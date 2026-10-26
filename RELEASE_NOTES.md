@@ -2,7 +2,7 @@
 
 Notable changes to certrally. Versions follow the `vMAJOR.MINOR.PATCH` tags published in this repository.
 
-## v0.2.0 - TBD
+## v0.2.0 - 26 Oct 2026
 
 This release adds ML-KEM keys, keys that the CA generates, forwarding as a registration authority, collecting a waiting certificate in a later run and revocation by serial number. It also adds tools to test CAs, encrypted key files, DER output, proxies and EST bearer tokens. It fixes what `est cacerts --bootstrap` and `--chain-out` save.
 
@@ -28,6 +28,7 @@ This release adds ML-KEM keys, keys that the CA generates, forwarding as a regis
 * **Encrypted private keys.** `--key` and `--new-key` read encrypted PKCS#8 keys. The password comes from **`--key-password-file`**, `CERTRALLY_KEY_PASSWORD` or a prompt.
 * **`--out-format der`** writes the output files as DER instead of PEM, with several certificates as PKCS#7.
 * **`--proxy URL`** connects through an HTTP or HTTPS proxy. The EST commands now also follow `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`.
+* **`certrally --help`** names the version of the build in its first line.
 
 ### Testing and troubleshooting
 
