@@ -6,6 +6,7 @@ import (
 	"encoding/pem"
 	"fmt"
 
+	"github.com/misiektoja/go-pki-cmp/client"
 	"github.com/spf13/cobra"
 	"go.mozilla.org/pkcs7"
 
@@ -89,8 +90,12 @@ func (f *outFormat) certificates(certs []*x509.Certificate) ([]byte, error) {
 	return data, nil
 }
 
-// key encodes a private key as unencrypted PKCS#8.
+// key encodes a private key as unencrypted PKCS#8. key may be a *client.GeneratedKey.
 func (f *outFormat) key(key crypto.PrivateKey) ([]byte, error) {
+	// A key the CA generated keeps the PKCS#8 encoding the CA sent, which may carry its public key.
+	if generated, ok := key.(*client.GeneratedKey); ok {
+		return f.block("PRIVATE KEY", generated.PKCS8), nil
+	}
 	if f.der() {
 		return keys.Marshal(key)
 	}

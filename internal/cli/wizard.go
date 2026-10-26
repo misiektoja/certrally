@@ -217,7 +217,7 @@ func (a *formAsker) show(title, value string) {
 // enrollFlagOrder is the order of the flags in the command that the wizard prints.
 var enrollFlagOrder = []string{
 	"server", "ca-cert", "tls-ca-cert", flagRef, "secret-file", "mac", "cert", "key", "type",
-	flagTemplateCert, flagSubject, flagSAN, flagKeyUsage, flagExtKeyUsage, "key-type", "new-key", "csr",
+	flagTemplateCert, flagSubject, flagSAN, flagKeyUsage, flagExtKeyUsage, flagCentralKeygen, "key-type", "new-key", "csr",
 	"cert-out", "key-out", "chain-out", flagOutFormat,
 }
 
@@ -578,6 +578,10 @@ func (w *enrollWizard) keyType() error {
 		return nil
 	case w.given("key-type"):
 		w.ask.show(title, w.o.keyType)
+		return nil
+	case w.o.centralKeygen:
+		// Without --key-type the CA chooses the algorithm of the key it generates.
+		w.ask.show(title, "chosen by the CA")
 		return nil
 	}
 	// A p10cr request is signed with the new key, which an ML-KEM key cannot do.

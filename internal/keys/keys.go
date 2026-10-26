@@ -2,6 +2,7 @@
 package keys
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
@@ -11,6 +12,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/asn1"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -28,6 +30,50 @@ type Type struct {
 	Signs bool
 	// generate creates a new key of this type: a crypto.Signer or, for ML-KEM, a crypto.Decapsulator.
 	generate func() (crypto.PrivateKey, error)
+	// oid and params identify the algorithm in a SubjectPublicKeyInfo. params is DER, nil when the
+	// algorithm has none.
+	oid    asn1.ObjectIdentifier
+	params []byte
+}
+
+// Algorithm returns the SubjectPublicKeyInfo algorithm of keys of this type: its object identifier
+// and its DER parameters, nil when it has none. The RSA algorithm does not carry the key size.
+func (t Type) Algorithm() (asn1.ObjectIdentifier, []byte) {
+	return t.oid, t.params
+}
+
+// TypeForAlgorithm returns the first key type, in the order of TypeNames, whose SubjectPublicKeyInfo
+// algorithm is oid with the DER parameters params. Empty params match any parameters, so they select
+// ECDSA P-256 for an EC key. RSA selects rsa-2048, since the algorithm carries no key size.
+func TypeForAlgorithm(oid asn1.ObjectIdentifier, params []byte) (Type, bool) {
+	for _, t := range types {
+		if t.oid.Equal(oid) && (len(params) == 0 || bytes.Equal(params, t.params)) {
+			return t, true
+		}
+	}
+	return Type{}, false
+}
+
+// Object identifiers and parameters of the SubjectPublicKeyInfo algorithms of the key types.
+var (
+	oidECPublicKey = asn1.ObjectIdentifier{1, 2, 840, 10045, 2, 1}
+	oidEd25519     = asn1.ObjectIdentifier{1, 3, 101, 112}
+	oidRSA         = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 1}
+	oidMLDSA44     = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 3, 17}
+	oidMLDSA65     = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 3, 18}
+	oidMLDSA87     = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 3, 19}
+
+	// asn1NULL is the parameters of rsaEncryption.
+	asn1NULL = []byte{0x05, 0x00}
+)
+
+// namedCurve returns the DER namedCurve parameters of an ECDSA key on the curve oid.
+func namedCurve(oid asn1.ObjectIdentifier) []byte {
+	der, err := asn1.Marshal(oid)
+	if err != nil {
+		panic(err)
+	}
+	return der
 }
 
 // DefaultType is the key type generated when none is requested. ECDSA P-256 is accepted by
@@ -41,29 +87,32 @@ var types = buildTypes()
 func buildTypes() []Type {
 	composites := compositemldsa.Algorithms()
 	out := make([]Type, 0, 12+len(composites))
+	p256 := namedCurve(asn1.ObjectIdentifier{1, 2, 840, 10045, 3, 1, 7})
+	p384 := namedCurve(asn1.ObjectIdentifier{1, 3, 132, 0, 34})
+	p521 := namedCurve(asn1.ObjectIdentifier{1, 3, 132, 0, 35})
 	out = append(out, []Type{
-		{"ecdsa-p256", true, ecdsaGenerator(elliptic.P256())},
-		{"ecdsa-p384", true, ecdsaGenerator(elliptic.P384())},
-		{"ecdsa-p521", true, ecdsaGenerator(elliptic.P521())},
+		{"ecdsa-p256", true, ecdsaGenerator(elliptic.P256()), oidECPublicKey, p256},
+		{"ecdsa-p384", true, ecdsaGenerator(elliptic.P384()), oidECPublicKey, p384},
+		{"ecdsa-p521", true, ecdsaGenerator(elliptic.P521()), oidECPublicKey, p521},
 		{"ed25519", true, func() (crypto.PrivateKey, error) {
 			_, key, err := ed25519.GenerateKey(rand.Reader)
 			return key, err
-		}},
-		{"rsa-2048", true, rsaGenerator(2048)},
-		{"rsa-3072", true, rsaGenerator(3072)},
-		{"rsa-4096", true, rsaGenerator(4096)},
-		{"ml-dsa-44", true, mldsaGenerator(mldsa.MLDSA44())},
-		{"ml-dsa-65", true, mldsaGenerator(mldsa.MLDSA65())},
-		{"ml-dsa-87", true, mldsaGenerator(mldsa.MLDSA87())},
+		}, oidEd25519, nil},
+		{"rsa-2048", true, rsaGenerator(2048), oidRSA, asn1NULL},
+		{"rsa-3072", true, rsaGenerator(3072), oidRSA, asn1NULL},
+		{"rsa-4096", true, rsaGenerator(4096), oidRSA, asn1NULL},
+		{"ml-dsa-44", true, mldsaGenerator(mldsa.MLDSA44()), oidMLDSA44, nil},
+		{"ml-dsa-65", true, mldsaGenerator(mldsa.MLDSA65()), oidMLDSA65, nil},
+		{"ml-dsa-87", true, mldsaGenerator(mldsa.MLDSA87()), oidMLDSA87, nil},
 	}...)
 	for _, alg := range composites {
 		out = append(out, Type{strings.ToLower(alg.String()), true, func() (crypto.PrivateKey, error) {
 			return compositemldsa.GenerateKey(alg)
-		}})
+		}, alg.OID(), nil})
 	}
 	return append(out,
-		Type{"ml-kem-768", false, func() (crypto.PrivateKey, error) { return mlkem.GenerateKey768() }},
-		Type{"ml-kem-1024", false, func() (crypto.PrivateKey, error) { return mlkem.GenerateKey1024() }},
+		Type{"ml-kem-768", false, func() (crypto.PrivateKey, error) { return mlkem.GenerateKey768() }, oidMLKEM768, nil},
+		Type{"ml-kem-1024", false, func() (crypto.PrivateKey, error) { return mlkem.GenerateKey1024() }, oidMLKEM1024, nil},
 	)
 }
 

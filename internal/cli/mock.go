@@ -27,6 +27,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/misiektoja/certrally/internal/dn"
+	"github.com/misiektoja/certrally/internal/keys"
 	"github.com/misiektoja/certrally/internal/pemfile"
 	"github.com/misiektoja/certrally/internal/secret"
 	"github.com/misiektoja/certrally/internal/trace"
@@ -113,7 +114,9 @@ func newMockCommand() *cobra.Command {
 		Short: "Run a local CMP test CA",
 		Long: "Run a CMP test CA on this machine, to try certrally or test scripts without a real CA. It issues, " +
 			"confirms and revokes certificates and answers the requests for CA certificates, a request template " +
-			"and CRLs. It accepts the shared secret for --ref and signatures made with certificates it issued.\n\n" +
+			"and CRLs. It accepts the shared secret for --ref and signatures made with certificates it issued. " +
+			"It generates the key pair for enroll --central-keygen and signs it with a key generation authority " +
+			"certificate it issued.\n\n" +
 			"The shared secret comes from --secret-file or " + secret.EnvVar + ". Without either, a random secret " +
 			"is generated and printed. The CA key and everything it issued live in memory and are lost when it " +
 			"stops. Stop it with Ctrl-C.\n\n" +
@@ -311,6 +314,7 @@ func runMock(cmd *cobra.Command, o *mockOptions) error {
 		server.WithExtraCerts([]*x509.Certificate{ca.Cert()}),
 		server.WithSecretLookup(ca),
 		server.WithCertificateLookup(ca),
+		server.WithCentralKeyGeneration(mockKeyGenerator{}, ca.KGAKey(), ca.KGACert()),
 	}
 	srv := server.NewCAServer(faultCA, server.LightweightPolicy(), slices.Concat(opts, flt.options)...)
 	if err := srv.Err(); err != nil {
@@ -493,6 +497,35 @@ func (c *faultCA) IssueCertificate(ctx context.Context, reqType server.RequestTy
 	return c.delay(ctx, func(ctx context.Context) (*server.Response, error) {
 		return c.MockCA.IssueCertificate(ctx, reqType, tmpl, sender)
 	})
+}
+
+// mockKeyGenerator generates the key pairs of requests for central key generation.
+type mockKeyGenerator struct{}
+
+// GenerateKey generates an ECDSA P-256 key when the request leaves the choice to the CA and otherwise
+// a key of any type enroll --key-type offers. A requested RSA key has 2048 bits, since the request
+// cannot name the size.
+func (mockKeyGenerator) GenerateKey(ctx context.Context, algorithm *pkicmp.AlgorithmIdentifier, _ *server.SenderIdentity) (*server.GeneratedKey, error) {
+	name := keys.DefaultType
+	if algorithm != nil {
+		t, ok := keys.TypeForAlgorithm(algorithm.Algorithm, algorithm.Parameters)
+		if !ok {
+			return nil, &server.Error{Status: pkicmp.StatusRejection, FailureInfo: pkicmp.FailBadAlg,
+				StatusText: "the mock CA does not generate keys of algorithm " + algorithm.Algorithm.String()}
+		}
+		name = t.Name
+	}
+	key, err := keys.Generate(name)
+	if err != nil {
+		return nil, err
+	}
+	der, err := keys.Marshal(key)
+	if err != nil {
+		return nil, err
+	}
+	pub := keys.Public(key)
+	addMockNote(ctx, "generated  "+keys.Describe(pub)+" key")
+	return &server.GeneratedKey{PrivateKey: der, PublicKey: pub}, nil
 }
 
 // RevokeCertificate revokes the certificate, after the configured polls, unless every request is rejected.

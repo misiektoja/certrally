@@ -65,9 +65,16 @@ type enrollOptions struct {
 	// pollLater stops at the first answer that says the request waits, for poll to resume.
 	pollLater bool
 	// pop is the --pop method of a key that cannot sign. Empty selects popEncryptedCert.
-	pop         string
-	interactive bool
+	pop string
+	// centralKeygen asks the CA to generate the key pair. keyTypeSet records that --key-type was
+	// given, so that it names the algorithm to ask for instead of leaving the choice to the CA.
+	centralKeygen bool
+	keyTypeSet    bool
+	interactive   bool
 }
+
+// flagCentralKeygen names the flag that asks the CA to generate the key pair.
+const flagCentralKeygen = "central-keygen"
 
 // flagPOP names the flag that chooses the indirect proof of possession.
 const flagPOP = "pop"
@@ -120,6 +127,11 @@ func newEnrollCommand() *cobra.Command {
 			"possession by decryption. With --pop encrypted-cert, the default, the CA encrypts the certificate " +
 			"for the key and the certConf proves that enroll could read it. With --pop challenge the CA first " +
 			"sends an encrypted challenge that enroll answers. The CA must offer the method.\n\n" +
+			"With --central-keygen the CA generates the key pair (RFC 9483 section 4.1.6) and returns the " +
+			"private key encrypted for the shared secret or for the --key of a signed request, which must be " +
+			"an RSA or ECDSA key. enroll checks that the key belongs to the certificate and saves it to " +
+			"--key-out. --key-type names the algorithm to ask for. Without it the CA chooses. An RSA request " +
+			"cannot name the key size.\n\n" +
 			"Run without flags on a terminal, or with --interactive, to be asked for each setting. The " +
 			"equivalent command is printed before the request is sent.\n\n" +
 			enrollExitStatusHelp,
@@ -134,6 +146,7 @@ func newEnrollCommand() *cobra.Command {
 			return startEnrollWizard(cmd, o)
 		},
 		RunE: runWith(&o.outputOptions, func(cmd *cobra.Command, _ []string, p *printer) error {
+			o.keyTypeSet = cmd.Flags().Changed("key-type")
 			return runEnroll(cmd.Context(), o, p, cmd.InOrStdin())
 		}),
 	}
@@ -157,10 +170,12 @@ func newEnrollCommand() *cobra.Command {
 		"type of the generated key, such as ecdsa-p384, rsa-3072, ml-dsa-65, mldsa65-ecdsa-p256-sha512 or ml-kem-768")
 	f.StringVar(&o.pop, flagPOP, "",
 		"how a key that cannot sign, such as ML-KEM, proves possession: encrypted-cert (the default) or challenge")
+	f.BoolVar(&o.centralKeygen, flagCentralKeygen, false,
+		"ask the CA to generate the key pair and save the private key it returns to --key-out")
 	f.StringVar(&o.newKey, "new-key", "", "certify the private key in this file instead of generating one")
 	f.StringVar(&o.csr, "csr", "", "send the PKCS#10 request in this file (p10cr)")
 	f.StringVar(&o.certOut, "cert-out", "", "write the issued certificate to this file")
-	f.StringVar(&o.keyOut, "key-out", "", "write the generated private key to this file")
+	f.StringVar(&o.keyOut, "key-out", "", "write the private key that certrally or the CA generates to this file")
 	f.StringVar(&o.chainOut, "chain-out", "", "write the issuing CA certificates from the response to this file")
 	o.format.addFlags(cmd, formatPEM, outFormatChainHelp)
 	f.BoolVar(&o.force, "force", false, "replace existing output files")
@@ -251,6 +266,9 @@ func (o *enrollOptions) validateKey() error {
 	case o.pop != "" && o.csr != "":
 		return fmt.Errorf("--%s is for keys that cannot sign, and a request given with --csr is signed", flagPOP)
 	}
+	if o.centralKeygen {
+		return o.validateCentralKeygen()
+	}
 	generated := o.csr == "" && o.newKey == ""
 	switch {
 	case generated && o.keyOut == "":
@@ -265,6 +283,24 @@ func (o *enrollOptions) validateKey() error {
 		return err
 	}
 	return o.checkPOP(t.Name, t.Signs)
+}
+
+// validateCentralKeygen checks the flags of a request that asks the CA to generate the key pair.
+func (o *enrollOptions) validateCentralKeygen() error {
+	switch {
+	case o.reqType == typeP10CR:
+		return fmt.Errorf("a p10cr request is signed with the key to certify, so --%s needs --type ir, cr or kur",
+			flagCentralKeygen)
+	case o.newKey != "":
+		return fmt.Errorf("--%s asks the CA for the key, so --new-key cannot be used", flagCentralKeygen)
+	case o.pop != "":
+		return fmt.Errorf("--%s is for keys that cannot sign, and a key the CA generates needs no proof of possession",
+			flagPOP)
+	case o.keyOut == "":
+		return errors.New("--key-out is required to save the key the CA generates")
+	}
+	_, err := keys.LookupType(o.keyType)
+	return err
 }
 
 // checkPOP checks --pop and --type against whether keys of the type named name can sign.
@@ -319,6 +355,10 @@ type enrollment struct {
 	csrDER []byte
 	// indirect is the proof of possession of a key that cannot sign, zero for a key that signs.
 	indirect client.IndirectPOP
+	// central asks the CA to generate the key pair, of the algorithm centralAlg or, when it is nil,
+	// of the CA's choice. newKey is then nil.
+	central    bool
+	centralAlg *pkicmp.AlgorithmIdentifier
 }
 
 // runEnroll performs the enroll command.
@@ -383,11 +423,15 @@ func runEnroll(ctx context.Context, o *enrollOptions, p *printer, stdin io.Reade
 }
 
 // reportIssued saves an issued certificate with its new key and the issuing CA certificates and
-// reports it. implicitAsked says whether the request asked for implicit confirmation and pop how a
-// key that cannot sign proved possession. The fields in extra follow those of the certificate.
+// reports it. The new key is key or the one the CA generated. implicitAsked says whether the request
+// asked for implicit confirmation and pop how a key that cannot sign proved possession. The fields in
+// extra follow those of the certificate.
 func reportIssued(s *session, out certOutputs, result *client.EnrollResult, key crypto.PrivateKey, implicitAsked bool, pop client.IndirectPOP, extra ...ui.Field) error {
 	cert := result.Certificate
 	chain := issuerChain(cert, append(result.CAPubs, result.ExtraCertificates...))
+	if result.GeneratedKey != nil {
+		key = result.GeneratedKey
+	}
 	saved, err := out.save(cert, key, chain)
 	if err != nil {
 		return fmt.Errorf("the certificate was issued but could not be saved: %w", err)
@@ -403,17 +447,32 @@ func reportIssued(s *session, out certOutputs, result *client.EnrollResult, key 
 	if pop != 0 {
 		fields = append(fields, ui.Field{Name: fieldPOP, Value: describeIndirectPOP(pop)})
 	}
+	kga := keyGenerationAuthority(result.GeneratedKey)
+	if kga != "" {
+		fields = append(fields, ui.Field{Name: fieldKeyGeneratedBy, Value: kga})
+	}
 	s.p.result("Certificate issued", append(fields, extra...), &enrollJSON{
-		Status:            status,
-		Confirmed:         true,
-		ImplicitConfirm:   result.ImplicitConfirm,
-		ProofOfPossession: popName(pop),
-		Certificate:       certificateResult(cert),
-		Chain:             certificatesResult(chain),
-		Saved:             saved,
-		TransactionID:     transactionID(s.recorder),
+		Status:                 status,
+		Confirmed:              true,
+		ImplicitConfirm:        result.ImplicitConfirm,
+		ProofOfPossession:      popName(pop),
+		CentralKeyGeneration:   result.GeneratedKey != nil,
+		KeyGenerationAuthority: kga,
+		Certificate:            certificateResult(cert),
+		Chain:                  certificatesResult(chain),
+		Saved:                  saved,
+		TransactionID:          transactionID(s.recorder),
 	})
 	return nil
+}
+
+// keyGenerationAuthority returns the subject of the certificate that signed a key the CA generated,
+// "" when there is none.
+func keyGenerationAuthority(key *client.GeneratedKey) string {
+	if key == nil || key.Signer == nil {
+		return ""
+	}
+	return ui.Sanitize(dn.Format(key.Signer.RawSubject))
 }
 
 // popName returns the --pop value of an indirect proof of possession, "" for a signature.
@@ -508,6 +567,9 @@ func (o *enrollOptions) recordPending(s *session, pending *client.PendingEnrollm
 // reportUnconfirmed saves a certificate whose confirmation failed and explains the situation. The
 // certificate is kept because retrying could issue a second one.
 func reportUnconfirmed(s *session, out certOutputs, confErr *client.ConfirmationError, key crypto.PrivateKey) error {
+	if confErr.GeneratedKey != nil {
+		key = confErr.GeneratedKey
+	}
 	saved, saveErr := out.save(confErr.Certificate, key, nil)
 	f := &failure{
 		code:    exitUnconfirmed,
@@ -526,19 +588,24 @@ func reportUnconfirmed(s *session, out certOutputs, confErr *client.Confirmation
 		s.p.doc.Warnings = append(s.p.doc.Warnings, "The certificate could not be saved: "+saveErr.Error())
 	}
 	s.p.doc.Result = &enrollJSON{
-		Status:        lastStatus(s.recorder),
-		Certificate:   certificateResult(confErr.Certificate),
-		Chain:         []*certificateJSON{},
-		Saved:         saved,
-		TransactionID: transactionID(s.recorder),
+		Status:                 lastStatus(s.recorder),
+		CentralKeyGeneration:   confErr.GeneratedKey != nil,
+		KeyGenerationAuthority: keyGenerationAuthority(confErr.GeneratedKey),
+		Certificate:            certificateResult(confErr.Certificate),
+		Chain:                  []*certificateJSON{},
+		Saved:                  saved,
+		TransactionID:          transactionID(s.recorder),
 	}
 	return s.p.fail(f, confErr, fields...)
 }
 
 // prepareKey loads or generates the key to certify. With --csr it loads the request that carries the
-// key. The password of an encrypted --new-key may be prompted for on stdin.
+// key. The password of an encrypted --new-key may be prompted for on stdin. With --central-keygen
+// it chooses the algorithm to ask the CA for instead.
 func (o *enrollOptions) prepareKey(e *enrollment, stdin io.Reader, prompt io.Writer) error {
 	switch {
+	case o.centralKeygen:
+		return o.prepareCentralKeygen(e)
 	case o.csr != "":
 		der, err := pemfile.ReadCSR(o.csr)
 		if err != nil {
@@ -575,6 +642,29 @@ func (o *enrollOptions) prepareKey(e *enrollment, stdin io.Reader, prompt io.Wri
 	// The new key signs the proof of possession or the PKCS#10 request with the chosen digest.
 	if o.hash != "" && !takesDigest(pub) {
 		return fmt.Errorf("--hash applies to RSA and ECDSA keys, not to the %s key to certify", keys.Describe(pub))
+	}
+	return nil
+}
+
+// prepareCentralKeygen sets up a request that asks the CA to generate the key pair. The CA encrypts
+// the private key for the protection, which a signing key can receive only when it is RSA or ECDSA.
+func (o *enrollOptions) prepareCentralKeygen(e *enrollment) error {
+	if sc, ok := e.creds.(*pkicmp.SignatureCredentials); ok {
+		switch pub := sc.Key().Public().(type) {
+		case *rsa.PublicKey, *ecdsa.PublicKey:
+		default:
+			return fmt.Errorf("the CA encrypts the key it generates for --key, which an %s key cannot decrypt. "+
+				"Sign with an RSA or ECDSA key or use a shared secret", keys.Describe(pub))
+		}
+	}
+	e.central = true
+	if o.keyTypeSet {
+		t, err := keys.LookupType(o.keyType)
+		if err != nil {
+			return err
+		}
+		oid, params := t.Algorithm()
+		e.centralAlg = &pkicmp.AlgorithmIdentifier{Algorithm: oid, Parameters: params}
 	}
 	return nil
 }
@@ -679,6 +769,16 @@ func csrSignatureAlgorithm(key crypto.Signer, hash crypto.Hash) x509.SignatureAl
 func (o *enrollOptions) send(ctx context.Context, c *client.Client, e *enrollment) (*client.EnrollResult, error) {
 	if o.reqType == typeP10CR {
 		return c.SendP10CR(ctx, e.csrDER, e.creds, e.reqOpts...)
+	}
+	if e.central {
+		switch o.reqType {
+		case typeCR:
+			return c.SendCRWithCentralKeyGeneration(ctx, e.centralAlg, e.creds, e.reqOpts...)
+		case typeKUR:
+			return c.SendKURWithCentralKeyGeneration(ctx, e.centralAlg, e.creds, e.reqOpts...)
+		default:
+			return c.SendIRWithCentralKeyGeneration(ctx, e.centralAlg, e.creds, e.reqOpts...)
+		}
 	}
 	if e.indirect != 0 {
 		switch o.reqType {

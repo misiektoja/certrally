@@ -41,8 +41,10 @@ type pollOptions struct {
 	timeout  time.Duration
 	certOut  string
 	chainOut string
-	force    bool
-	format   outFormat
+	// keyOut overrides the file that enroll named for a key the CA generates.
+	keyOut string
+	force  bool
+	format outFormat
 }
 
 // newPollCommand returns the poll command.
@@ -62,6 +64,8 @@ func newPollCommand() *cobra.Command {
 			"again.\n\n" +
 			"A request whose key cannot sign and proves possession with an encrypted certificate needs that key " +
 			"to read the certificate. poll reads it from the file enroll saved or read, or from --new-key.\n\n" +
+			"A request with --central-keygen gets the key the CA generates with the certificate. poll saves it " +
+			"where enroll was asked to, unless --key-out names another file.\n\n" +
 			enrollExitStatusHelp,
 		Example: "  certrally enroll --server https://ca.example.com/.well-known/cmp --ref device-42 \\\n" +
 			"    --subject CN=device-42 --cert-out device.pem --key-out device.key \\\n" +
@@ -87,6 +91,8 @@ func newPollCommand() *cobra.Command {
 	f.StringVar(&o.certOut, "cert-out", "", "write the issued certificate to this file instead of the one enroll named")
 	f.StringVar(&o.chainOut, "chain-out", "",
 		"write the issuing CA certificates from the response to this file instead of the one enroll named")
+	f.StringVar(&o.keyOut, "key-out", "",
+		"write the key the CA generates to this file instead of the one enroll named (central key generation)")
 	o.format.addFlags(cmd, "", "format of the output files instead of the one enroll used: pem or der")
 	f.BoolVar(&o.force, "force", false, "replace existing output files")
 	_ = cmd.MarkFlagRequired("transaction-id")
@@ -127,6 +133,8 @@ type pendingRecord struct {
 	// NewKey is the file of the key to certify when it proves possession with an encrypted
 	// certificate, which only that key can decrypt.
 	NewKey string `json:"newKey,omitempty"`
+	// KeyOut is the file enroll was asked to save a key the CA generates to.
+	KeyOut string `json:"keyOut,omitempty"`
 	// State is the transaction state of go-pki-cmp.
 	State *client.PendingEnrollment `json:"state"`
 }
@@ -151,7 +159,10 @@ func newPendingRecord(s *session, prot *protection, out certOutputs, implicitCon
 	if pending.IndirectPOP == client.EncryptedCertificate {
 		rec.NewKey = newKeyFile
 	}
-	for _, path := range []*string{&rec.Cert, &rec.Key, &rec.CertOut, &rec.ChainOut, &rec.NewKey} {
+	if pending.CentralKeyGeneration {
+		rec.KeyOut = out.keyOut
+	}
+	for _, path := range []*string{&rec.Cert, &rec.Key, &rec.CertOut, &rec.ChainOut, &rec.NewKey, &rec.KeyOut} {
 		if *path == "" || *path == stdoutPath {
 			continue
 		}
@@ -333,14 +344,18 @@ func (o *pollOptions) connection(rec *pendingRecord) (*connection, error) {
 	}, nil
 }
 
-// outputs returns where and how to save the certificate of rec, with --cert-out, --chain-out and
-// --out-format taking precedence.
+// outputs returns where and how to save the certificate of rec and a key the CA generates, with
+// --cert-out, --chain-out, --key-out and --out-format taking precedence.
 func (o *pollOptions) outputs(rec *pendingRecord) certOutputs {
 	out := certOutputs{
 		certOut:  rec.CertOut,
 		chainOut: rec.ChainOut,
+		keyOut:   rec.KeyOut,
 		force:    o.force,
 		format:   outFormat{name: rec.OutFormat},
+	}
+	if o.keyOut != "" {
+		out.keyOut = o.keyOut
 	}
 	if o.format.name != "" {
 		out.format = o.format
@@ -372,13 +387,18 @@ func runPoll(ctx context.Context, o *pollOptions, p *printer, stdin io.Reader) e
 		return err
 	}
 	out := o.outputs(rec)
-	if out.certOut == "" {
+	switch {
+	case out.certOut == "":
 		return errors.New("the transaction names no certificate file, so --cert-out is required")
+	case o.keyOut != "" && !rec.State.CentralKeyGeneration:
+		return errors.New("--key-out is only used for a request with central key generation")
+	case rec.State.CentralKeyGeneration && out.keyOut == "":
+		return errors.New("the CA generates the key of this request, so --key-out must name the file to save it to")
 	}
-	if err := conn.checkCapture(out.certOut, out.chainOut); err != nil {
+	if err := conn.checkCapture(out.certOut, out.keyOut, out.chainOut); err != nil {
 		return err
 	}
-	if err := checkOutputs(out.force, out.certOut, out.chainOut); err != nil {
+	if err := checkOutputs(out.force, out.certOut, out.keyOut, out.chainOut); err != nil {
 		return err
 	}
 	pr, err := rec.protection(o.secretFile, o.keyPassword).load(stdin, p.stderr)
