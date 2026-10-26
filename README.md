@@ -379,7 +379,7 @@ A client signs in with one of these:
 
 `--proxy` and the proxy environment variables work like for CMP. The EST commands tunnel through the proxy with CONNECT, so TLS-SRP and `--tls-unique` work through it.
 
-The server certificate is checked against the system roots or against the CA certificates in `--tls-ca-cert`. `--insecure` skips that check, for a test server, and warns that anyone who intercepts the connection can pose as the server. When nothing can check the certificate yet, `est cacerts --bootstrap` connects without the check (RFC 7030 section 4.1.1). It saves the certificate whose fingerprint matches `--fingerprint`, or the one a person confirms on a terminal, together with the certificates it issued. The other certificates of the response are listed with a note and not saved:
+The server certificate is checked against the system roots or against the CA certificates in `--tls-ca-cert`. `--insecure` skips that check, for a test server, and warns that anyone who intercepts the connection can pose as the server. When nothing can check the certificate yet, `est cacerts --bootstrap` connects without the check (RFC 7030 section 4.1.1). It saves the certificate whose fingerprint matches `--fingerprint`, or the one a person confirms on a terminal, together with the certificates it issued. The other certificates of the response are listed with a note and not saved. `--bootstrap` cannot be combined with `--user`, `--password-file`, `--token` or `--token-file`, since the request needs no sign-in and the credentials would reach a server that nothing checked:
 
 ```bash
 certrally est cacerts --server https://est.example.com --bootstrap \
