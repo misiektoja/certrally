@@ -49,7 +49,9 @@ func newESTCACertsCommand() *cobra.Command {
 			"--fingerprint or confirm it when asked. The certificate with that fingerprint is saved together " +
 			"with the certificates it issued. The other certificates of the response are not saved. If the CA " +
 			"issued the TLS certificate of the server, later commands can trust the saved certificates with " +
-			"--tls-ca-cert. A TLS-SRP sign-in with --srp authenticates the server without a certificate.\n\n" +
+			"--tls-ca-cert. The request needs no credentials, so --bootstrap refuses the flags that sign in, " +
+			"which would send them to the unchecked server. A TLS-SRP sign-in with --srp authenticates the " +
+			"server without a certificate.\n\n" +
 			estExitStatusHelp,
 		Example: "  certrally est cacerts --server https://est.example.com --out ca.pem\n" +
 			"  certrally est cacerts --server https://est.example.com --bootstrap \\\n" +
@@ -72,6 +74,11 @@ func newESTCACertsCommand() *cobra.Command {
 	cmd.MarkFlagsMutuallyExclusive("bootstrap", flagTLSCACert)
 	cmd.MarkFlagsMutuallyExclusive("bootstrap", flagInsecure)
 	cmd.MarkFlagsMutuallyExclusive("bootstrap", "srp")
+	// The cacerts request needs no sign-in (RFC 7030 section 4.1.2), and go-pki-est would send the
+	// credentials on it to a server that nothing checked.
+	for _, credential := range []string{"user", "password-file", flagToken, flagTokenFile} {
+		cmd.MarkFlagsMutuallyExclusive("bootstrap", credential)
+	}
 	_ = cmd.RegisterFlagCompletionFunc("fingerprint", cobra.NoFileCompletions)
 	return cmd
 }
