@@ -99,6 +99,7 @@ func newRootCommand() *cobra.Command {
 	}
 	cmd.AddCommand(
 		newEnrollCommand(),
+		newPollCommand(),
 		newRevokeCommand(),
 		newCACertsCommand("cacerts"),
 		newCMPCommand(),

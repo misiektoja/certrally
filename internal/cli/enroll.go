@@ -9,6 +9,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -20,8 +21,10 @@ import (
 
 	"github.com/misiektoja/go-composite-mldsa/compositex509"
 	"github.com/misiektoja/go-pki-cmp/client"
+	"github.com/misiektoja/go-pki-cmp/pkicmp"
 	"github.com/spf13/cobra"
 
+	"github.com/misiektoja/certrally/internal/capture"
 	"github.com/misiektoja/certrally/internal/dn"
 	"github.com/misiektoja/certrally/internal/keys"
 	"github.com/misiektoja/certrally/internal/pemfile"
@@ -45,21 +48,29 @@ type enrollOptions struct {
 	connection
 	protection
 	outputOptions
-	reqType     string
-	subject     string
-	sans        []string
-	keyType     string
-	newKey      string
-	csr         string
-	certOut     string
-	keyOut      string
-	chainOut    string
-	force       bool
+	reqType string
+	subject string
+	sans    []string
+	keyType string
+	newKey  string
+	csr     string
+	certOutputs
 	certProfile string
 	certReqID   int64
 	// implicitConfirm asks the CA to skip the certConf round trip.
 	implicitConfirm bool
-	interactive     bool
+	// pollLater stops at the first answer that says the request waits, for poll to resume.
+	pollLater   bool
+	interactive bool
+}
+
+// certOutputs names the files that an issued certificate, its new key and the issuing CA
+// certificates are written to.
+type certOutputs struct {
+	certOut  string
+	keyOut   string
+	chainOut string
+	force    bool
 }
 
 // newEnrollCommand returns the enroll command.
@@ -74,6 +85,11 @@ func newEnrollCommand() *cobra.Command {
 			"requests normally use. A new key is generated unless --new-key or --csr supplies one.\n\n" +
 			"The shared secret is read from --secret-file, the CERTRALLY_SECRET environment variable or a " +
 			"prompt, never from the command line.\n\n" +
+			"A CA that cannot decide at once answers that the request waits, and enroll polls until it " +
+			"decides or --timeout ends. With --poll-later enroll stops at that answer instead, saves the new " +
+			"key and records the transaction in the --capture file. certrally poll collects the " +
+			"certificate later. A run whose polling ends at --timeout records the transaction the same way " +
+			"when --capture is given.\n\n" +
 			"Run without flags on a terminal, or with --interactive, to be asked for each setting. The " +
 			"equivalent command is printed before the request is sent.\n\n" +
 			enrollExitStatusHelp,
@@ -112,6 +128,8 @@ func newEnrollCommand() *cobra.Command {
 		"request identifier (certReqId) of an ir, cr or kur, which the CA must repeat")
 	f.BoolVar(&o.implicitConfirm, "implicit-confirm", false,
 		"ask the CA for implicit confirmation, which skips the certConf when granted")
+	f.BoolVar(&o.pollLater, "poll-later", false,
+		"stop when the CA answers that the request waits and record the transaction in --capture for poll")
 	f.BoolVar(&o.interactive, "interactive", false, "ask for the settings that the command line leaves out")
 
 	_ = cmd.MarkFlagRequired("cert-out")
@@ -124,8 +142,8 @@ func newEnrollCommand() *cobra.Command {
 	return cmd
 }
 
-// Exit statuses of the commands that talk to a server. Only enroll confirms a certificate, so only
-// enroll can exit with status 5.
+// Exit statuses of the commands that talk to a server. Only enroll and poll confirm a certificate, so
+// only they can exit with status 5.
 const (
 	exitStatusStart = "Exit status: 0 success, 1 usage or local error, 2 server unreachable or not speaking CMP, " +
 		"3 rejected by the CA, 4 protocol or verification failure, "
@@ -162,6 +180,8 @@ func (o *enrollOptions) validate() error {
 		return errors.New("--cert-req-id must not be negative")
 	case o.certReqID != 0 && o.reqType == typeP10CR:
 		return errors.New("a p10cr request carries no certReqId, so --cert-req-id needs --type ir, cr or kur")
+	case o.pollLater && o.capture == "":
+		return errors.New("--poll-later records the transaction in the --capture file, so --capture is required")
 	}
 	generated := o.csr == "" && o.newKey == ""
 	switch {
@@ -227,6 +247,9 @@ func runEnroll(ctx context.Context, o *enrollOptions, p *printer, stdin io.Reade
 	if o.implicitConfirm {
 		e.reqOpts = append(e.reqOpts, client.WithImplicitConfirm())
 	}
+	if o.pollLater {
+		e.reqOpts = append(e.reqOpts, client.WithDeferredPolling())
+	}
 
 	s, err := o.open(p, e.chain)
 	if err != nil {
@@ -243,52 +266,116 @@ func runEnroll(ctx context.Context, o *enrollOptions, p *printer, stdin io.Reade
 	s.endLadder()
 	if err != nil {
 		if confErr, ok := errors.AsType[*client.ConfirmationError](err); ok {
-			return o.reportUnconfirmed(s, confErr, e.newKey)
+			return reportUnconfirmed(s, o.certOutputs, confErr, e.newKey)
+		}
+		if pendingErr, ok := errors.AsType[*client.PendingError](err); ok {
+			return o.reportStillWaiting(s, e, pendingErr)
 		}
 		return s.fail(err)
 	}
+	if result.Pending != nil {
+		return o.reportWaiting(s, e, result.Pending)
+	}
+	return reportIssued(s, o.certOutputs, result, e.newKey, o.implicitConfirm)
+}
 
+// reportIssued saves an issued certificate with its new key and the issuing CA certificates and
+// reports it. implicitAsked says whether the request asked for implicit confirmation. The fields in
+// extra follow those of the certificate.
+func reportIssued(s *session, out certOutputs, result *client.EnrollResult, key crypto.Signer, implicitAsked bool, extra ...ui.Field) error {
 	cert := result.Certificate
 	chain := issuerChain(cert, append(result.CAPubs, result.ExtraCertificates...))
-	saved, err := o.save(cert, e.newKey, chain)
+	saved, err := out.save(cert, key, chain)
 	if err != nil {
 		return fmt.Errorf("the certificate was issued but could not be saved: %w", err)
 	}
-	if o.chainOut != "" && len(chain) == 0 {
-		p.warn("The response carried no issuing CA certificates, so --chain-out was not written.")
+	if out.chainOut != "" && len(chain) == 0 {
+		s.p.warn("The response carried no issuing CA certificates, so --chain-out was not written.")
 	}
 	status := lastStatus(s.recorder)
 	fields := certificateFields(cert, status, saved)
-	if confirmation := o.confirmation(result); confirmation != "" {
+	if confirmation := confirmation(result, implicitAsked); confirmation != "" {
 		fields = append(fields, ui.Field{Name: fieldConfirmation, Value: confirmation})
 	}
-	p.result("Certificate issued", fields, &enrollJSON{
+	s.p.result("Certificate issued", append(fields, extra...), &enrollJSON{
 		Status:          status,
 		Confirmed:       true,
 		ImplicitConfirm: result.ImplicitConfirm,
 		Certificate:     certificateResult(cert),
 		Chain:           certificatesResult(chain),
 		Saved:           saved,
+		TransactionID:   transactionID(s.recorder),
 	})
 	return nil
 }
 
 // confirmation describes how the certificate was confirmed when that differs from the usual certConf
 // exchange, because the CA granted implicit confirmation or declined to grant the one asked for.
-func (o *enrollOptions) confirmation(result *client.EnrollResult) string {
+func confirmation(result *client.EnrollResult, implicitAsked bool) string {
 	switch {
 	case result.ImplicitConfirm:
 		return "implicit, no certConf sent"
-	case o.implicitConfirm:
+	case implicitAsked:
 		return "certConf sent, because the CA did not grant implicit confirmation"
 	}
 	return ""
 }
 
+// reportWaiting handles a request that the CA keeps waiting under --poll-later. It saves the new key,
+// records the transaction in the capture file and tells how to resume it.
+func (o *enrollOptions) reportWaiting(s *session, e *enrollment, pending *client.PendingEnrollment) error {
+	saved, err := o.saveKey(e.newKey)
+	if err != nil {
+		return fmt.Errorf("the request waits for the CA, but the key could not be saved: %w", err)
+	}
+	if err := o.recordPending(s, pending); err != nil {
+		return fmt.Errorf("the request waits for the CA, but --capture could not record it: %w", err)
+	}
+	id := hex.EncodeToString(pending.TransactionID)
+	fields := []ui.Field{
+		{Name: fieldStatus, Value: pkicmp.StatusWaiting.String()},
+		{Name: fieldTransactionID, Value: id},
+		{Name: fieldNextPoll, Value: formatNextPoll(pending.NextPoll)},
+		{Name: fieldSaved, Value: strings.Join(saved, ", ")},
+		{Name: fieldNote, Value: resumeNote(id, o.capture)},
+	}
+	s.p.result("Request waiting for the CA", fields, waitingResult(saved, pending))
+	return nil
+}
+
+// reportStillWaiting reports polling that ended while the CA still had the request waiting. With
+// --capture the new key is saved and the transaction recorded, so poll can resume it.
+func (o *enrollOptions) reportStillWaiting(s *session, e *enrollment, pendingErr *client.PendingError) error {
+	if o.capture == "" {
+		f := s.pendingFailure(pendingErr, "Record the run with --capture to collect a waiting certificate later with poll.")
+		return s.p.fail(f, pendingErr)
+	}
+	saved, err := o.saveKey(e.newKey)
+	if err == nil {
+		err = o.recordPending(s, pendingErr.Pending)
+	}
+	if err != nil {
+		f := s.pendingFailure(pendingErr, "The transaction could not be recorded for poll: "+err.Error())
+		return s.p.fail(f, pendingErr)
+	}
+	f := s.pendingFailure(pendingErr, resumeNote(hex.EncodeToString(pendingErr.Pending.TransactionID), o.capture))
+	s.p.doc.Result = waitingResult(saved, pendingErr.Pending)
+	return s.p.fail(f, pendingErr, withSaved(f.fields(s.recording), saved)...)
+}
+
+// recordPending records pending in the capture file, so that poll can resume it.
+func (o *enrollOptions) recordPending(s *session, pending *client.PendingEnrollment) error {
+	rec, err := newPendingRecord(s, &o.protection, o.certOutputs, o.implicitConfirm, pending)
+	if err != nil {
+		return err
+	}
+	return s.recordTransaction(capture.TransactionWaiting, pending.TransactionID, rec)
+}
+
 // reportUnconfirmed saves a certificate whose confirmation failed and explains the situation. The
 // certificate is kept because retrying could issue a second one.
-func (o *enrollOptions) reportUnconfirmed(s *session, confErr *client.ConfirmationError, key crypto.Signer) error {
-	saved, saveErr := o.save(confErr.Certificate, key, nil)
+func reportUnconfirmed(s *session, out certOutputs, confErr *client.ConfirmationError, key crypto.Signer) error {
+	saved, saveErr := out.save(confErr.Certificate, key, nil)
 	f := &failure{
 		code:    exitUnconfirmed,
 		Title:   "The certificate was issued but the confirmation failed",
@@ -306,10 +393,11 @@ func (o *enrollOptions) reportUnconfirmed(s *session, confErr *client.Confirmati
 		s.p.doc.Warnings = append(s.p.doc.Warnings, "The certificate could not be saved: "+saveErr.Error())
 	}
 	s.p.doc.Result = &enrollJSON{
-		Status:      lastStatus(s.recorder),
-		Certificate: certificateResult(confErr.Certificate),
-		Chain:       []*certificateJSON{},
-		Saved:       saved,
+		Status:        lastStatus(s.recorder),
+		Certificate:   certificateResult(confErr.Certificate),
+		Chain:         []*certificateJSON{},
+		Saved:         saved,
+		TransactionID: transactionID(s.recorder),
 	}
 	return s.p.fail(f, confErr, fields...)
 }
@@ -452,17 +540,10 @@ func (o *enrollOptions) send(ctx context.Context, c *client.Client, e *enrollmen
 
 // save writes the key, then the certificate and the chain. It returns the paths written. The key
 // comes first so that a certificate file never exists without its key.
-func (o *enrollOptions) save(cert *x509.Certificate, key crypto.Signer, chain []*x509.Certificate) ([]string, error) {
-	saved := []string{}
-	if o.keyOut != "" && key != nil {
-		data, err := keys.MarshalPEM(key)
-		if err != nil {
-			return saved, err
-		}
-		if err := pemfile.Write(o.keyOut, data, 0o600, o.force); err != nil {
-			return saved, err
-		}
-		saved = append(saved, o.keyOut)
+func (o *certOutputs) save(cert *x509.Certificate, key crypto.Signer, chain []*x509.Certificate) ([]string, error) {
+	saved, err := o.saveKey(key)
+	if err != nil {
+		return saved, err
 	}
 	if err := pemfile.Write(o.certOut, pemfile.EncodeCertificates([]*x509.Certificate{cert}), 0o644, o.force); err != nil {
 		return saved, err
@@ -475,6 +556,22 @@ func (o *enrollOptions) save(cert *x509.Certificate, key crypto.Signer, chain []
 		saved = append(saved, o.chainOut)
 	}
 	return saved, nil
+}
+
+// saveKey writes a new key to --key-out. It returns the paths written, none when there is no key to
+// save.
+func (o *certOutputs) saveKey(key crypto.Signer) ([]string, error) {
+	if o.keyOut == "" || key == nil {
+		return []string{}, nil
+	}
+	data, err := keys.MarshalPEM(key)
+	if err != nil {
+		return []string{}, err
+	}
+	if err := pemfile.Write(o.keyOut, data, 0o600, o.force); err != nil {
+		return []string{}, err
+	}
+	return []string{o.keyOut}, nil
 }
 
 // issuerChain returns the certificates from candidates that link cert towards a root, issuer first.
@@ -504,6 +601,17 @@ func issuerChain(cert *x509.Certificate, candidates []*x509.Certificate) []*x509
 		cur = next
 	}
 	return chain
+}
+
+// transactionID returns the transaction ID of the first request in hex. It returns "" when no request
+// was sent.
+func transactionID(r *trace.Recorder) string {
+	for _, ev := range r.Events() {
+		if ev.Kind == trace.Request && ev.Message != nil {
+			return hex.EncodeToString(ev.Message.TransactionID)
+		}
+	}
+	return ""
 }
 
 // lastStatus returns the status of the last certificate response, such as "accepted".

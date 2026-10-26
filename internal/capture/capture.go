@@ -2,14 +2,18 @@
 // inspected or replayed later.
 //
 // A capture file holds JSON Lines. Each run appends a "start" line, one line per message event in
-// the trace.Record form with the message bytes and an "end" line with the exit status. A file can
-// hold several runs.
+// the trace.Record form with the message bytes and an "end" line with the exit status. A run that
+// leaves a transaction for a later run, or ends one, appends a "transaction" line before its end
+// line. A file can hold several runs.
 package capture
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"sync"
 	"time"
@@ -41,6 +45,31 @@ type End struct {
 	Time       time.Time `json:"time"`
 	ExitStatus int       `json:"exitStatus"`
 }
+
+// States of a transaction line.
+const (
+	// TransactionWaiting marks a transaction the CA has not decided, which a later run can resume.
+	TransactionWaiting = "waiting"
+	// TransactionEnded marks a transaction that a run resumed and ended.
+	TransactionEnded = "ended"
+)
+
+// Transaction records the state of a transaction that outlives its run.
+type Transaction struct {
+	// Kind is always "transaction".
+	Kind string    `json:"kind"`
+	Time time.Time `json:"time"`
+	// ID is the transaction ID in lower-case hex.
+	ID string `json:"id"`
+	// State is TransactionWaiting or TransactionEnded.
+	State string `json:"state"`
+	// Resume holds what a run needs to resume a waiting transaction. It is absent once the
+	// transaction ended.
+	Resume json.RawMessage `json:"resume,omitempty"`
+}
+
+// ErrNoTransaction reports a capture file without a line for the transaction ID asked for.
+var ErrNoTransaction = errors.New("no such transaction")
 
 // Writer appends one run to a capture file.
 type Writer struct {
@@ -75,6 +104,16 @@ func (w *Writer) Event(ev trace.Event) {
 	_ = w.write(ev.Record(true))
 }
 
+// Transaction appends a transaction line. It returns the first error of the run, because a lost
+// transaction line leaves a later run nothing to resume.
+func (w *Writer) Transaction(t Transaction) error {
+	t.Kind = "transaction"
+	if t.Time.IsZero() {
+		t.Time = time.Now().UTC()
+	}
+	return w.write(t)
+}
+
 // Close writes the end line and closes the file. It returns the first error of the run.
 func (w *Writer) Close(exitStatus int) error {
 	_ = w.write(End{Kind: "end", Time: time.Now().UTC(), ExitStatus: exitStatus})
@@ -96,4 +135,38 @@ func (w *Writer) write(v any) error {
 	}
 	w.err = w.enc.Encode(v)
 	return w.err
+}
+
+// FindTransaction returns the last line of the capture file at path for the transaction id, which
+// holds its latest state. It returns ErrNoTransaction when the file has none.
+func FindTransaction(path, id string) (*Transaction, error) {
+	f, err := os.Open(path) //nolint:gosec // G304: the user names the file.
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	var found *Transaction
+	r := bufio.NewReader(f)
+	for n := 1; ; n++ {
+		text, err := r.ReadBytes('\n')
+		if text = bytes.TrimSpace(text); len(text) > 0 {
+			var line Transaction
+			if jsonErr := json.Unmarshal(text, &line); jsonErr != nil {
+				return nil, fmt.Errorf("%s:%d: not a capture line: %w", path, n, jsonErr)
+			}
+			if line.Kind == "transaction" && line.ID == id {
+				found = &line
+			}
+		}
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+	}
+	if found == nil {
+		return nil, ErrNoTransaction
+	}
+	return found, nil
 }

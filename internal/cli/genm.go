@@ -145,7 +145,7 @@ func newCMPCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "cmp",
 		Short: "Commands for the Certificate Management Protocol",
-		Long: "Commands for the Certificate Management Protocol (CMP). enroll, revoke, cacerts, ping and mock " +
+		Long: "Commands for the Certificate Management Protocol (CMP). enroll, poll, revoke, cacerts, ping and mock " +
 			"also work without the cmp prefix, because CMP is the default protocol. genm sends the support " +
 			"messages of RFC 9483 section 4.3.",
 		Args: cobra.NoArgs,
@@ -167,6 +167,7 @@ func newCMPCommand() *cobra.Command {
 	)
 	cmd.AddCommand(
 		newEnrollCommand(),
+		newPollCommand(),
 		newRevokeCommand(),
 		newCACertsCommand("cacerts"),
 		newPingCommand(),

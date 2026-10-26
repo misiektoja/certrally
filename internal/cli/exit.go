@@ -173,6 +173,21 @@ func (s *session) failure(err error) *failure {
 	}
 }
 
+// pendingFailure describes polling that ended while the CA still had the request waiting. note tells
+// what happens to the transaction. A server that stopped answering is reported as such.
+func (s *session) pendingFailure(err *client.PendingError, note string) *failure {
+	if s.recorder.TransportError() != nil {
+		f := s.transportFailure(err)
+		f.Note = note
+		return f
+	}
+	f := &failure{code: exitCode(err, s.recorder), Title: "The CA has not decided yet", Message: err.Error(), Note: note}
+	if errors.Is(err, context.DeadlineExceeded) {
+		f.Hint = fmt.Sprintf("The CA kept the request waiting for longer than --timeout %s.", s.conn.timeout)
+	}
+	return f
+}
+
 // rejection describes a rejection. A status the client could not verify is marked as such, because
 // any peer on the path could have sent it.
 func (s *session) rejection(err error) *failure {

@@ -74,6 +74,11 @@ type enrollJSON struct {
 	Certificate     *certificateJSON   `json:"certificate"`
 	Chain           []*certificateJSON `json:"chain"`
 	Saved           []string           `json:"saved"`
+	// TransactionID is the transaction ID of the request in hex, which poll takes.
+	TransactionID string `json:"transactionId,omitempty"`
+	// NextPoll is when the CA asked for the next poll of a waiting request. It is absent when the CA
+	// named no time.
+	NextPoll time.Time `json:"nextPoll,omitzero"`
 }
 
 // revokeJSON is the result of revoke.

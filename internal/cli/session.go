@@ -78,6 +78,20 @@ type connection struct {
 	timeout   time.Duration
 	capture   string
 	profile   string
+	// resumed holds the trust of the run that started the transaction this run resumes. It takes the
+	// place of --ca-cert, --tls-ca-cert and trust on first response.
+	resumed *savedTrust
+}
+
+// savedTrust is the trust of a session, kept so that a later run can resume its transaction with
+// the same trust.
+type savedTrust struct {
+	// caCerts are the --ca-cert certificates, which pin the CA.
+	caCerts []*x509.Certificate
+	// anchors are every certificate the session trusted.
+	anchors []*x509.Certificate
+	// tlsRoots verify HTTPS instead of the system roots when there are any.
+	tlsRoots []*x509.Certificate
 }
 
 // addFlags registers the connection flags with the given default timeout.
@@ -132,12 +146,13 @@ func (c *connection) checkCapture(outputs ...string) error {
 	return nil
 }
 
-// Names of the flags that several commands define and the enroll wizard sets.
+// Names of the flags that several commands define. The enroll wizard sets some of them.
 const (
 	flagRef     = "ref"
 	flagSAN     = "san"
 	flagSubject = "subject"
 	flagServer  = "server"
+	flagTimeout = "timeout"
 )
 
 // protection holds the flags that protect requests with a shared secret or a signature.
@@ -384,18 +399,31 @@ type session struct {
 	// pinned is set when --ca-cert names the CA, so nothing the server sends is trusted by itself.
 	pinned  bool
 	caCerts []*x509.Certificate
+	// tlsRoots are the --tls-ca-cert certificates.
+	tlsRoots []*x509.Certificate
 }
 
 // open prepares a session and registers it with p. Certificates after the first one in chain, the
 // chain of the signing certificate, are trusted as well, because the user named them.
 func (c *connection) open(p *printer, chain []*x509.Certificate) (*session, error) {
 	s := &session{conn: c, pool: x509.NewCertPool()}
-	for _, path := range c.caCerts {
-		certs, err := pemfile.ReadCertificates(path)
-		if err != nil {
-			return nil, err
+	if c.resumed != nil {
+		s.caCerts, s.tlsRoots = c.resumed.caCerts, c.resumed.tlsRoots
+	} else {
+		for _, path := range c.caCerts {
+			certs, err := pemfile.ReadCertificates(path)
+			if err != nil {
+				return nil, err
+			}
+			s.caCerts = append(s.caCerts, certs...)
 		}
-		s.caCerts = append(s.caCerts, certs...)
+		if c.tlsCACert != "" {
+			certs, err := pemfile.ReadCertificates(c.tlsCACert)
+			if err != nil {
+				return nil, err
+			}
+			s.tlsRoots = certs
+		}
 	}
 	s.pinned = len(s.caCerts) > 0
 	for _, cert := range s.caCerts {
@@ -406,15 +434,18 @@ func (c *connection) open(p *printer, chain []*x509.Certificate) (*session, erro
 			s.trust(cert)
 		}
 	}
+	if c.resumed != nil {
+		for _, cert := range c.resumed.anchors {
+			if !slices.ContainsFunc(s.anchors, cert.Equal) {
+				s.trust(cert)
+			}
+		}
+	}
 
 	next := http.DefaultTransport
-	if c.tlsCACert != "" {
-		certs, err := pemfile.ReadCertificates(c.tlsCACert)
-		if err != nil {
-			return nil, err
-		}
+	if len(s.tlsRoots) > 0 {
 		roots := x509.NewCertPool()
-		for _, cert := range certs {
+		for _, cert := range s.tlsRoots {
 			roots.AddCert(cert)
 		}
 		t := http.DefaultTransport.(*http.Transport).Clone()
@@ -427,7 +458,9 @@ func (c *connection) open(p *printer, chain []*x509.Certificate) (*session, erro
 	}
 	s.recording = rec
 	s.recorder.Next = next
-	trustFirst := !s.pinned
+	// A resumed transaction keeps the trust of the run that started it, which already had its first
+	// response.
+	trustFirst := !s.pinned && c.resumed == nil
 	s.observe = func(ev trace.Event) {
 		// The recorder reports a response before the client verifies it, so certificates added here
 		// already count for that response.
@@ -479,6 +512,11 @@ func (s *session) trustResponse(der []byte) {
 func (s *session) trust(cert *x509.Certificate) {
 	s.pool.AddCert(cert)
 	s.anchors = append(s.anchors, cert)
+}
+
+// saveTrust returns the trust of the session for a run that resumes its transaction.
+func (s *session) saveTrust() *savedTrust {
+	return &savedTrust{caCerts: s.caCerts, anchors: s.anchors, tlsRoots: s.tlsRoots}
 }
 
 // certRep returns the content of an ip, cp or kup body. It returns nil for other bodies.

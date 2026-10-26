@@ -37,6 +37,9 @@ const (
 	fieldInvalidityDate = "Invalidity date"
 	// fieldVerified says how a command checked what the server sent.
 	fieldVerified = "Verified"
+	// fieldTransactionID and fieldNextPoll describe a request the CA keeps waiting.
+	fieldTransactionID = "Transaction ID"
+	fieldNextPoll      = "Next poll"
 )
 
 // outputOptions holds the flags that choose how a command reports its outcome.

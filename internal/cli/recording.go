@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"time"
@@ -90,6 +92,23 @@ func openRecording(p *printer, o recordingOptions) (*recording, error) {
 	}
 	p.rec = rec
 	return rec, nil
+}
+
+// recordTransaction appends a transaction line with the state and the resume record to the capture
+// file. It does nothing without --capture.
+func (rec *recording) recordTransaction(state string, id []byte, resume any) error {
+	if rec.capture == nil {
+		return nil
+	}
+	t := capture.Transaction{ID: hex.EncodeToString(id), State: state}
+	if resume != nil {
+		data, err := json.Marshal(resume)
+		if err != nil {
+			return err
+		}
+		t.Resume = data
+	}
+	return rec.capture.Transaction(t)
 }
 
 // redactURL returns a URL without any password it contains.
