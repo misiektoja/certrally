@@ -90,7 +90,7 @@ func (f *outFormat) certificates(certs []*x509.Certificate) ([]byte, error) {
 }
 
 // key encodes a private key as unencrypted PKCS#8.
-func (f *outFormat) key(key crypto.Signer) ([]byte, error) {
+func (f *outFormat) key(key crypto.PrivateKey) ([]byte, error) {
 	if f.der() {
 		return keys.Marshal(key)
 	}

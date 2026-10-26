@@ -263,9 +263,9 @@ func (p *protection) validate() error {
 // digest returns the digest that --hash names, or zero for the defaults.
 func (p *protection) digest() crypto.Hash { return hashes[p.hash] }
 
-// takesDigest reports whether key signs with a chosen digest, which RSA and ECDSA keys do.
-func takesDigest(key crypto.Signer) bool {
-	switch key.Public().(type) {
+// takesDigest reports whether the key of pub signs with a chosen digest, which RSA and ECDSA keys do.
+func takesDigest(pub crypto.PublicKey) bool {
+	switch pub.(type) {
 	case *rsa.PublicKey, *ecdsa.PublicKey:
 		return true
 	}
@@ -300,7 +300,7 @@ func (p *protection) load(stdin io.Reader, prompt io.Writer) (*protected, error)
 		if err != nil {
 			return nil, err
 		}
-		key, err := p.keyPassword.load(p.keyFile, stdin, prompt)
+		key, err := p.keyPassword.loadSigner(p.keyFile, stdin, prompt)
 		if err != nil {
 			return nil, err
 		}
@@ -309,7 +309,7 @@ func (p *protection) load(stdin io.Reader, prompt io.Writer) (*protected, error)
 			return nil, fmt.Errorf("--cert and --key: %w", err)
 		}
 		if hash != 0 {
-			if !takesDigest(key) {
+			if !takesDigest(key.Public()) {
 				return nil, fmt.Errorf("--hash applies to RSA and ECDSA keys, not to the %s key in %s",
 					keys.Describe(key.Public()), p.keyFile)
 			}

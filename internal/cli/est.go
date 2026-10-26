@@ -287,7 +287,7 @@ func (a *estAuth) load(stdin io.Reader, prompt io.Writer) (*estCredentials, erro
 		creds.chain = chain
 	}
 	if a.keyFile != "" {
-		key, err := a.keyPassword.load(a.keyFile, stdin, prompt)
+		key, err := a.keyPassword.loadSigner(a.keyFile, stdin, prompt)
 		if err != nil {
 			return nil, err
 		}

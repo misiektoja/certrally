@@ -40,6 +40,8 @@ const (
 	// fieldTransactionID and fieldNextPoll describe a request the CA keeps waiting.
 	fieldTransactionID = "Transaction ID"
 	fieldNextPoll      = "Next poll"
+	// fieldPOP says how a key that cannot sign proved possession of its private key.
+	fieldPOP = "Proof of possession"
 )
 
 // outputOptions holds the flags that choose how a command reports its outcome.

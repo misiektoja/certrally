@@ -63,8 +63,25 @@ type enrollOptions struct {
 	// implicitConfirm asks the CA to skip the certConf round trip.
 	implicitConfirm bool
 	// pollLater stops at the first answer that says the request waits, for poll to resume.
-	pollLater   bool
+	pollLater bool
+	// pop is the --pop method of a key that cannot sign. Empty selects popEncryptedCert.
+	pop         string
 	interactive bool
+}
+
+// flagPOP names the flag that chooses the indirect proof of possession.
+const flagPOP = "pop"
+
+// --pop values: the indirect proofs of possession of RFC 9810 section 5.2.8.3.
+const (
+	popEncryptedCert = "encrypted-cert"
+	popChallenge     = "challenge"
+)
+
+// popMethods maps the --pop values to the methods of go-pki-cmp.
+var popMethods = map[string]client.IndirectPOP{
+	popEncryptedCert: client.EncryptedCertificate,
+	popChallenge:     client.ChallengeResponse,
 }
 
 // certOutputs names the files that an issued certificate, its new key and the issuing CA
@@ -99,6 +116,10 @@ func newEnrollCommand() *cobra.Command {
 			"--template-cert copies the subject, subjectAltName, keyUsage and extendedKeyUsage of an existing " +
 			"certificate. A flag given for a copied part replaces it: --subject, --san, --key-usage or " +
 			"--ext-key-usage.\n\n" +
+			"An ML-KEM key, from --key-type ml-kem-768 or ml-kem-1024 or --new-key, cannot sign, so it proves " +
+			"possession by decryption. With --pop encrypted-cert, the default, the CA encrypts the certificate " +
+			"for the key and the certConf proves that enroll could read it. With --pop challenge the CA first " +
+			"sends an encrypted challenge that enroll answers. The CA must offer the method.\n\n" +
 			"Run without flags on a terminal, or with --interactive, to be asked for each setting. The " +
 			"equivalent command is printed before the request is sent.\n\n" +
 			enrollExitStatusHelp,
@@ -133,7 +154,9 @@ func newEnrollCommand() *cobra.Command {
 	f.StringVar(&o.templateCert, flagTemplateCert, "",
 		"copy the subject, alternative names and key usages of the certificate in this file (ir, cr or p10cr)")
 	f.StringVar(&o.keyType, "key-type", keys.DefaultType,
-		"type of the generated key, such as ecdsa-p384, rsa-3072, ml-dsa-65 or mldsa65-ecdsa-p256-sha512")
+		"type of the generated key, such as ecdsa-p384, rsa-3072, ml-dsa-65, mldsa65-ecdsa-p256-sha512 or ml-kem-768")
+	f.StringVar(&o.pop, flagPOP, "",
+		"how a key that cannot sign, such as ML-KEM, proves possession: encrypted-cert (the default) or challenge")
 	f.StringVar(&o.newKey, "new-key", "", "certify the private key in this file instead of generating one")
 	f.StringVar(&o.csr, "csr", "", "send the PKCS#10 request in this file (p10cr)")
 	f.StringVar(&o.certOut, "cert-out", "", "write the issued certificate to this file")
@@ -154,6 +177,7 @@ func newEnrollCommand() *cobra.Command {
 	cmd.MarkFlagsMutuallyExclusive("key-type", "new-key", "csr")
 	_ = cmd.RegisterFlagCompletionFunc("type", fixedCompletion(requestTypes))
 	_ = cmd.RegisterFlagCompletionFunc("key-type", fixedCompletion(keys.TypeNames()))
+	_ = cmd.RegisterFlagCompletionFunc(flagPOP, fixedCompletion([]string{popEncryptedCert, popChallenge}))
 	_ = cmd.RegisterFlagCompletionFunc(flagKeyUsage, listCompletion(keyUsageNames))
 	_ = cmd.RegisterFlagCompletionFunc(flagExtKeyUsage, listCompletion(keyPurposeNames))
 	for _, name := range []string{flagSubject, flagSAN, "cert-profile", "cert-req-id"} {
@@ -206,12 +230,8 @@ func (o *enrollOptions) validate() error {
 	case o.pollLater && o.capture == "":
 		return errors.New("--poll-later records the transaction in the --capture file, so --capture is required")
 	}
-	generated := o.csr == "" && o.newKey == ""
-	switch {
-	case generated && o.keyOut == "":
-		return errors.New("--key-out is required to save the generated key")
-	case !generated && o.keyOut != "":
-		return errors.New("--key-out is only used with a generated key")
+	if err := o.validateKey(); err != nil {
+		return err
 	}
 	if err := o.format.validate(); err != nil {
 		return err
@@ -220,6 +240,51 @@ func (o *enrollOptions) validate() error {
 		return err
 	}
 	return checkOutputs(o.force, o.certOut, o.keyOut, o.chainOut)
+}
+
+// validateKey checks the flags that choose the key to certify and how it proves possession. A
+// loaded --new-key is checked once it is read.
+func (o *enrollOptions) validateKey() error {
+	switch {
+	case o.pop != "" && popMethods[o.pop] == 0:
+		return fmt.Errorf("invalid --%s %q, want %s or %s", flagPOP, o.pop, popEncryptedCert, popChallenge)
+	case o.pop != "" && o.csr != "":
+		return fmt.Errorf("--%s is for keys that cannot sign, and a request given with --csr is signed", flagPOP)
+	}
+	generated := o.csr == "" && o.newKey == ""
+	switch {
+	case generated && o.keyOut == "":
+		return errors.New("--key-out is required to save the generated key")
+	case !generated && o.keyOut != "":
+		return errors.New("--key-out is only used with a generated key")
+	case !generated:
+		return nil
+	}
+	t, err := keys.LookupType(o.keyType)
+	if err != nil {
+		return err
+	}
+	return o.checkPOP(t.Name, t.Signs)
+}
+
+// checkPOP checks --pop and --type against whether keys of the type named name can sign.
+func (o *enrollOptions) checkPOP(name string, signs bool) error {
+	switch {
+	case signs && o.pop != "":
+		return fmt.Errorf("--%s is for keys that cannot sign, and %s keys sign their proof of possession", flagPOP, name)
+	case !signs && o.reqType == typeP10CR:
+		return fmt.Errorf("a p10cr request is signed with the key to certify, and %s keys cannot sign. "+
+			"Use --type ir, cr or kur", name)
+	}
+	return nil
+}
+
+// indirectPOP returns the --pop method, encrypted-cert unless the flag names another.
+func (o *enrollOptions) indirectPOP() client.IndirectPOP {
+	if o.pop == "" {
+		return client.EncryptedCertificate
+	}
+	return popMethods[o.pop]
 }
 
 // shapesTemplate reports whether a flag sets part of the certificate template.
@@ -249,8 +314,11 @@ func checkOutputs(force bool, paths ...string) error {
 // enrollment is a request ready to send.
 type enrollment struct {
 	*protected
-	newKey crypto.Signer
+	// newKey is the key to certify: a crypto.Signer, or a crypto.Decapsulator for ML-KEM.
+	newKey crypto.PrivateKey
 	csrDER []byte
+	// indirect is the proof of possession of a key that cannot sign, zero for a key that signs.
+	indirect client.IndirectPOP
 }
 
 // runEnroll performs the enroll command.
@@ -311,13 +379,13 @@ func runEnroll(ctx context.Context, o *enrollOptions, p *printer, stdin io.Reade
 	if result.Pending != nil {
 		return o.reportWaiting(s, e, result.Pending)
 	}
-	return reportIssued(s, o.certOutputs, result, e.newKey, o.implicitConfirm)
+	return reportIssued(s, o.certOutputs, result, e.newKey, o.implicitConfirm, e.indirect)
 }
 
 // reportIssued saves an issued certificate with its new key and the issuing CA certificates and
-// reports it. implicitAsked says whether the request asked for implicit confirmation. The fields in
-// extra follow those of the certificate.
-func reportIssued(s *session, out certOutputs, result *client.EnrollResult, key crypto.Signer, implicitAsked bool, extra ...ui.Field) error {
+// reports it. implicitAsked says whether the request asked for implicit confirmation and pop how a
+// key that cannot sign proved possession. The fields in extra follow those of the certificate.
+func reportIssued(s *session, out certOutputs, result *client.EnrollResult, key crypto.PrivateKey, implicitAsked bool, pop client.IndirectPOP, extra ...ui.Field) error {
 	cert := result.Certificate
 	chain := issuerChain(cert, append(result.CAPubs, result.ExtraCertificates...))
 	saved, err := out.save(cert, key, chain)
@@ -332,16 +400,38 @@ func reportIssued(s *session, out certOutputs, result *client.EnrollResult, key 
 	if confirmation := confirmation(result, implicitAsked); confirmation != "" {
 		fields = append(fields, ui.Field{Name: fieldConfirmation, Value: confirmation})
 	}
+	if pop != 0 {
+		fields = append(fields, ui.Field{Name: fieldPOP, Value: describeIndirectPOP(pop)})
+	}
 	s.p.result("Certificate issued", append(fields, extra...), &enrollJSON{
-		Status:          status,
-		Confirmed:       true,
-		ImplicitConfirm: result.ImplicitConfirm,
-		Certificate:     certificateResult(cert),
-		Chain:           certificatesResult(chain),
-		Saved:           saved,
-		TransactionID:   transactionID(s.recorder),
+		Status:            status,
+		Confirmed:         true,
+		ImplicitConfirm:   result.ImplicitConfirm,
+		ProofOfPossession: popName(pop),
+		Certificate:       certificateResult(cert),
+		Chain:             certificatesResult(chain),
+		Saved:             saved,
+		TransactionID:     transactionID(s.recorder),
 	})
 	return nil
+}
+
+// popName returns the --pop value of an indirect proof of possession, "" for a signature.
+func popName(pop client.IndirectPOP) string {
+	for name, method := range popMethods {
+		if method == pop {
+			return name
+		}
+	}
+	return ""
+}
+
+// describeIndirectPOP names how a key that cannot sign proved possession of its private key.
+func describeIndirectPOP(pop client.IndirectPOP) string {
+	if pop == client.ChallengeResponse {
+		return "encrypted challenge"
+	}
+	return "encrypted certificate"
 }
 
 // confirmation describes how the certificate was confirmed when that differs from the usual certConf
@@ -398,9 +488,17 @@ func (o *enrollOptions) reportStillWaiting(s *session, e *enrollment, pendingErr
 	return s.p.fail(f, pendingErr, withSaved(f.fields(s.recording), saved)...)
 }
 
+// newKeyFile returns the file that holds the key to certify: --new-key or --key-out.
+func (o *enrollOptions) newKeyFile() string {
+	if o.newKey != "" {
+		return o.newKey
+	}
+	return o.keyOut
+}
+
 // recordPending records pending in the capture file, so that poll can resume it.
 func (o *enrollOptions) recordPending(s *session, pending *client.PendingEnrollment) error {
-	rec, err := newPendingRecord(s, &o.protection, o.certOutputs, o.implicitConfirm, pending)
+	rec, err := newPendingRecord(s, &o.protection, o.certOutputs, o.implicitConfirm, pending, o.newKeyFile())
 	if err != nil {
 		return err
 	}
@@ -409,7 +507,7 @@ func (o *enrollOptions) recordPending(s *session, pending *client.PendingEnrollm
 
 // reportUnconfirmed saves a certificate whose confirmation failed and explains the situation. The
 // certificate is kept because retrying could issue a second one.
-func reportUnconfirmed(s *session, out certOutputs, confErr *client.ConfirmationError, key crypto.Signer) error {
+func reportUnconfirmed(s *session, out certOutputs, confErr *client.ConfirmationError, key crypto.PrivateKey) error {
 	saved, saveErr := out.save(confErr.Certificate, key, nil)
 	f := &failure{
 		code:    exitUnconfirmed,
@@ -460,10 +558,23 @@ func (o *enrollOptions) prepareKey(e *enrollment, stdin io.Reader, prompt io.Wri
 		}
 		e.newKey = key
 	}
+	if e.newKey == nil {
+		return nil
+	}
+	pub := keys.Public(e.newKey)
+	if _, signs := e.newKey.(crypto.Signer); !signs {
+		if err := o.checkPOP(keys.Describe(pub), false); err != nil {
+			return err
+		}
+		e.indirect = o.indirectPOP()
+		return nil
+	}
+	if err := o.checkPOP(keys.Describe(pub), true); err != nil {
+		return err
+	}
 	// The new key signs the proof of possession or the PKCS#10 request with the chosen digest.
-	if o.hash != "" && e.newKey != nil && !takesDigest(e.newKey) {
-		return fmt.Errorf("--hash applies to RSA and ECDSA keys, not to the %s key to certify",
-			keys.Describe(e.newKey.Public()))
+	if o.hash != "" && !takesDigest(pub) {
+		return fmt.Errorf("--hash applies to RSA and ECDSA keys, not to the %s key to certify", keys.Describe(pub))
 	}
 	return nil
 }
@@ -501,7 +612,11 @@ func (o *enrollOptions) prepareTemplate(e *enrollment, shape *templateShape) err
 		return err
 	}
 	if o.reqType == typeP10CR {
-		e.csrDER, err = createCSR(subject, extensions, e.newKey, o.digest())
+		signer, err := keys.Signer(e.newKey)
+		if err != nil {
+			return err
+		}
+		e.csrDER, err = createCSR(subject, extensions, signer, o.digest())
 		return err
 	}
 	if o.subject != "" || (o.reqType != typeKUR && hasSubject) {
@@ -562,21 +677,36 @@ func csrSignatureAlgorithm(key crypto.Signer, hash crypto.Hash) x509.SignatureAl
 
 // send performs the exchange for the requested type.
 func (o *enrollOptions) send(ctx context.Context, c *client.Client, e *enrollment) (*client.EnrollResult, error) {
+	if o.reqType == typeP10CR {
+		return c.SendP10CR(ctx, e.csrDER, e.creds, e.reqOpts...)
+	}
+	if e.indirect != 0 {
+		switch o.reqType {
+		case typeCR:
+			return c.SendCRWithIndirectPOP(ctx, e.newKey, e.indirect, e.creds, e.reqOpts...)
+		case typeKUR:
+			return c.SendKURWithIndirectPOP(ctx, e.newKey, e.indirect, e.creds, e.reqOpts...)
+		default:
+			return c.SendIRWithIndirectPOP(ctx, e.newKey, e.indirect, e.creds, e.reqOpts...)
+		}
+	}
+	signer, err := keys.Signer(e.newKey)
+	if err != nil {
+		return nil, err
+	}
 	switch o.reqType {
 	case typeCR:
-		return c.SendCR(ctx, e.newKey, e.creds, e.reqOpts...)
+		return c.SendCR(ctx, signer, e.creds, e.reqOpts...)
 	case typeKUR:
-		return c.SendKUR(ctx, e.newKey, e.creds, e.reqOpts...)
-	case typeP10CR:
-		return c.SendP10CR(ctx, e.csrDER, e.creds, e.reqOpts...)
+		return c.SendKUR(ctx, signer, e.creds, e.reqOpts...)
 	default:
-		return c.SendIR(ctx, e.newKey, e.creds, e.reqOpts...)
+		return c.SendIR(ctx, signer, e.creds, e.reqOpts...)
 	}
 }
 
 // save writes the key, then the certificate and the chain. It returns the paths written. The key
 // comes first so that a certificate file never exists without its key.
-func (o *certOutputs) save(cert *x509.Certificate, key crypto.Signer, chain []*x509.Certificate) ([]string, error) {
+func (o *certOutputs) save(cert *x509.Certificate, key crypto.PrivateKey, chain []*x509.Certificate) ([]string, error) {
 	saved, err := o.saveKey(key)
 	if err != nil {
 		return saved, err
@@ -600,7 +730,7 @@ func (o *certOutputs) save(cert *x509.Certificate, key crypto.Signer, chain []*x
 
 // saveKey writes a new key to --key-out. It returns the paths written, none when there is no key to
 // save.
-func (o *certOutputs) saveKey(key crypto.Signer) ([]string, error) {
+func (o *certOutputs) saveKey(key crypto.PrivateKey) ([]string, error) {
 	if o.keyOut == "" || key == nil {
 		return []string{}, nil
 	}

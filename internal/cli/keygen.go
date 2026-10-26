@@ -8,7 +8,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/misiektoja/go-composite-mldsa/compositex509"
 	"github.com/spf13/cobra"
 
 	"github.com/misiektoja/certrally/internal/dn"
@@ -36,9 +35,11 @@ func newKeygenCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "keygen --out FILE [flags]",
 		Short: "Generate a private key and optionally a certificate request",
-		Long: "Generate a private key, including ML-DSA and composite ML-DSA keys. It is saved as unencrypted " +
+		Long: "Generate a private key, including ML-DSA, composite ML-DSA and ML-KEM keys. It is saved as unencrypted " +
 			"PKCS#8 PEM with mode 0600. --out-format der saves DER instead. --csr-out also writes a PKCS#10 " +
-			"request for the key, for enroll --type p10cr --csr or for another CA. --list prints every key type.",
+			"request for the key, for enroll --type p10cr --csr or for another CA. --list prints every key type.\n\n" +
+			"ML-KEM keys cannot sign, so they have no request. enroll --new-key certifies one with an indirect " +
+			"proof of possession, see --pop.",
 		Example: "  certrally keygen --key-type ml-dsa-65 --out device.key\n" +
 			"  certrally keygen --out device.key --csr-out device.csr --subject CN=device-42",
 		Args: cobra.NoArgs,
@@ -48,7 +49,7 @@ func newKeygenCommand() *cobra.Command {
 	}
 	f := cmd.Flags()
 	f.StringVar(&o.keyType, "key-type", keys.DefaultType,
-		"type of the key, such as ecdsa-p384, rsa-3072, ml-dsa-65 or mldsa65-ecdsa-p256-sha512")
+		"type of the key, such as ecdsa-p384, rsa-3072, ml-dsa-65, mldsa65-ecdsa-p256-sha512 or ml-kem-768")
 	f.StringVar(&o.out, "out", "", "write the private key to this file, or - for standard output")
 	f.StringVar(&o.pubOut, "pub-out", "", "write the public key to this file")
 	f.StringVar(&o.csrOut, "csr-out", "", "write a certificate request for the key to this file")
@@ -98,14 +99,19 @@ func runKeygen(o *keygenOptions, p *printer) error {
 	if err != nil {
 		return err
 	}
-	pubDER, err := compositex509.MarshalPKIXPublicKey(key.Public())
+	pub := keys.Public(key)
+	pubDER, err := keys.MarshalPublicKey(pub)
 	if err != nil {
-		return fmt.Errorf("encode public key: %w", err)
+		return err
 	}
-	result := &keygenJSON{KeyType: o.keyType, Key: keys.Describe(key.Public()), PublicKey: pemString("PUBLIC KEY", pubDER)}
+	result := &keygenJSON{KeyType: o.keyType, Key: keys.Describe(pub), PublicKey: pemString("PUBLIC KEY", pubDER)}
 	var csrData []byte
 	if o.csrOut != "" {
-		der, err := createCSR(subject, extensions, key, 0)
+		signer, err := keys.Signer(key)
+		if err != nil {
+			return err
+		}
+		der, err := createCSR(subject, extensions, signer, 0)
 		if err != nil {
 			return err
 		}
@@ -144,6 +150,13 @@ func (o *keygenOptions) validate() error {
 		return errors.New("--subject and --san describe the request, so they need --csr-out")
 	case o.csrOut != "" && o.subject == "" && len(o.sans) == 0:
 		return errors.New("--csr-out needs --subject or --san")
+	}
+	keyType, err := keys.LookupType(o.keyType)
+	if err != nil {
+		return err
+	}
+	if o.csrOut != "" && !keyType.Signs {
+		return fmt.Errorf("%s keys cannot sign, so --csr-out cannot write a request for one", keyType.Name)
 	}
 	if err := o.format.validate(); err != nil {
 		return err

@@ -2,12 +2,14 @@ package cli
 
 import (
 	"context"
+	"crypto"
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/url"
 	"path/filepath"
 	"slices"
@@ -32,6 +34,8 @@ type pollOptions struct {
 	server        string
 	secretFile    string
 	keyPassword
+	// newKey is the private key of a request that proves possession with an encrypted certificate.
+	newKey   string
 	insecure bool
 	proxy    string
 	timeout  time.Duration
@@ -56,6 +60,8 @@ func newPollCommand() *cobra.Command {
 			"secret is read again from --secret-file, the CERTRALLY_SECRET environment variable or a prompt. " +
 			"A poll that ends while the CA still waits records the new state, so the same command can run " +
 			"again.\n\n" +
+			"A request whose key cannot sign and proves possession with an encrypted certificate needs that key " +
+			"to read the certificate. poll reads it from the file enroll saved or read, or from --new-key.\n\n" +
 			enrollExitStatusHelp,
 		Example: "  certrally enroll --server https://ca.example.com/.well-known/cmp --ref device-42 \\\n" +
 			"    --subject CN=device-42 --cert-out device.pem --key-out device.key \\\n" +
@@ -73,6 +79,8 @@ func newPollCommand() *cobra.Command {
 	f.StringVar(&o.server, flagServer, "", "address of the CMP server, when it is not the one enroll used")
 	f.StringVar(&o.secretFile, "secret-file", "", "read the shared secret from a file, or - for standard input")
 	o.keyPassword.addFlags(cmd)
+	f.StringVar(&o.newKey, "new-key", "",
+		"private key of the request, when it is not in the file enroll saved or read (encrypted-cert requests)")
 	f.BoolVar(&o.insecure, flagInsecure, false, insecureHelp)
 	f.StringVar(&o.proxy, flagProxy, "", proxyHelp)
 	f.DurationVar(&o.timeout, flagTimeout, 5*time.Minute, "limit for polling and the confirmation")
@@ -116,13 +124,16 @@ type pendingRecord struct {
 	OutFormat string `json:"outFormat,omitempty"`
 	// ImplicitConfirm records that the request asked for implicit confirmation.
 	ImplicitConfirm bool `json:"implicitConfirm,omitempty"`
+	// NewKey is the file of the key to certify when it proves possession with an encrypted
+	// certificate, which only that key can decrypt.
+	NewKey string `json:"newKey,omitempty"`
 	// State is the transaction state of go-pki-cmp.
 	State *client.PendingEnrollment `json:"state"`
 }
 
 // newPendingRecord collects what poll needs to resume pending, which an enroll run with the
-// protection prot and the outputs out started in s.
-func newPendingRecord(s *session, prot *protection, out certOutputs, implicitConfirm bool, pending *client.PendingEnrollment) (*pendingRecord, error) {
+// protection prot and the outputs out started in s. newKeyFile holds the key to certify.
+func newPendingRecord(s *session, prot *protection, out certOutputs, implicitConfirm bool, pending *client.PendingEnrollment, newKeyFile string) (*pendingRecord, error) {
 	rec := &pendingRecord{
 		Server:          s.server,
 		Profile:         s.profile,
@@ -137,7 +148,10 @@ func newPendingRecord(s *session, prot *protection, out certOutputs, implicitCon
 		rec.Ref, rec.MAC = prot.ref, prot.mac
 	}
 	rec.CertOut, rec.ChainOut, rec.OutFormat = out.certOut, out.chainOut, out.format.name
-	for _, path := range []*string{&rec.Cert, &rec.Key, &rec.CertOut, &rec.ChainOut} {
+	if pending.IndirectPOP == client.EncryptedCertificate {
+		rec.NewKey = newKeyFile
+	}
+	for _, path := range []*string{&rec.Cert, &rec.Key, &rec.CertOut, &rec.ChainOut, &rec.NewKey} {
 		if *path == "" || *path == stdoutPath {
 			continue
 		}
@@ -371,6 +385,10 @@ func runPoll(ctx context.Context, o *pollOptions, p *printer, stdin io.Reader) e
 	if err != nil {
 		return err
 	}
+	newKey, err := o.loadNewKey(rec, stdin, p.stderr)
+	if err != nil {
+		return err
+	}
 	s, err := conn.open(p, pr.chain)
 	if err != nil {
 		return err
@@ -382,7 +400,12 @@ func runPoll(ctx context.Context, o *pollOptions, p *printer, stdin io.Reader) e
 	ctx, cancel := context.WithTimeout(ctx, o.timeout)
 	defer cancel()
 	s.startLadder()
-	result, err := c.ResumeEnrollment(ctx, rec.State, pr.creds)
+	var result *client.EnrollResult
+	if newKey != nil {
+		result, err = c.ResumeEnrollmentWithIndirectPOP(ctx, rec.State, newKey, pr.creds)
+	} else {
+		result, err = c.ResumeEnrollment(ctx, rec.State, pr.creds)
+	}
 	s.endLadder()
 	if pendingErr, ok := errors.AsType[*client.PendingError](err); ok {
 		return o.reportStillWaiting(s, rec, pendingErr)
@@ -404,7 +427,32 @@ func runPoll(ctx context.Context, o *pollOptions, p *printer, stdin io.Reader) e
 		}
 		return s.fail(err)
 	}
-	return reportIssued(s, out, result, nil, rec.ImplicitConfirm, ui.Field{Name: fieldTransactionID, Value: id})
+	return reportIssued(s, out, result, nil, rec.ImplicitConfirm, rec.State.IndirectPOP,
+		ui.Field{Name: fieldTransactionID, Value: id})
+}
+
+// loadNewKey reads the key to certify of a request that proves possession with an encrypted
+// certificate, from --new-key or the file enroll recorded. It returns nil for other requests.
+func (o *pollOptions) loadNewKey(rec *pendingRecord, stdin io.Reader, prompt io.Writer) (crypto.PrivateKey, error) {
+	if rec.State.IndirectPOP != client.EncryptedCertificate {
+		if o.newKey != "" {
+			return nil, errors.New("--new-key is only used for a request that proves possession with an encrypted certificate")
+		}
+		return nil, nil
+	}
+	path := o.newKey
+	if path == "" {
+		path = rec.NewKey
+	}
+	if path == "" || path == stdoutPath {
+		return nil, errors.New("the CA encrypts the certificate for the key of the request, so --new-key must name that key")
+	}
+	key, err := o.keyPassword.load(path, stdin, prompt)
+	if errors.Is(err, fs.ErrNotExist) && o.newKey == "" {
+		return nil, fmt.Errorf("%w. The CA encrypts the certificate for the key of the request, "+
+			"so name that key with --new-key", err)
+	}
+	return key, err
 }
 
 // transactionEnded reports whether err, the outcome of a resumed enrollment recorded by r, ended the

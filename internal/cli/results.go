@@ -70,10 +70,12 @@ type enrollJSON struct {
 	// Confirmed is false when the CA issued the certificate but the confirmation failed.
 	Confirmed bool `json:"confirmed"`
 	// ImplicitConfirm is true when the CA granted implicit confirmation, so no certConf was sent.
-	ImplicitConfirm bool               `json:"implicitConfirm"`
-	Certificate     *certificateJSON   `json:"certificate"`
-	Chain           []*certificateJSON `json:"chain"`
-	Saved           []string           `json:"saved"`
+	ImplicitConfirm bool `json:"implicitConfirm"`
+	// ProofOfPossession is the --pop method of a key that cannot sign. It is absent for a key that signs.
+	ProofOfPossession string             `json:"proofOfPossession,omitempty"`
+	Certificate       *certificateJSON   `json:"certificate"`
+	Chain             []*certificateJSON `json:"chain"`
+	Saved             []string           `json:"saved"`
 	// TransactionID is the transaction ID of the request in hex, which poll takes.
 	TransactionID string `json:"transactionId,omitempty"`
 	// NextPoll is when the CA asked for the next poll of a waiting request. It is absent when the CA

@@ -36,8 +36,9 @@ func (k *keyPassword) checkStdin(other, otherFile string) error {
 }
 
 // load reads the private key in path. An encrypted PKCS#8 key is decrypted with the password from
-// --key-password-file, the CERTRALLY_KEY_PASSWORD environment variable or a prompt on stdin.
-func (k *keyPassword) load(path string, stdin io.Reader, prompt io.Writer) (crypto.Signer, error) {
+// --key-password-file, the CERTRALLY_KEY_PASSWORD environment variable or a prompt on stdin. The key
+// is a crypto.Signer, or a crypto.Decapsulator for ML-KEM.
+func (k *keyPassword) load(path string, stdin io.Reader, prompt io.Writer) (crypto.PrivateKey, error) {
 	data, err := os.ReadFile(path) //nolint:gosec // G304: the user names the file to read.
 	if err != nil {
 		return nil, err
@@ -64,4 +65,17 @@ func (k *keyPassword) load(path string, stdin io.Reader, prompt io.Writer) (cryp
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return key, nil
+}
+
+// loadSigner reads the private key in path as load does and refuses a key that cannot sign.
+func (k *keyPassword) loadSigner(path string, stdin io.Reader, prompt io.Writer) (crypto.Signer, error) {
+	key, err := k.load(path, stdin, prompt)
+	if err != nil {
+		return nil, err
+	}
+	signer, err := keys.Signer(key)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return signer, nil
 }

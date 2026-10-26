@@ -124,7 +124,7 @@ func newESTServerKeyGenCommand() *cobra.Command {
 	f := cmd.Flags()
 	f.StringVar(&o.keyType, "key-type", keys.DefaultType,
 		"type of the key that signs the request, such as ecdsa-p384 or ml-dsa-65")
-	_ = cmd.RegisterFlagCompletionFunc("key-type", fixedCompletion(keys.TypeNames()))
+	_ = cmd.RegisterFlagCompletionFunc("key-type", fixedCompletion(keys.SigningTypeNames()))
 	_ = cmd.MarkFlagRequired("key-out")
 	return cmd
 }
@@ -162,7 +162,7 @@ func (o *estEnrollOptions) addKeyFlags(cmd *cobra.Command) {
 	f.BoolVar(&o.tlsUnique, "tls-unique", false,
 		"bind the request to the TLS session with the tls-unique value (RFC 7030 section 3.5, TLS 1.2 only)")
 	cmd.MarkFlagsMutuallyExclusive("key-type", "new-key", "csr")
-	_ = cmd.RegisterFlagCompletionFunc("key-type", fixedCompletion(keys.TypeNames()))
+	_ = cmd.RegisterFlagCompletionFunc("key-type", fixedCompletion(keys.SigningTypeNames()))
 }
 
 // validate checks flag combinations that cobra cannot express.
@@ -292,13 +292,13 @@ func (o *estEnrollOptions) prepareRequest(renewed *x509.Certificate, stdin io.Re
 		req.csr = csr
 		return req, nil
 	case o.newKey != "":
-		key, err := o.keyPassword.load(o.newKey, stdin, prompt)
+		key, err := o.keyPassword.loadSigner(o.newKey, stdin, prompt)
 		if err != nil {
 			return nil, err
 		}
 		req.key = key
 	default:
-		key, err := keys.Generate(o.keyType)
+		key, err := keys.GenerateSigner(o.keyType)
 		if err != nil {
 			return nil, err
 		}

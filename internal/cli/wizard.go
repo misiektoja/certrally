@@ -580,7 +580,11 @@ func (w *enrollWizard) keyType() error {
 		w.ask.show(title, w.o.keyType)
 		return nil
 	}
+	// A p10cr request is signed with the new key, which an ML-KEM key cannot do.
 	names := keys.TypeNames()
+	if w.o.reqType == typeP10CR {
+		names = keys.SigningTypeNames()
+	}
 	choices := make([]choice, len(names))
 	for i, name := range names {
 		choices[i] = choice{label: name + keyTypeHint(name), value: name}
@@ -601,6 +605,8 @@ func keyTypeHint(name string) string {
 		return "  post-quantum"
 	case strings.HasPrefix(name, "mldsa"):
 		return "  post-quantum composite with a classical key"
+	case strings.HasPrefix(name, "ml-kem-"):
+		return "  post-quantum, cannot sign, the CA must accept an encrypted certificate"
 	}
 	return ""
 }
@@ -724,15 +730,19 @@ func checkCertificates(s string) error {
 	return err
 }
 
-// checkKey checks that the file in s holds a private key. An encrypted key passes, because its
-// password is asked for when the request is sent.
+// checkKey checks that the file in s holds a private key that can sign. An encrypted key passes,
+// because its password is asked for when the request is sent.
 func checkKey(s string) error {
 	path := strings.TrimSpace(s)
 	data, err := os.ReadFile(path) //nolint:gosec // G304: the user names the file to read.
 	if err != nil {
 		return err
 	}
-	if _, err := keys.Parse(data); err != nil && !errors.Is(err, keys.ErrEncrypted) {
+	key, err := keys.Parse(data)
+	if err == nil {
+		_, err = keys.Signer(key)
+	}
+	if err != nil && !errors.Is(err, keys.ErrEncrypted) {
 		return fmt.Errorf("%s: %w", path, err)
 	}
 	return nil

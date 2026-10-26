@@ -177,7 +177,7 @@ func (ca *CA) ServerKeyGen(_ context.Context, csr *x509.CertificateRequest, _ st
 	if err := ca.wait(csr); err != nil {
 		return nil, nil, err
 	}
-	key, err := keys.Generate(keyType(csr))
+	key, err := keys.GenerateSigner(keyType(csr))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -269,7 +269,7 @@ func keyType(csr *x509.CertificateRequest) string {
 		// The names of ML-DSA and composite ML-DSA keys are their key types.
 		name = keys.Describe(pub)
 	}
-	if !slices.ContainsFunc(keys.TypeNames(), func(t string) bool { return strings.EqualFold(t, name) }) {
+	if !slices.ContainsFunc(keys.SigningTypeNames(), func(t string) bool { return strings.EqualFold(t, name) }) {
 		return keys.DefaultType
 	}
 	return name
