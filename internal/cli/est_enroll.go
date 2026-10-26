@@ -174,8 +174,8 @@ func (o *estEnrollOptions) validate() error {
 		return err
 	}
 	switch {
-	case o.op == estReenroll && o.keyFile == "" && o.user == "":
-		return errors.New("renewing without --key needs --user, to sign in with a password")
+	case o.op == estReenroll && o.keyFile == "" && o.user == "" && !o.token && o.tokenFile == "":
+		return errors.New("renewing without --key needs --user or --token, to sign in with a password or a token")
 	case o.op == estEnroll && o.csr != "" && (o.subject != "" || len(o.sans) > 0):
 		return errors.New("--subject and --san cannot change a request given with --csr")
 	case o.op != estReenroll && o.csr == "" && o.subject == "" && len(o.sans) == 0:
