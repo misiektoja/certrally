@@ -22,7 +22,7 @@ certrally is a command line client for certificate enrollment with the Certifica
 **EST** (RFC 7030)
 
 * Enrollment, renewal, server key generation, CA certificates and CSR attributes
-* Authentication with a password, a TLS client certificate or TLS-SRP
+* Authentication with a password, a bearer token, a TLS client certificate or TLS-SRP
 * `est mock` to run a test EST CA on your machine
 
 **Both protocols**
@@ -299,6 +299,7 @@ certrally est enroll --server https://est.example.com --tls-ca-cert ca.pem \
 A client signs in with one of these:
 
 * **A password** over HTTP Basic authentication with `--user`. The password comes from `--password-file` (`-` reads standard input), the `CERTRALLY_PASSWORD` environment variable or a prompt on a terminal, in that order.
+* **A bearer token** over HTTP Bearer authentication (RFC 6750) with `--token`. The token comes from `--token-file` (`-` reads standard input, which implies `--token`), the `CERTRALLY_TOKEN` environment variable or a prompt on a terminal, in that order. `--token` cannot be combined with `--user`.
 * **A TLS client certificate** with `--cert` and `--key`. `est reenroll --cert device.pem --key device.key` renews a certificate this way. Without `--key`, renewal signs in with `--user` instead, as RFC 7030 section 2.3 allows for certificates that cannot be used for TLS. An encrypted `--key` or `--new-key` takes its password from `--key-password-file`, `CERTRALLY_KEY_PASSWORD` or a prompt, like for CMP.
 * **TLS-SRP** with `--srp` and `--user`. The password then authenticates both sides over TLS 1.2, so the server needs no certificate and `--srp` cannot be combined with `--tls-ca-cert`.
 

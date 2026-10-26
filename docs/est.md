@@ -16,4 +16,4 @@ When the server answers that a request is pending, `est enroll`, `est reenroll` 
 
 ## Test CA
 
-`certrally est mock` runs an EST test CA on `127.0.0.1:8443` and prints commands that work against it. It accepts the password of `--user` (default `demo`) and certificates it issued. `--srp-listen 127.0.0.1:8444` also serves TLS-SRP for the same user. `--retry-after` answers the first request for each key with `202 Accepted`, to test waiting. It generates a password unless `--password-file` or `CERTRALLY_PASSWORD` gives one.
+`certrally est mock` runs an EST test CA on `127.0.0.1:8443` and prints commands that work against it. It accepts the password of `--user` (default `demo`) and certificates it issued. `--srp-listen 127.0.0.1:8444` also serves TLS-SRP for the same user. `--retry-after` answers the first request for each key with `202 Accepted`, to test waiting. It generates a password unless `--password-file` or `CERTRALLY_PASSWORD` gives one. With `--token-file` or `CERTRALLY_TOKEN` it also accepts that bearer token with `est enroll --token`.
