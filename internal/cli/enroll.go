@@ -51,9 +51,13 @@ type enrollOptions struct {
 	reqType string
 	subject string
 	sans    []string
-	keyType string
-	newKey  string
-	csr     string
+	// keyUsage and extKeyUsage hold the comma-separated --key-usage and --ext-key-usage values.
+	keyUsage     []string
+	extKeyUsage  []string
+	templateCert string
+	keyType      string
+	newKey       string
+	csr          string
 	certOutputs
 	certProfile string
 	certReqID   int64
@@ -90,6 +94,10 @@ func newEnrollCommand() *cobra.Command {
 			"key and records the transaction in the --capture file. certrally poll collects the " +
 			"certificate later. A run whose polling ends at --timeout records the transaction the same way " +
 			"when --capture is given.\n\n" +
+			"--key-usage and --ext-key-usage add the keyUsage and extendedKeyUsage extensions to the request. " +
+			"--template-cert copies the subject, subjectAltName, keyUsage and extendedKeyUsage of an existing " +
+			"certificate. A flag given for a copied part replaces it: --subject, --san, --key-usage or " +
+			"--ext-key-usage.\n\n" +
 			"Run without flags on a terminal, or with --interactive, to be asked for each setting. The " +
 			"equivalent command is printed before the request is sent.\n\n" +
 			enrollExitStatusHelp,
@@ -115,6 +123,14 @@ func newEnrollCommand() *cobra.Command {
 	f.StringVar(&o.reqType, "type", typeIR, "request type: ir, cr, kur or p10cr")
 	f.StringVar(&o.subject, flagSubject, "", "subject name, such as CN=device-42,O=Example")
 	f.StringArrayVar(&o.sans, flagSAN, nil, "subject alternative name: dns:, ip:, email: or uri: value (repeatable)")
+	f.StringArrayVar(&o.keyUsage, flagKeyUsage, nil,
+		"key usages to request, comma-separated: digitalSignature, nonRepudiation (or contentCommitment), "+
+			"keyEncipherment, dataEncipherment, keyAgreement, keyCertSign, cRLSign, encipherOnly, decipherOnly")
+	f.StringArrayVar(&o.extKeyUsage, flagExtKeyUsage, nil,
+		"extended key usages to request, comma-separated: serverAuth, clientAuth, codeSigning, emailProtection, "+
+			"timeStamping, ocspSigning, anyExtendedKeyUsage or a dotted OID")
+	f.StringVar(&o.templateCert, flagTemplateCert, "",
+		"copy the subject, alternative names and key usages of the certificate in this file (ir, cr or p10cr)")
 	f.StringVar(&o.keyType, "key-type", keys.DefaultType,
 		"type of the generated key, such as ecdsa-p384, rsa-3072, ml-dsa-65 or mldsa65-ecdsa-p256-sha512")
 	f.StringVar(&o.newKey, "new-key", "", "certify the private key in this file instead of generating one")
@@ -136,6 +152,8 @@ func newEnrollCommand() *cobra.Command {
 	cmd.MarkFlagsMutuallyExclusive("key-type", "new-key", "csr")
 	_ = cmd.RegisterFlagCompletionFunc("type", fixedCompletion(requestTypes))
 	_ = cmd.RegisterFlagCompletionFunc("key-type", fixedCompletion(keys.TypeNames()))
+	_ = cmd.RegisterFlagCompletionFunc(flagKeyUsage, listCompletion(keyUsageNames))
+	_ = cmd.RegisterFlagCompletionFunc(flagExtKeyUsage, listCompletion(keyPurposeNames))
 	for _, name := range []string{flagSubject, flagSAN, "cert-profile", "cert-req-id"} {
 		_ = cmd.RegisterFlagCompletionFunc(name, cobra.NoFileCompletions)
 	}
@@ -174,8 +192,11 @@ func (o *enrollOptions) validate() error {
 		return errors.New("a kur request updates the certificate in --cert, so --cert and --key are required")
 	case o.csr != "" && o.reqType != typeP10CR:
 		return errors.New("--csr needs --type p10cr")
-	case o.csr != "" && (o.subject != "" || len(o.sans) > 0):
-		return errors.New("--subject and --san cannot change a request given with --csr")
+	case o.csr != "" && o.shapesTemplate():
+		return errors.New("--subject, --san, --key-usage, --ext-key-usage and --template-cert cannot change " +
+			"a request given with --csr")
+	case o.templateCert != "" && o.reqType == typeKUR:
+		return errors.New("a kur request renews the certificate in --cert, so --template-cert needs --type ir, cr or p10cr")
 	case o.certReqID < 0:
 		return errors.New("--cert-req-id must not be negative")
 	case o.certReqID != 0 && o.reqType == typeP10CR:
@@ -194,6 +215,11 @@ func (o *enrollOptions) validate() error {
 		return err
 	}
 	return checkOutputs(o.force, o.certOut, o.keyOut, o.chainOut)
+}
+
+// shapesTemplate reports whether a flag sets part of the certificate template.
+func (o *enrollOptions) shapesTemplate() bool {
+	return o.subject != "" || len(o.sans) > 0 || len(o.keyUsage) > 0 || len(o.extKeyUsage) > 0 || o.templateCert != ""
 }
 
 // checkOutputs rejects a path given for two outputs and outputs that cannot be written, before any
@@ -227,6 +253,10 @@ func runEnroll(ctx context.Context, o *enrollOptions, p *printer, stdin io.Reade
 	if err := o.validate(); err != nil {
 		return err
 	}
+	shape, err := o.readShape()
+	if err != nil {
+		return err
+	}
 	pr, err := o.load(stdin, p.stderr)
 	if err != nil {
 		return err
@@ -235,7 +265,7 @@ func runEnroll(ctx context.Context, o *enrollOptions, p *printer, stdin io.Reade
 	if err := o.prepareKey(e); err != nil {
 		return err
 	}
-	if err := o.prepareTemplate(e); err != nil {
+	if err := o.prepareTemplate(e, shape); err != nil {
 		return err
 	}
 	if o.certProfile != "" {
@@ -436,13 +466,15 @@ func (o *enrollOptions) prepareKey(e *enrollment) error {
 	return nil
 }
 
-// prepareTemplate sets the requested subject and subject alternative names.
-func (o *enrollOptions) prepareTemplate(e *enrollment) error {
+// prepareTemplate sets the requested subject, subject alternative names and key usages. shape holds
+// what --template-cert, --key-usage and --ext-key-usage ask for.
+func (o *enrollOptions) prepareTemplate(e *enrollment, shape *templateShape) error {
 	if o.csr != "" {
 		return nil
 	}
 	var subject pkix.Name
 	hasSubject := o.subject != ""
+	hasSAN := len(o.sans) > 0 || shape.san != nil
 	switch {
 	case hasSubject:
 		name, err := dn.ParseName(o.subject)
@@ -450,17 +482,19 @@ func (o *enrollOptions) prepareTemplate(e *enrollment) error {
 			return fmt.Errorf("--subject: %w", err)
 		}
 		subject = name
+	case shape.subject != nil:
+		subject, hasSubject = *shape.subject, true
 	case o.reqType == typeKUR:
 		// The key update repeats the subject of the old certificate.
 		hasSubject = len(e.chain[0].Subject.Names) > 0
-	case len(o.sans) == 0 && o.ref != "":
+	case !hasSAN && o.ref != "":
 		// RFC 9483 §4.1.5 lets a device that does not know its name use the reference instead.
 		subject, hasSubject = pkix.Name{CommonName: o.ref}, true
-	case len(o.sans) == 0:
+	case !hasSAN:
 		return errors.New("--subject or --san is required")
 	}
 
-	extensions, err := sanExtensions(o.sans, hasSubject)
+	extensions, err := o.templateExtensions(shape, hasSubject)
 	if err != nil {
 		return err
 	}
