@@ -7,10 +7,10 @@ require (
 	charm.land/huh/v2 v2.0.3
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/charmbracelet/colorprofile v0.4.3
-	github.com/misiektoja/go-composite-mldsa v0.2.1
-	github.com/misiektoja/go-pki-cmp v0.7.2
-	github.com/misiektoja/go-pki-est v1.3.1
-	github.com/misiektoja/go-tls-srp v0.2.0
+	github.com/misiektoja/go-composite-mldsa v0.2.2
+	github.com/misiektoja/go-pki-cmp v0.8.0
+	github.com/misiektoja/go-pki-est v1.4.0
+	github.com/misiektoja/go-tls-srp v0.2.1
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	go.mozilla.org/pkcs7 v0.10.0
