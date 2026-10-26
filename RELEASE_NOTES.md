@@ -2,7 +2,7 @@
 
 Notable changes to certrally. Versions follow the `vMAJOR.MINOR.PATCH` tags published in this repository.
 
-## v0.2.0 - 26 Oct 2026
+## v0.2.0 - 27 Oct 2026
 
 This release adds ML-KEM keys, keys that the CA generates, forwarding as a registration authority, collecting a waiting certificate in a later run and revocation by serial number. It also adds tools to test CAs, encrypted key files, DER output, proxies and EST bearer tokens. It fixes what `est cacerts --bootstrap` and `--chain-out` save.
 
