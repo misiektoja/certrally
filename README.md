@@ -11,7 +11,7 @@
 
 certrally is a command line client for certificate enrollment with the Certificate Management Protocol (CMP) and Enrollment over Secure Transport (EST).
 
-![certrally enrolls an ML-DSA-65 certificate from the test CA and revokes it](docs/demo.gif)
+![certrally enrolls an ML-DSA-65 certificate from the test CA with a shared secret](docs/demo.gif)
 
 **CMP** (RFC 9810, which replaces RFC 4210, with the RFC 9483 profile)
 
