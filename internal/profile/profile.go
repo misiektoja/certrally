@@ -12,6 +12,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -56,14 +57,27 @@ const minNonceBytes = 16
 
 // Check returns the rules that resp breaks as the answer to req. trusted are the certificates the
 // client trusts. A new certificate issued by a self-signed certificate in trusted or caPubs needs no chain.
+// When a registration authority forwards req in a nested message, resp answers the request inside.
 func Check(req, resp *pkicmp.PKIMessage, trusted []*x509.Certificate) []Finding {
-	c := &checker{req: req, resp: resp, body: resp.Body.Type.String(), trusted: trusted}
+	c := &checker{req: forwarded(req), resp: resp, body: resp.Body.Type.String(), trusted: trusted}
 	c.header()
 	c.generalInfo()
 	c.protection()
 	c.extraCerts()
 	c.content()
 	return c.findings
+}
+
+// forwarded returns the request inside a nested message that holds exactly one. It returns req otherwise.
+func forwarded(req *pkicmp.PKIMessage) *pkicmp.PKIMessage {
+	if req.Body.Type != pkicmp.BodyTypeNested {
+		return req
+	}
+	inner, err := req.Body.Nested()
+	if err != nil || len(inner) != 1 {
+		return req
+	}
+	return inner[0]
 }
 
 // CheckReply returns the rules that resp breaks in referring to the request it answers. requests
@@ -244,10 +258,10 @@ func (c *checker) content() {
 	}
 }
 
-// signer returns the first certificate in extraCerts when it can be the protection certificate:
-// its subject matches the sender and its key identifier matches senderKID. It returns nil otherwise.
-// A senderKID that names none of the certificates is a deviation of its own, so it does not count
-// against the first certificate.
+// signer returns the first certificate in extraCerts when it is the protection certificate: its
+// subject matches the sender, its key identifier matches senderKID and the protection verifies with
+// its key. It returns nil otherwise. A senderKID that names none of the certificates is a deviation
+// of its own, so it does not count against the first certificate.
 func (c *checker) signer() *x509.Certificate {
 	if len(c.resp.ExtraCerts) == 0 {
 		return nil
@@ -259,7 +273,25 @@ func (c *checker) signer() *x509.Certificate {
 	if kid := c.resp.Header.SenderKID; len(kid) > 0 && !bytes.Equal(kid, cert.SubjectKeyId) && c.kidNamesCandidate() {
 		return nil
 	}
+	if c.signatureFails(cert) {
+		return nil
+	}
 	return cert
+}
+
+// signatureFails reports whether the protection of the response does not verify with the key of
+// cert. Nothing protects extraCerts, so a certificate that copies the name and key identifier of
+// the sender is told apart only by the signature. The check runs at the start of the validity of
+// cert, so that neither trust nor time decides it. A signature that cannot be checked, such as one
+// with an algorithm certrally does not support, does not count against cert.
+func (c *checker) signatureFails(cert *x509.Certificate) bool {
+	_, err := c.resp.Verify(pkicmp.VerifyOptions{
+		RequiredProtection: pkicmp.ProtectionSignature,
+		TrustedCert:        cert,
+		CurrentTime:        cert.NotBefore,
+	})
+	verifyErr, ok := errors.AsType[*pkicmp.VerificationError](err)
+	return ok && verifyErr.Reason == pkicmp.ReasonSignatureFailed
 }
 
 // namesSender reports whether the subject of cert is the sender of the response. Every certificate

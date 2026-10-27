@@ -22,11 +22,11 @@ jobs:
     steps:
       - name: Clone the code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        # Credentials are kept because this is the one workflow that writes back to the repository.
-        # Every other checkout drops them.
+        # The token is handed to git only in the last step, so the steps that read the release feed
+        # and build the proposed toolchain run without it.
         with:
           ref: dev
-          persist-credentials: true
+          persist-credentials: false
 
       # Runs before the toolchain is installed, because it needs only curl and jq. Doing it first means
       # the Go that gets installed below is already the version being proposed.
@@ -73,6 +73,7 @@ jobs:
             echo "$BRANCH already exists, so this patch has already been proposed"
             exit 0
           fi
+          gh auth setup-git
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "$BRANCH"

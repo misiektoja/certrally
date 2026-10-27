@@ -2,6 +2,46 @@
 
 Notable changes to certrally. Versions follow the `vMAJOR.MINOR.PATCH` tags published in this repository.
 
+## v0.2.0 - 27 Oct 2026
+
+This release adds ML-KEM keys, keys that the CA generates, forwarding as a registration authority, collecting a waiting certificate in a later run and revocation by serial number. It also adds tools to test CAs, encrypted key files, DER output, proxies and EST bearer tokens. It fixes what `est cacerts --bootstrap` and `--chain-out` save.
+
+### CMP
+
+* **ML-KEM-768 and ML-KEM-1024 keys.** `keygen` and `enroll --key-type` create them. `enroll` proves possession by decryption with **`--pop encrypted-cert`** (default) or **`--pop challenge`**.
+* **`enroll --central-keygen`** asks the CA to generate the key pair (RFC 9483 section 4.1.6). certrally checks the signature of the key generation authority before it saves the key.
+* **`enroll --ra-cert` and `--ra-key`** forward requests as a registration authority in signed `nested` messages (RFC 9483 section 5.2.2.1).
+* **`enroll --poll-later` and `certrally poll`** collect a certificate that the CA keeps waiting, for example for an approval, in a later run. The `--capture` file holds the transaction.
+* **`enroll --implicit-confirm`** asks the CA to skip the `certConf` exchange.
+* **`enroll --key-usage`, `--ext-key-usage` and `--template-cert`** ask for key usages or copy the subject, subjectAltName and key usages of an existing certificate.
+* **`revoke --serial` and `--issuer`** revoke a certificate without its file. **`--invalidity-date`** sets the invalidity date of the CRL entry.
+* **`--cert-req-id`, `--general-info`, `--hash` and `--iterations`** set request fields and algorithms that some CA profiles need.
+* **Trust on first response is reported.** Without `--ca-cert` the report lists each certificate trusted from the first response with its SHA-256 fingerprint. Over plain HTTP certrally also warns that nothing authenticated them.
+
+### EST
+
+* **`est --token` and `--token-file`** sign in with an HTTP bearer token (RFC 6750) instead of a password.
+
+### CMP and EST
+
+* **`--insecure`** skips the check of the TLS certificate of the server, for test servers. certrally warns and records the flag in the capture file.
+* **Encrypted private keys.** `--key` and `--new-key` read encrypted PKCS#8 keys. The password comes from **`--key-password-file`**, `CERTRALLY_KEY_PASSWORD` or a prompt.
+* **`--out-format der`** writes the output files as DER instead of PEM, with several certificates as PKCS#7.
+* **`--proxy URL`** connects through an HTTP or HTTPS proxy. The EST commands now also follow `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`.
+* **`certrally --help`** names the version of the build in its first line.
+
+### Testing and troubleshooting
+
+* **`enroll --fault` and `poll --fault`** send deliberately wrong messages, such as a `certConf` with a wrong certHash or a reused nonce, to test how a CA copes. See [faulty messages](https://github.com/misiektoja/certrally/blob/v0.2.0/docs/faults.md).
+* **`certrally mock` fault flags** make the test CA keep requests waiting, reject them, grant implicit confirmation, enforce RFC 9483 strictly or accept deviations such as SHA-1. The test CA also refuses a late `certConf`, accepts registration authorities and logs revocations. Its rejections carry only the reason in the statusString, without the `server: status rejection` prefix. See [the CMP test CA](https://github.com/misiektoja/certrally/blob/v0.2.0/docs/mock.md).
+* **`certrally est mock --token-file`** makes the EST test CA also accept a bearer token.
+
+### Bug fixes
+
+* **`est cacerts --bootstrap` saves only the checked certificate** and the certificates it issued. Before, every certificate of the response was saved once one matched, so the unchecked server could add a CA that `--tls-ca-cert` trusted later. It also refuses the sign-in flags, which sent the password or token to the unchecked server.
+* **`--chain-out` holds only CA certificates that signed the new certificate.** Before, a certificate from the unprotected extraCerts entered the chain file when it copied the name and key identifier of the CA.
+* **The RFC 9483 section 3.3 check verifies the protection certificate** with the signature of the response. Before, a certificate that copied the name and key identifier of the CA passed the check.
+
 ## v0.1.1 - 22 Oct 2026
 
 This release fixes the Homebrew install.

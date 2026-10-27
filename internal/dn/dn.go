@@ -160,21 +160,31 @@ func attributeType(key string) (asn1.ObjectIdentifier, error) {
 		return oid, nil
 	}
 	if key[0] >= '0' && key[0] <= '9' {
-		var oid asn1.ObjectIdentifier
-		for part := range strings.SplitSeq(key, ".") {
-			n, err := strconv.Atoi(part)
-			if err != nil || n < 0 || strconv.Itoa(n) != part {
-				return nil, fmt.Errorf("invalid attribute OID %q", key)
-			}
-			oid = append(oid, n)
-		}
-		if len(oid) < 2 {
+		oid, err := ParseOID(key)
+		if err != nil {
 			return nil, fmt.Errorf("invalid attribute OID %q", key)
 		}
 		return oid, nil
 	}
 	return nil, fmt.Errorf("unknown attribute type %q, "+
 		"use one of CN, O, OU, C, L, ST, STREET, POSTALCODE, SERIALNUMBER, UID or a dotted OID", key)
+}
+
+// ParseOID parses a dotted object identifier, such as 1.3.6.1.4.1.36878.3.3.1.1. It checks the
+// limits of the first two arcs that DER encoding needs.
+func ParseOID(s string) (asn1.ObjectIdentifier, error) {
+	var oid asn1.ObjectIdentifier
+	for part := range strings.SplitSeq(s, ".") {
+		n, err := strconv.Atoi(part)
+		if err != nil || n < 0 || strconv.Itoa(n) != part {
+			return nil, fmt.Errorf("invalid OID %q", s)
+		}
+		oid = append(oid, n)
+	}
+	if len(oid) < 2 || oid[0] > 2 || (oid[0] < 2 && oid[1] >= 40) {
+		return nil, fmt.Errorf("invalid OID %q", s)
+	}
+	return oid, nil
 }
 
 // splitUnescaped splits s at every sep that is not escaped with a backslash or inside double quotes.

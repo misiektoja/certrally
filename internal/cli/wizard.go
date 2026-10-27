@@ -216,8 +216,9 @@ func (a *formAsker) show(title, value string) {
 
 // enrollFlagOrder is the order of the flags in the command that the wizard prints.
 var enrollFlagOrder = []string{
-	"server", "ca-cert", "tls-ca-cert", flagRef, "secret-file", "mac", "cert", "key", "type",
-	flagSubject, flagSAN, "key-type", "new-key", "csr", "cert-out", "key-out", "chain-out",
+	"server", "ca-cert", "tls-ca-cert", flagRef, "secret-file", "mac", "cert", "key", flagRACert, flagRAKey, "type",
+	flagTemplateCert, flagSubject, flagSAN, flagKeyUsage, flagExtKeyUsage, flagCentralKeygen, "key-type", "new-key", "csr",
+	"cert-out", "key-out", "chain-out", flagOutFormat,
 }
 
 // enrollWizard asks for the enroll settings that the command line leaves out. Each answer is set
@@ -578,8 +579,16 @@ func (w *enrollWizard) keyType() error {
 	case w.given("key-type"):
 		w.ask.show(title, w.o.keyType)
 		return nil
+	case w.o.centralKeygen:
+		// Without --key-type the CA chooses the algorithm of the key it generates.
+		w.ask.show(title, "chosen by the CA")
+		return nil
 	}
+	// A p10cr request is signed with the new key, which an ML-KEM key cannot do.
 	names := keys.TypeNames()
+	if w.o.reqType == typeP10CR {
+		names = keys.SigningTypeNames()
+	}
 	choices := make([]choice, len(names))
 	for i, name := range names {
 		choices[i] = choice{label: name + keyTypeHint(name), value: name}
@@ -600,6 +609,8 @@ func keyTypeHint(name string) string {
 		return "  post-quantum"
 	case strings.HasPrefix(name, "mldsa"):
 		return "  post-quantum composite with a classical key"
+	case strings.HasPrefix(name, "ml-kem-"):
+		return "  post-quantum, cannot sign, the CA must accept an encrypted certificate"
 	}
 	return ""
 }
@@ -723,14 +734,19 @@ func checkCertificates(s string) error {
 	return err
 }
 
-// checkKey checks that the file in s holds a private key.
+// checkKey checks that the file in s holds a private key that can sign. An encrypted key passes,
+// because its password is asked for when the request is sent.
 func checkKey(s string) error {
 	path := strings.TrimSpace(s)
 	data, err := os.ReadFile(path) //nolint:gosec // G304: the user names the file to read.
 	if err != nil {
 		return err
 	}
-	if _, err := keys.Parse(data); err != nil {
+	key, err := keys.Parse(data)
+	if err == nil {
+		_, err = keys.Signer(key)
+	}
+	if err != nil && !errors.Is(err, keys.ErrEncrypted) {
 		return fmt.Errorf("%s: %w", path, err)
 	}
 	return nil

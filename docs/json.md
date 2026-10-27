@@ -17,7 +17,7 @@ Later versions may add fields. Existing fields keep their names and meaning.
 
 ## JSON output
 
-`--json` works with `enroll`, `revoke`, `cacerts`, `cmp genm` and its subcommands, `ping`, `inspect`, `lint`, `keygen` and the `est` commands except `est mock`. Standard output then holds exactly one JSON document, whatever the outcome. The ladder diagram and the text report are not printed. The exit status is the same as without `--json`.
+`--json` works with `enroll`, `poll`, `revoke`, `cacerts`, `cmp genm` and its subcommands, `ping`, `inspect`, `lint`, `keygen` and the `est` commands except `est mock`. Standard output then holds exactly one JSON document, whatever the outcome. The ladder diagram and the text report are not printed. The exit status is the same as without `--json`.
 
 When certrally cannot parse the command line, for example because of an unknown flag or a missing required flag, the document holds the error and the error is also printed on standard error. `--json` cannot be combined with `--quiet` or with an output file of `-`.
 
@@ -38,6 +38,8 @@ certrally enroll --server https://ca.example.com/.well-known/cmp --ref device-42
 | `exchange` | array | One [message record](#message-records) per request, response or failure, and per connection of an EST command, in order. Absent when nothing was sent |
 | `result` | object | The [result](#results) of the command. Present on success and with some failures |
 | `error` | object | The [error](#errors) when `ok` is `false` |
+| `faults` | array | One entry per [`enroll` or `poll --fault`](faults.md) value, in the order of the help text. `name` is the fault and `messages` lists the body types it changed, such as `certConf`. An empty `messages` means the fault found no message to change. Absent without `--fault` |
+| `trustedOnFirstResponse` | array | The certificates a CMP command trusted from its first response, each with the fields of a certificate in a [result](#results), so that `sha256` can be compared with the fingerprint the CA published. Absent with `--ca-cert`, on the EST commands and on `poll`, which keeps the trust of the `enroll` run |
 | `warnings` | array of strings | Problems that did not fail the command, such as a CRL signature that does not verify or a response that breaks a rule of the `compatible` profile |
 
 An enrollment produces a document like this, shortened:
@@ -85,6 +87,7 @@ An EST enrollment records its connection, the request and the response:
 | `httpStatus`, `contentType` | The HTTP status and content type of a response |
 | `size` | Body size in bytes |
 | `body` | The PKIBody type, such as `ir`, `ip`, `genp` or `error`. Absent when the body is not a CMP message |
+| `nested` | The body types of the messages in a `nested` body, such as `["ir"]` for a request that a registration authority forwards |
 | `protection` | The protection algorithm, such as `PBMAC1` or `ML-DSA-65`. It is `none` for an unprotected message |
 | `sender` | The sender name in the header |
 | `transactionId`, `senderKid` | Header fields, as hex |
@@ -120,8 +123,8 @@ A certificate in a result has `subject`, `issuer`, `serial`, `notBefore`, `notAf
 
 | Command | Result fields |
 |---|---|
-| `enroll` | `status`, `confirmed`, `certificate`, `chain`, `saved`. With exit status 5 the result is present and `confirmed` is `false` |
-| `revoke` | `certificate`, `reason` |
+| `enroll`, `poll` | `status`, `confirmed`, `implicitConfirm`, `certificate`, `chain`, `saved`, `transactionId`. With exit status 5 the result is present and `confirmed` is `false`. `confirmed` is also `false` after `--fault reject-certificate`, which rejects the certificate. `implicitConfirm` is `true` when the CA granted implicit confirmation, so no `certConf` was sent. `proofOfPossession` is `encrypted-cert` or `challenge` for a key that cannot sign, such as an ML-KEM key, and absent otherwise. `centralKeyGeneration` is `true` and `keyGenerationAuthority` names the signer of the key when the CA generated the key with `--central-keygen`. Both are absent otherwise. `registrationAuthority` is the subject of the `--ra-cert` certificate that forwarded the requests, absent without one. When the CA keeps the request waiting, under `enroll --poll-later` or when polling ends at `--timeout` with `--capture`, `status` is `waiting`, `certificate` is `null`, `saved` lists only a new key and `nextPoll` tells when the CA asked for the next poll, if it did |
+| `revoke` | `certificate`, `issuer`, `serial`, `reason`, `invalidityDate`. `certificate` is `null` when the certificate was named with `--serial` and `--issuer`. `invalidityDate` is present when `--invalidity-date` was given |
 | `cacerts`, `cmp genm cacerts` | `certificates`, `saved` |
 | `cmp genm rootupdate` | `update` with `newWithNew`, `newWithOld` and `oldWithNew`. It is `null` when no update is available. `saved` |
 | `cmp genm template` | `template` with `subject`, `extensions` and `keyTypes`. It is `null` when the CA imposes nothing. An attribute without a value in `subject` is one the requester fills in. Each extension has `oid`, `name` and `critical` |
@@ -129,7 +132,7 @@ A certificate in a result has `subject`, `issuer`, `serial`, `notBefore`, `notAf
 | `cmp genm raw` | `items`, each with `infoType`, `oid` and `value` |
 | `ping` | `sent`, `answered`, `sender`, `protection`, `rttMs` with `min`, `avg` and `max`. With `--ca-cert`, `verified` tells whether every answer was signed by that CA |
 | `keygen` | `keyType`, `key`, `publicKey`, `csr`, `saved`. With `--list`, `keyTypes` |
-| `est cacerts` | `certificates`, `saved` and `verified`, which says how the certificates were checked: `tls` by the TLS certificate of the server, `srp` by a TLS-SRP sign-in, `fingerprint` by `--fingerprint`, `confirmed` by a person at the prompt or `none` after `--bootstrap`. `tlsIssued` tells whether these certificates issued the TLS certificate of the server |
+| `est cacerts` | `certificates`, `saved` and `verified`, which says how the certificates were checked: `tls` by the TLS certificate of the server, `srp` by a TLS-SRP sign-in, `fingerprint` by `--fingerprint`, `confirmed` by a person at the prompt or `none` after `--bootstrap` or `--insecure`. `tlsIssued` tells whether the trusted certificates issued the TLS certificate of the server. `unverified` lists the received certificates that the fingerprint check did not cover, which are not saved, and is absent otherwise |
 | `est csrattrs` | `attributes`, each with `oid`, `name` when certrally knows one and `values` for an attribute that has them |
 | `est enroll`, `est reenroll`, `est serverkeygen` | `certificate`, `key` with the type of a new key and `saved`. `key` is absent when `--new-key` or `--csr` supplied the key |
 | `inspect` | `messages`, one [inspected message](#inspected-messages) per message in file order |
@@ -168,10 +171,11 @@ A certificate in a result has `subject`, `issuer`, `serial`, `notBefore`, `notAf
 
 `--capture FILE` works with every command that talks to a server. It appends the run to `FILE` as JSON Lines, one JSON object per line:
 
-1. A `start` line with `format` (currently 1), `tool`, `version`, `command`, `server` and `time`. A run of an EST command adds `protocol` with the value `est`.
+1. A `start` line with `format` (currently 1), `tool`, `version`, `command`, `server` and `time`. A run of an EST command adds `protocol` with the value `est`. A run with `--insecure` adds `insecure` with the value `true`, because it did not check the TLS certificate of the server.
 2. One [message record](#message-records) per request, response, failure or EST connection, including `der`.
-3. An `end` line with `time` and `exitStatus`.
+3. A `transaction` line with `time`, `id`, `state` and `resume` when the run leaves a waiting transaction for `poll` (`state` is `waiting`) or `poll` ends one (`ended`). `id` is the transaction ID. `resume` holds what `poll` needs: the server, the protection settings and the names of their files, the trusted CA certificates, the output files with their format, the name of the key file when the CA encrypts the certificate for the key and the state of the CMP transaction. It holds no secret or private key. `poll` uses the last line of a transaction.
+4. An `end` line with `time` and `exitStatus`.
 
-Each run appends its own lines, so one file can hold several runs. `--capture` works together with `--json` and `--quiet`. `certrally inspect` and `certrally lint` read capture files.
+Each run appends its own lines, so one file can hold several runs. Readers should skip lines of other kinds, which later versions may add. `--capture` works together with `--json` and `--quiet`. `certrally inspect` and `certrally lint` read capture files.
 
 certrally creates the file with mode 0600. Keep capture files private: anyone who has the messages of a MAC-protected exchange can try to guess the shared secret offline.

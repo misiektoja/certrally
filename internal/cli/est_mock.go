@@ -47,6 +47,7 @@ type estMockOptions struct {
 	srpListen    string
 	user         string
 	passwordFile string
+	tokenFile    string
 	caOut        string
 	force        bool
 	retryAfter   int
@@ -65,8 +66,9 @@ func newESTMockCommand() *cobra.Command {
 			"certificate the CA issued. Renewal also accepts the password without a client certificate. With " +
 			"--srp-listen, a second port signs in --user with TLS-SRP and the same password. The " +
 			"password comes from --password-file or " + secret.PasswordEnvVar + ". Without either, a random " +
-			"password is generated and printed. The CA key and everything it issued live in memory and are " +
-			"lost when it stops. Stop it with Ctrl-C.",
+			"password is generated and printed. A bearer token from --token-file or " + secret.TokenEnvVar +
+			" is accepted too. The CA key and everything it issued live in memory and are lost when it " +
+			"stops. Stop it with Ctrl-C.",
 		Example: "  certrally est mock\n" +
 			"  certrally est mock --listen 127.0.0.1:9443 --user device-42 --password-file password.txt --ca-out ca.pem\n" +
 			"  certrally est mock --srp-listen 127.0.0.1:8444",
@@ -80,6 +82,7 @@ func newESTMockCommand() *cobra.Command {
 	f.StringVar(&o.srpListen, "srp-listen", "", "also serve TLS-SRP on this address and port, such as 127.0.0.1:8444")
 	f.StringVar(&o.user, "user", "demo", "username that HTTP Basic authentication accepts")
 	f.StringVar(&o.passwordFile, "password-file", "", "read the password from a file, or - for standard input")
+	f.StringVar(&o.tokenFile, flagTokenFile, "", "also accept the bearer token in this file, or - for standard input")
 	f.StringVar(&o.caOut, "ca-out", "", "save the CA certificate to this file, for --tls-ca-cert")
 	f.BoolVar(&o.force, "force", false, "replace an existing --ca-out file")
 	f.IntVar(&o.retryAfter, "retry-after", 0,
@@ -111,6 +114,20 @@ func (o *estMockOptions) readPassword(stdin io.Reader) (mockSecret, error) {
 	return mockSecret{value: []byte(hex.EncodeToString(random)), generated: true}, nil
 }
 
+// readToken reads the bearer token from --token-file or the environment. Without either there is
+// no token to accept.
+func (o *estMockOptions) readToken(stdin io.Reader) ([]byte, error) {
+	src := secret.Source{Kind: secret.Token, File: o.tokenFile, LookupEnv: os.LookupEnv}
+	if o.tokenFile == "-" {
+		src.Stdin = stdin
+	}
+	value, err := src.Read()
+	if errors.Is(err, secret.ErrMissing) {
+		return nil, nil
+	}
+	return value, err
+}
+
 // runESTMock serves the EST test CA until the context ends or the process is interrupted.
 func runESTMock(cmd *cobra.Command, o *estMockOptions) error {
 	if o.user == "" {
@@ -118,6 +135,9 @@ func runESTMock(cmd *cobra.Command, o *estMockOptions) error {
 	}
 	if o.retryAfter < 0 {
 		return errors.New("--retry-after must not be negative")
+	}
+	if o.passwordFile == "-" && o.tokenFile == "-" {
+		return errors.New("--password-file and --token-file cannot both read standard input")
 	}
 	if o.caOut != "" {
 		if err := pemfile.CheckWritable(o.caOut, o.force); err != nil {
@@ -128,12 +148,16 @@ func runESTMock(cmd *cobra.Command, o *estMockOptions) error {
 	if err != nil {
 		return err
 	}
+	token, err := o.readToken(cmd.InOrStdin())
+	if err != nil {
+		return err
+	}
 	ca, err := estca.New()
 	if err != nil {
 		return err
 	}
 	ca.RetryAfter = o.retryAfter
-	router, err := newESTMockRouter(ca, o.user, password.value)
+	router, err := newESTMockRouter(ca, o.user, password.value, token)
 	if err != nil {
 		return err
 	}
@@ -177,7 +201,7 @@ func runESTMock(cmd *cobra.Command, o *estMockOptions) error {
 		urls.srp = "https://" + srpHostPort
 		remote = remote || srpRemote
 	}
-	o.report(p, urls, ca.Certificate(), password)
+	o.report(p, urls, ca.Certificate(), password, len(token) > 0)
 	if remote {
 		p.warn("The mock CA accepts requests from other hosts. " +
 			"Anyone who reaches it and knows the password gets certificates.")
@@ -297,16 +321,13 @@ func newSRPMockServer(log *estMockLog) *http.Server {
 	}
 }
 
-// newESTMockRouter returns the EST handler of the test CA. It accepts the password of user, a
-// client certificate the CA issued and a TLS-SRP sign-in.
-func newESTMockRouter(ca *estca.CA, user string, password []byte) (http.Handler, error) {
-	return est.NewRouter(&est.ServerConfig{
+// newESTMockRouter returns the EST handler of the test CA. It accepts the password of user, the
+// bearer token when there is one, a client certificate the CA issued and a TLS-SRP sign-in.
+func newESTMockRouter(ca *estca.CA, user string, password, token []byte) (http.Handler, error) {
+	cfg := &est.ServerConfig{
 		CA: ca,
 		CheckBasicAuth: func(ctx context.Context, r *http.Request, _, username, pass string) error {
-			if est.SRPUsernameFromContext(ctx) != "" {
-				return nil
-			}
-			if r.TLS != nil && len(r.TLS.PeerCertificates) > 0 && ca.Verify(r.TLS.PeerCertificates[0]) == nil {
+			if signedInByTLS(ctx, r, ca) {
 				return nil
 			}
 			userOK := subtle.ConstantTimeCompare([]byte(username), []byte(user)) == 1
@@ -314,7 +335,7 @@ func newESTMockRouter(ca *estca.CA, user string, password []byte) (http.Handler,
 			if userOK && passOK {
 				return nil
 			}
-			return errors.New("sign in with the password or a certificate of this CA")
+			return errors.New("sign in with the password, the token or a certificate of this CA")
 		},
 		PasswordRenewal:   true,
 		CheckCSRSignature: compositex509.CheckCertificateRequestSignature,
@@ -325,7 +346,28 @@ func newESTMockRouter(ca *estca.CA, user string, password []byte) (http.Handler,
 		// A browser that stores Strict-Transport-Security for localhost refuses certificate warnings
 		// on every local port.
 		OmitStrictTransportSecurity: true,
-	})
+	}
+	// The server runs CheckBearerToken in place of CheckBasicAuth for a request with a bearer token,
+	// and only a token that CheckBearerToken accepted signs in for renewal without a certificate.
+	// Without a token the hook stays unset, so a bearer token gets the usual Basic challenge.
+	if len(token) > 0 {
+		cfg.CheckBearerToken = func(ctx context.Context, r *http.Request, _, bearer string) error {
+			if signedInByTLS(ctx, r, ca) || subtle.ConstantTimeCompare([]byte(bearer), token) == 1 {
+				return nil
+			}
+			return errors.New("sign in with the token, the password or a certificate of this CA")
+		}
+	}
+	return est.NewRouter(cfg)
+}
+
+// signedInByTLS reports whether the connection of r signed in with TLS-SRP or with a client
+// certificate that ca issued.
+func signedInByTLS(ctx context.Context, r *http.Request, ca *estca.CA) bool {
+	if est.SRPUsernameFromContext(ctx) != "" {
+		return true
+	}
+	return r.TLS != nil && len(r.TLS.PeerCertificates) > 0 && ca.Verify(r.TLS.PeerCertificates[0]) == nil
 }
 
 // mockHosts returns the names the server certificate covers: localhost and the address listened
@@ -348,14 +390,22 @@ type estMockURLs struct {
 	srp   string
 }
 
-// report prints how to reach the test CA and the commands that work against it.
-func (o *estMockOptions) report(p *printer, urls estMockURLs, caCert *x509.Certificate, password mockSecret) {
+// report prints how to reach the test CA and the commands that work against it. hasToken says
+// whether a bearer token is accepted.
+func (o *estMockOptions) report(p *printer, urls estMockURLs, caCert *x509.Certificate, password mockSecret, hasToken bool) {
 	passwordField := "from " + secret.PasswordEnvVar
 	switch {
 	case password.generated:
 		passwordField = string(password.value) + " (generated)"
 	case o.passwordFile != "":
 		passwordField = "from " + o.passwordFile
+	}
+	tokenField := valueNone
+	switch {
+	case o.tokenFile != "":
+		tokenField = "from " + o.tokenFile
+	case hasToken:
+		tokenField = "from " + secret.TokenEnvVar
 	}
 	sum := sha256.Sum256(caCert.Raw)
 	p.result("EST mock CA running", []ui.Field{
@@ -365,6 +415,7 @@ func (o *estMockOptions) report(p *printer, urls estMockURLs, caCert *x509.Certi
 		{Name: "SHA-256", Value: hex.EncodeToString(sum[:])},
 		{Name: "User", Value: o.user},
 		{Name: "Password", Value: passwordField},
+		{Name: "Token", Value: tokenField},
 		{Name: fieldSaved, Value: o.caOut},
 	}, nil)
 
@@ -378,6 +429,9 @@ func (o *estMockOptions) report(p *printer, urls estMockURLs, caCert *x509.Certi
 		}, " "))
 	}
 	lines = append(lines, o.enrollCommand(password, "--server", urls.https, "--tls-ca-cert", shellQuote(caFile)))
+	if hasToken {
+		lines = append(lines, o.tokenCommand("--server", urls.https, "--tls-ca-cert", shellQuote(caFile)))
+	}
 	if urls.srp != "" {
 		lines = append(lines, o.enrollCommand(password, "--server", urls.srp, "--srp"))
 	}
@@ -388,17 +442,32 @@ func (o *estMockOptions) report(p *printer, urls estMockURLs, caCert *x509.Certi
 // enrollCommand returns an est enroll command line that signs in with the password of --user.
 // server holds the flags that reach the server.
 func (o *estMockOptions) enrollCommand(password mockSecret, server ...string) string {
-	args := append([]string{programName, estCommand, "enroll"}, server...)
+	args := append([]string{programName, estCommand, estEnroll}, server...)
 	args = append(args, "--user", shellQuote(o.user))
 	if o.passwordFile != "" && o.passwordFile != "-" {
 		args = append(args, "--password-file", shellQuote(o.passwordFile))
 	}
-	args = append(args, "--subject", "CN=device", "--cert-out", "device.pem", "--key-out", "device.key")
+	args = append(args, enrollOutputs...)
 	command := strings.Join(args, " ")
 	if password.generated {
 		command = secret.PasswordEnvVar + "=" + string(password.value) + " " + command
 	}
 	return command
+}
+
+// enrollOutputs are the request and output flags of the printed enroll commands.
+var enrollOutputs = []string{"--subject", "CN=device", "--cert-out", "device.pem", "--key-out", "device.key"}
+
+// tokenCommand returns an est enroll command line that signs in with the bearer token. server
+// holds the flags that reach the server.
+func (o *estMockOptions) tokenCommand(server ...string) string {
+	args := append([]string{programName, estCommand, estEnroll}, server...)
+	if o.tokenFile != "" && o.tokenFile != "-" {
+		args = append(args, "--"+flagTokenFile, shellQuote(o.tokenFile))
+	} else {
+		args = append(args, "--"+flagToken)
+	}
+	return strings.Join(append(args, enrollOutputs...), " ")
 }
 
 // estMockLog prints one line for every request the test CA answers.

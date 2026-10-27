@@ -6,17 +6,23 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/asn1"
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
+	"log"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	compositemldsa "github.com/misiektoja/go-composite-mldsa"
 	"github.com/misiektoja/go-composite-mldsa/compositex509"
@@ -45,6 +51,26 @@ type testCA struct {
 // startCA serves a mock CA over HTTP. wrap, when set, replaces the CA behaviour the test changes.
 func startCA(t *testing.T, wrap func(*mockserver.MockCA) server.CA) *testCA {
 	t.Helper()
+	return serveCA(t, wrap, false, nil)
+}
+
+// startRewritingCA serves a mock CA over HTTP behind a party on the path that changes every CMP
+// response body with the function rewrite builds from the CA certificate.
+func startRewritingCA(t *testing.T, rewrite func(caCert *x509.Certificate) func(body []byte) []byte) *testCA {
+	t.Helper()
+	return serveCA(t, nil, false, rewrite)
+}
+
+// startTLSCA serves a mock CA over HTTPS with a certificate that no root trusts.
+func startTLSCA(t *testing.T, wrap func(*mockserver.MockCA) server.CA) *testCA {
+	t.Helper()
+	return serveCA(t, wrap, true, nil)
+}
+
+// serveCA serves a mock CA over HTTP, or over HTTPS when overTLS is set. rewrite, when set, builds
+// from the CA certificate a function that replaces the body of every CMP response.
+func serveCA(t *testing.T, wrap func(*mockserver.MockCA) server.CA, overTLS bool, rewrite func(*x509.Certificate) func([]byte) []byte) *testCA {
+	t.Helper()
 	mock, err := mockserver.New(map[string][]byte{testRef: []byte(testSecret)}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
@@ -65,10 +91,34 @@ func startCA(t *testing.T, wrap func(*mockserver.MockCA) server.CA) *testCA {
 	}
 	tc := &testCA{caFile: filepath.Join(t.TempDir(), "ca.pem")}
 	writeFile(t, tc.caFile, pemfile.EncodeCertificates([]*x509.Certificate{mock.Cert()}))
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var rewriteBody func([]byte) []byte
+	if rewrite != nil {
+		rewriteBody = rewrite(mock.Cert())
+	}
+	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tc.requests.Add(1)
-		srv.ServeHTTP(w, r)
+		if rewriteBody == nil {
+			srv.ServeHTTP(w, r)
+			return
+		}
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, r)
+		body := rec.Body.Bytes()
+		if rec.Header().Get("Content-Type") == "application/pkixcmp" {
+			body = rewriteBody(body)
+		}
+		maps.Copy(w.Header(), rec.Header())
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		w.WriteHeader(rec.Code)
+		_, _ = w.Write(body)
 	}))
+	if overTLS {
+		// Handshake failures are part of some tests.
+		ts.Config.ErrorLog = log.New(io.Discard, "", 0)
+		ts.StartTLS()
+	} else {
+		ts.Start()
+	}
 	t.Cleanup(ts.Close)
 	tc.url = ts.URL + "/cmp"
 	return tc
@@ -123,6 +173,116 @@ func enrollIR(t *testing.T, ca *testCA, extra ...string) (certOut, keyOut string
 	return certOut, keyOut
 }
 
+// lookalikeCA returns a self-signed CA certificate with the subject and subject key identifier of
+// model but another key, as someone on the path could add to the unprotected extraCerts.
+func lookalikeCA(t *testing.T, model *x509.Certificate) *x509.Certificate {
+	t.Helper()
+	_, cert := testCertificate(t, &x509.Certificate{
+		RawSubject:            model.RawSubject,
+		SubjectKeyId:          model.SubjectKeyId,
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
+	}, nil, nil)
+	return cert
+}
+
+// insertExtraCert returns the PKIMessage der with cert placed first in extraCerts. The protection
+// covers only the header and body, so the message stays valid. PKIMessage is SEQUENCE { header,
+// body, protection [0] OPTIONAL, extraCerts [1] OPTIONAL }, and extraCerts is an explicit tag around
+// a SEQUENCE OF CMPCertificate.
+func insertExtraCert(t *testing.T, der []byte, cert *x509.Certificate) []byte {
+	t.Helper()
+	var msg asn1.RawValue
+	if rest, err := asn1.Unmarshal(der, &msg); err != nil || len(rest) > 0 || msg.Tag != asn1.TagSequence {
+		t.Fatalf("not a PKIMessage: %v", err)
+	}
+	var content, certs []byte
+	for elements, i := msg.Bytes, 0; len(elements) > 0; i++ {
+		var elem asn1.RawValue
+		rest, err := asn1.Unmarshal(elements, &elem)
+		if err != nil {
+			t.Fatal(err)
+		}
+		elements = rest
+		// The body is a CHOICE whose ip alternative has tag [1] too, so only the elements after
+		// the body are matched by tag.
+		if i >= 2 && elem.Class == asn1.ClassContextSpecific && elem.Tag == 1 {
+			var seq asn1.RawValue
+			if _, err := asn1.Unmarshal(elem.Bytes, &seq); err != nil {
+				t.Fatal(err)
+			}
+			certs = seq.Bytes
+			continue
+		}
+		content = append(content, elem.FullBytes...)
+	}
+	marshal := func(class, tag int, bytes []byte) []byte {
+		out, err := asn1.Marshal(asn1.RawValue{Class: class, Tag: tag, IsCompound: true, Bytes: bytes})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	seq := marshal(asn1.ClassUniversal, asn1.TagSequence, append(append([]byte{}, cert.Raw...), certs...))
+	content = append(content, marshal(asn1.ClassContextSpecific, 1, seq)...)
+	return marshal(asn1.ClassUniversal, asn1.TagSequence, content)
+}
+
+// TestEnrollChainVerifiesSignatures checks that --chain-out holds the CA certificate that signed the
+// new certificate and not a certificate that only copies its name and key identifier, with and
+// without --ca-cert, and that the profile check reports the look-alike. extraCerts is outside the
+// protection of a response, so someone on the path can add certificates to it, and a cr response
+// carries no caPubs to prefer.
+func TestEnrollChainVerifiesSignatures(t *testing.T) {
+	useSecret(t, testSecret)
+	ca := startRewritingCA(t, func(caCert *x509.Certificate) func([]byte) []byte {
+		lookalike := lookalikeCA(t, caCert)
+		return func(body []byte) []byte { return insertExtraCert(t, body, lookalike) }
+	})
+	caCert := readCert(t, ca.caFile)
+	certOut, keyOut := enrollIR(t, ca, "--subject", "CN=device-42")
+	for _, pinned := range []bool{true, false} {
+		t.Run(fmt.Sprintf("pinned=%t", pinned), func(t *testing.T) {
+			dir := t.TempDir()
+			chainOut := filepath.Join(dir, "chain.pem")
+			args := []string{"enroll", "--server", ca.url, "--type", "cr", "--cert", certOut, "--key", keyOut,
+				"--subject", "CN=device-42", "--cert-out", filepath.Join(dir, "c.pem"), "--key-out", filepath.Join(dir, "k.pem"),
+				"--chain-out", chainOut}
+			if pinned {
+				args = append(args, "--ca-cert", ca.caFile)
+			}
+			code, _, errOut := run(t, args...)
+			if code != exitOK {
+				t.Fatalf("exited with %d:\n%s", code, errOut)
+			}
+			if !strings.Contains(errOut, "does not start extraCerts with its protection certificate") {
+				t.Errorf("the report does not warn about the look-alike protection certificate:\n%s", errOut)
+			}
+			chain, err := pemfile.ReadCertificates(chainOut)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(chain) != 1 || !chain[0].Equal(caCert) {
+				t.Errorf("chain holds %d certificates, the first signed by %s, want the CA certificate alone", len(chain), chainSigner(chain, caCert))
+			}
+		})
+	}
+}
+
+// chainSigner says whether the first certificate of chain is the CA certificate, for a test message.
+func chainSigner(chain []*x509.Certificate, caCert *x509.Certificate) string {
+	if len(chain) == 0 {
+		return "nobody"
+	}
+	if chain[0].Equal(caCert) {
+		return "the CA key"
+	}
+	return "another key"
+}
+
 // TestEnrollIR checks MAC-protected initial enrollment with classical and ML-DSA keys.
 func TestEnrollIR(t *testing.T) {
 	useSecret(t, testSecret)
@@ -159,7 +319,7 @@ func TestEnrollIR(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if pub, ok := key.Public().(interface{ Equal(crypto.PublicKey) bool }); !ok || !pub.Equal(cert.PublicKey) {
+			if pub, ok := keys.Public(key).(interface{ Equal(crypto.PublicKey) bool }); !ok || !pub.Equal(cert.PublicKey) {
 				t.Error("the saved key does not match the certificate")
 			}
 			chain, err := pemfile.ReadCertificates(chainOut)

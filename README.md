@@ -16,20 +16,23 @@ certrally is a command line client for certificate enrollment with the Certifica
 **CMP** (RFC 9810, which replaces RFC 4210, with the RFC 9483 profile)
 
 * `ir`, `cr`, `kur`, `p10cr` and `rr` with a shared secret or a certificate
+* Keys that the CA generates (central key generation)
+* Requests forwarded by a registration authority in nested messages
 * CA certificates, root CA updates, request templates and CRLs from the CA
 * `ping` to check a server and `mock` to run a test CA on your machine
+* Deliberately wrong messages with `enroll --fault` to test how a CA copes
 
 **EST** (RFC 7030)
 
 * Enrollment, renewal, server key generation, CA certificates and CSR attributes
-* Authentication with a password, a TLS client certificate or TLS-SRP
+* Authentication with a password, a bearer token, a TLS client certificate or TLS-SRP
 * `est mock` to run a test EST CA on your machine
 
 **Both protocols**
 
 * A live diagram of every message and plain explanations of failures
 * A step-by-step `enroll` that prints the matching command for scripts
-* RSA, ECDSA, Ed25519, ML-DSA and composite ML-DSA keys, also offline with `keygen`
+* RSA, ECDSA, Ed25519, ML-DSA, composite ML-DSA and ML-KEM keys, also offline with `keygen`
 * No trust setup: certrally trusts the CA it talks to or the one in `--ca-cert`
 * Warnings about responses that break the RFCs and a strict profile that rejects them
 * JSON output, capture files and exit statuses for scripts
@@ -79,7 +82,7 @@ certrally --version
 
 `certrally completion bash|zsh|fish|powershell` prints a shell completion script. `certrally man` prints a man page.
 
-The CMP commands also run under `certrally cmp`, such as `certrally cmp enroll`. Without the prefix, `enroll`, `revoke`, `cacerts`, `ping` and `mock` use CMP. The EST commands run under [`certrally est`](#enroll-over-est).
+The CMP commands also run under `certrally cmp`, such as `certrally cmp enroll`. Without the prefix, `enroll`, `poll`, `revoke`, `cacerts`, `ping` and `mock` use CMP. The EST commands run under [`certrally est`](#enroll-over-est).
 
 Output is coloured only on a terminal. [docs/output.md](docs/output.md) describes `--color`, `NO_COLOR` and `FORCE_COLOR`.
 
@@ -91,7 +94,7 @@ Output is coloured only on a terminal. [docs/output.md](docs/output.md) describe
 certrally mock --ca-out ca.pem
 ```
 
-Run the printed command in another terminal. Running `certrally enroll` without flags there asks for the settings instead. The test CA keeps everything in memory, so every run starts empty. `certrally mock --help` lists its address and secret options.
+Run the printed command in another terminal. Running `certrally enroll` without flags there asks for the settings instead. The test CA keeps everything in memory, so every run starts empty. Its fault flags make it delay, reject or relax its checks, to test how a client copes. [docs/mock.md](docs/mock.md) describes them.
 
 ### Enroll a certificate
 
@@ -139,32 +142,19 @@ certrally enroll --server https://ca.example.com/.well-known/cmp --type kur \
   --cert-out device-new.pem --key-out device-new.key
 ```
 
-`--type cr` requests an additional certificate. `--type p10cr` sends a PKCS#10 request, either from `--csr` or built from `--subject` and `--san`.
+`--type cr` requests an additional certificate. `--type p10cr` sends a PKCS#10 request, either from `--csr` or built from `--subject` and `--san`. Some CAs accept only PasswordBasedMac and need `--mac pbm`.
+
+[docs/cmp.md](docs/cmp.md) covers the other options: key usages and templates, implicit confirmation, collecting a waiting certificate later, ML-KEM keys, keys that the CA generates, forwarding as a registration authority, CA information requests and `ping`. [docs/keys.md](docs/keys.md) covers key types, encrypted keys and DER output.
 
 ### Enroll step by step
 
-On a terminal, `certrally enroll` without flags asks for each setting: the server, the CA to trust, the shared secret or certificate, the names, the key type and the files to write. It checks every answer before it moves on. Flags you give answer their questions. `--interactive` asks only for the rest:
+On a terminal, `certrally enroll` without flags asks for each setting: the server, the CA to trust, the shared secret or certificate, the names, the key type and the files to write. Flags you give answer their questions. `--interactive` asks only for the rest:
 
 ```bash
 certrally enroll --interactive --server https://ca.example.com/.well-known/cmp
 ```
 
-Before it sends the request, certrally prints the same request as one command for scripts and asks for confirmation. The shared secret is hidden while you type it and never appears in that command. The questions need a terminal and cannot be combined with `--json`. With `ACCESSIBLE=1` they are asked line by line, for example for a screen reader.
-
-Notes:
-
-* With a shared secret, the request header names `CN=<ref>` as the sender and `<ref>` as the key identifier, as RFC 9483 asks. Without `--subject` or `--san` the certificate is requested for `CN=<ref>`.
-* Requests use CMP version 2, the syntax of RFC 4210, so servers built for RFC 4210 understand them. Only messages that need a field added by RFC 9810 use version 3, such as the confirmation of a certificate that the CA signed with ML-DSA or composite ML-DSA.
-* Shared-secret requests are protected with PBMAC1. `--mac pbm` selects PasswordBasedMac for CAs that accept only that, such as Nokia NCM, Insta Certifier and the `openssl cmp` mock server.
-* Private keys are written as unencrypted PKCS#8 PEM with mode 0600. `certrally keygen --list` prints the key types.
-
-### Trust the CA
-
-certrally needs no trust setup. It trusts the CA certificates in the first response from the server and the CA certificates in the `--cert` file, then checks every response against them. If a response does not carry the CA certificate that issued the new certificate, pass that certificate with `--ca-cert`.
-
-To make sure you talk to a particular CA, name its certificate with `--ca-cert ca.pem` (repeatable). certrally then trusts nothing the server sends. Signed responses and issued certificates must chain to a CA certificate from `--ca-cert` or `--cert`.
-
-Over HTTPS the server is checked against the system roots or against the CA certificates in `--tls-ca-cert`. Over plain HTTP nothing authenticates the first response, so use `--ca-cert` there unless you trust the network.
+Before it sends the request, certrally prints the same request as one command for scripts and asks for confirmation. The shared secret is hidden while you type it and never appears in that command. The questions cannot be combined with `--json`. With `ACCESSIBLE=1` they are asked line by line, for example for a screen reader.
 
 ### Revoke a certificate
 
@@ -175,62 +165,13 @@ certrally revoke --server https://ca.example.com/.well-known/cmp \
   --cert device.pem --key device.key --reason keyCompromise
 ```
 
-`--reason` takes an RFC 5280 reason name and defaults to `unspecified`. `certificateHold` suspends a certificate and `removeFromCRL` releases it, if the CA supports holds. An authority that revokes for someone else names the certificate with `--revoke-cert` and signs with its own `--cert` or a shared secret. On a terminal certrally asks before it sends the request. `--yes` skips the question.
+`--reason` takes an RFC 5280 reason name and defaults to `unspecified`. `certificateHold` suspends a certificate and `removeFromCRL` releases it, if the CA supports holds. An authority that revokes for someone else names the certificate with `--revoke-cert` or with `--serial` and `--issuer` as described in [docs/cmp.md](docs/cmp.md#revoke-by-serial-number). On a terminal certrally asks before it sends the request. `--yes` skips the question.
 
-### Ask the CA for information
+### Trust the CA
 
-`cacerts` and the `cmp genm` commands send the RFC 9483 support messages. They are protected like enroll requests:
+certrally needs no trust setup. It trusts the CA certificates in the first response from the server and lists them with their SHA-256 fingerprints, so you can compare them with the ones the CA published. To make sure you talk to a particular CA, name its certificate with `--ca-cert ca.pem`. certrally then trusts nothing the server sends.
 
-```bash
-certrally cacerts --server https://ca.example.com/.well-known/cmp --ref device-42 --out ca-certs.pem
-```
-
-| Command | Answer |
-|---|---|
-| `cacerts` or `cmp genm cacerts` | The CA certificates. `--out` saves them |
-| `cmp genm rootupdate --old-root root.pem` | The new root CA certificate, if the root has been replaced. It is accepted only when the old root certifies it |
-| `cmp genm template` | The subject, extensions and key types the CA expects. `--cert-profile` selects a profile |
-| `cmp genm crl` | The current CRL. Its signature is checked against the trusted CA certificates |
-| `cmp genm crlupdate --crl ca.crl` | A CRL newer than `ca.crl`. `--crl-issuer ca.pem` asks for any CRL from that CA instead |
-| `cmp genm raw caCerts` | The answer to any info types, given by name or as dotted OIDs |
-
-`--out -` writes the certificates or the CRL to standard output and moves the summary to standard error.
-
-### Check a server
-
-`ping` sends an unprotected general message and reports who answers and how fast. It needs no credentials, because any CMP answer counts, including the error a CA sends back for an unprotected request:
-
-```bash
-certrally ping --server https://ca.example.com/.well-known/cmp --count 3
-```
-
-```text
-  1  error rejection badMessageCheck  ECDSA SHA-256  690 B  12.4 ms
-  2  error rejection badMessageCheck  ECDSA SHA-256  689 B  9.8 ms
-  3  error rejection badMessageCheck  ECDSA SHA-256  688 B  10.1 ms
-✓ The server answers CMP
-  Server      https://ca.example.com/.well-known/cmp
-  Answer      error rejection badMessageCheck
-  CA says     "message not protected"
-  Sender      CN=Example CA
-  Protection  ECDSA SHA-256
-  Round trip  min 9.8 ms, avg 10.8 ms, max 12.4 ms
-  Replies     3 of 3
-  Note        An error is the expected answer, because the request carries no protection.
-```
-
-With `--ca-cert` the answer must also be signed by that CA. A CA that leaves its errors unprotected fails this check.
-
-### Generate a key
-
-`keygen` creates a key without contacting a CA, for example to send a PKCS#10 request through another channel:
-
-```bash
-certrally keygen --key-type ml-dsa-65 --out device.key \
-  --csr-out device.csr --subject CN=device-42 --san device-42.example.com
-```
-
-`--pub-out` also saves the public key. The key is saved like enroll keys, as unencrypted PKCS#8 PEM with mode 0600.
+Over HTTPS the server is checked against the system roots or `--tls-ca-cert`. Over plain HTTP nothing authenticates the first response, so use `--ca-cert` there unless you trust the network. [docs/cmp.md](docs/cmp.md#trust-and-connections) covers `--chain-out`, `--insecure` and proxies.
 
 ### Enroll over EST
 
@@ -252,24 +193,11 @@ certrally est enroll --server https://est.example.com --tls-ca-cert ca.pem \
   --cert-out device.pem --key-out device.key
 ```
 
-A client signs in with one of these:
-
-* **A password** over HTTP Basic authentication with `--user`. The password comes from `--password-file` (`-` reads standard input), the `CERTRALLY_PASSWORD` environment variable or a prompt on a terminal, in that order.
-* **A TLS client certificate** with `--cert` and `--key`. `est reenroll --cert device.pem --key device.key` renews a certificate this way. Without `--key`, renewal signs in with `--user` instead, as RFC 7030 section 2.3 allows for certificates that cannot be used for TLS.
-* **TLS-SRP** with `--srp` and `--user`. The password then authenticates both sides over TLS 1.2, so the server needs no certificate and `--srp` cannot be combined with `--tls-ca-cert`.
-
-The server certificate is checked against the system roots or against the CA certificates in `--tls-ca-cert`. When nothing can check it yet, `est cacerts --bootstrap` connects without the check (RFC 7030 section 4.1.1). It saves the certificates only after the fingerprint matches `--fingerprint` or a person confirms it on a terminal:
-
-```bash
-certrally est cacerts --server https://est.example.com --bootstrap \
-  --fingerprint 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08 --out ca.pem
-```
-
-[docs/est.md](docs/est.md) describes how certrally waits for a pending request, channel binding with `--tls-unique`, server-generated keys and the `est mock` test CA.
+A client signs in with a password (`--user`), a bearer token (`--token`), a TLS client certificate (`--cert` and `--key`) or TLS-SRP (`--srp`). `est cacerts --bootstrap` gets the first CA certificates from a server that nothing can check yet and saves them after a fingerprint check. [docs/est.md](docs/est.md) describes the sign-in options, the bootstrap, proxies, waiting for the CA and the `est mock` test CA.
 
 ### Check responses against RFC 9483 and RFC 7030
 
-certrally warns when a response breaks a rule of the Lightweight CMP Profile (RFC 9483) that some CAs do not follow, such as a missing chain for the new certificate. EST responses are checked against RFC 7030, for example for a chain where only the issued certificate belongs. `--profile strict` rejects such responses instead and exits with status 6. `lint` checks [recorded responses](#inspect-recorded-messages) the same way. [docs/profiles.md](docs/profiles.md) lists the rules. [docs/interop.md](docs/interop.md) describes how tested CAs behave.
+certrally warns when a response breaks a rule of RFC 9483, RFC 9810 or RFC 7030 that some CAs do not follow. `--profile strict` rejects such responses instead and exits with status 6. [docs/profiles.md](docs/profiles.md) lists the rules. [docs/interop.md](docs/interop.md) describes how tested CAs behave.
 
 ### Use certrally in scripts
 
@@ -306,6 +234,20 @@ Both also read messages saved as DER, base64, hex or PEM. [docs/inspect.md](docs
 | 4 | The response broke the protocol or failed verification |
 | 5 | The CA issued the certificate but the confirmation failed. certrally saves the certificate. Check with the CA before retrying, because a retry can issue a second certificate |
 | 6 | A response broke a rule of `--profile strict`, or `lint` found a response that breaks a rule |
+
+## Documentation
+
+* [CMP details](docs/cmp.md): request options, collecting a certificate later, ML-KEM keys, keys that the CA generates, registration authorities, trust, revocation by serial number, CA information and `ping`
+* [EST details](docs/est.md): sign-in options, bootstrap, proxies, waiting, channel binding and the `est mock` test CA
+* [Keys and output files](docs/keys.md): key types, encrypted keys, `keygen` and DER output
+* [The CMP test CA](docs/mock.md): `certrally mock` and its fault flags
+* [Testing a CA with faulty messages](docs/faults.md): `enroll --fault` and `poll --fault`
+* [Response profiles](docs/profiles.md): the rules certrally checks
+* [JSON output and capture files](docs/json.md)
+* [Inspect and lint recorded messages](docs/inspect.md)
+* [Output and colour](docs/output.md)
+* [Tested servers](docs/interop.md)
+* [Verify a download](docs/verify.md)
 
 ## Contributing
 

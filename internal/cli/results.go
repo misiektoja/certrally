@@ -68,16 +68,36 @@ type enrollJSON struct {
 	// Status is the PKIStatus of the certificate response, such as "accepted".
 	Status string `json:"status,omitempty"`
 	// Confirmed is false when the CA issued the certificate but the confirmation failed.
-	Confirmed   bool               `json:"confirmed"`
-	Certificate *certificateJSON   `json:"certificate"`
-	Chain       []*certificateJSON `json:"chain"`
-	Saved       []string           `json:"saved"`
+	Confirmed bool `json:"confirmed"`
+	// ImplicitConfirm is true when the CA granted implicit confirmation, so no certConf was sent.
+	ImplicitConfirm bool `json:"implicitConfirm"`
+	// ProofOfPossession is the --pop method of a key that cannot sign. It is absent for a key that signs.
+	ProofOfPossession string `json:"proofOfPossession,omitempty"`
+	// CentralKeyGeneration is true when the CA generated the key pair. KeyGenerationAuthority is the
+	// subject of the certificate that signed the private key.
+	CentralKeyGeneration   bool   `json:"centralKeyGeneration,omitempty"`
+	KeyGenerationAuthority string `json:"keyGenerationAuthority,omitempty"`
+	// RegistrationAuthority is the subject of the --ra-cert certificate that forwarded the requests.
+	RegistrationAuthority string             `json:"registrationAuthority,omitempty"`
+	Certificate           *certificateJSON   `json:"certificate"`
+	Chain                 []*certificateJSON `json:"chain"`
+	Saved                 []string           `json:"saved"`
+	// TransactionID is the transaction ID of the request in hex, which poll takes.
+	TransactionID string `json:"transactionId,omitempty"`
+	// NextPoll is when the CA asked for the next poll of a waiting request. It is absent when the CA
+	// named no time.
+	NextPoll time.Time `json:"nextPoll,omitzero"`
 }
 
 // revokeJSON is the result of revoke.
 type revokeJSON struct {
+	// Certificate is null when the certificate was named by issuer and serial number only.
 	Certificate *certificateJSON `json:"certificate"`
+	Issuer      string           `json:"issuer"`
+	Serial      string           `json:"serial"`
 	Reason      string           `json:"reason"`
+	// InvalidityDate is the time sent with the request. It is absent when none was given.
+	InvalidityDate time.Time `json:"invalidityDate,omitzero"`
 }
 
 // caCertsJSON is the result of cacerts.
@@ -385,8 +405,12 @@ type estCACertsJSON struct {
 	Saved        []string           `json:"saved"`
 	// Verified says how the certificates were checked: "tls", "srp", "fingerprint", "confirmed" or "none".
 	Verified string `json:"verified"`
-	// TLSIssued reports whether these certificates issued the TLS certificate of the server.
+	// TLSIssued reports whether the trusted certificates issued the TLS certificate of the server.
 	TLSIssued *bool `json:"tlsIssued,omitempty"`
+	// Unverified lists the received certificates that a fingerprint check did not cover and that
+	// were therefore not saved. It is absent when no fingerprint was checked or every certificate
+	// was covered.
+	Unverified []*certificateJSON `json:"unverified,omitempty"`
 }
 
 // estEnrollJSON is the result of est enroll, est reenroll and est serverkeygen.

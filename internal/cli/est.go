@@ -24,7 +24,6 @@ import (
 	srptls "github.com/misiektoja/go-tls-srp"
 	"github.com/spf13/cobra"
 
-	"github.com/misiektoja/certrally/internal/keys"
 	"github.com/misiektoja/certrally/internal/pemfile"
 	"github.com/misiektoja/certrally/internal/profile"
 	"github.com/misiektoja/certrally/internal/secret"
@@ -54,10 +53,11 @@ func newESTCommand() *cobra.Command {
 			"EST runs over HTTPS. --server is the address of the server, such as https://est.example.com. " +
 			"To choose a CA on a server that offers several, add /.well-known/est/LABEL.\n\n" +
 			"A client signs in with a TLS client certificate (--cert and --key), with a password (--user) over " +
-			"HTTP Basic authentication or with both. With --srp, --user signs in with TLS-SRP (RFC 7030 " +
-			"section 3.3.3) instead, which also authenticates the server without a certificate. The password " +
-			"is read from --password-file, the " + secret.PasswordEnvVar + " environment variable or a prompt, " +
-			"never from the command line.",
+			"HTTP Basic authentication, with a bearer token (--token) or with a certificate and a password or " +
+			"token. With --srp, --user signs in with TLS-SRP (RFC 7030 section 3.3.3) instead, which also " +
+			"authenticates the server without a certificate. The password and the token are read from " +
+			"--password-file or --token-file, the " + secret.PasswordEnvVar + " or " + secret.TokenEnvVar +
+			" environment variable or a prompt, never from the command line.",
 	}
 	cmd.AddCommand(
 		newESTCACertsCommand(),
@@ -77,8 +77,14 @@ type estConnection struct {
 	timeout   time.Duration
 	capture   string
 	profile   string
-	// insecure skips the check of the server certificate, for est cacerts --bootstrap.
+	// insecure is the --insecure flag. It skips the check of the server certificate and is reported
+	// as a warning.
 	insecure bool
+	// unverified also skips the check, for est cacerts --bootstrap, which reports the missing check
+	// in its result instead.
+	unverified bool
+	// proxy is the --proxy URL, which replaces the proxy from the environment.
+	proxy string
 }
 
 // addFlags registers the connection flags with the given default timeout.
@@ -86,20 +92,23 @@ func (c *estConnection) addFlags(cmd *cobra.Command, timeout time.Duration, time
 	f := cmd.Flags()
 	f.StringVar(&c.server, flagServer, "",
 		"address of the EST server, an https URL that may end in "+estPath+"/LABEL to choose a CA")
-	f.StringVar(&c.tlsCACert, "tls-ca-cert", "",
+	f.StringVar(&c.tlsCACert, flagTLSCACert, "",
 		"verify the server with these CA certificates instead of the system roots")
+	f.BoolVar(&c.insecure, flagInsecure, false, insecureHelp)
+	f.StringVar(&c.proxy, flagProxy, "", proxyHelp)
 	f.DurationVar(&c.timeout, "timeout", timeout, timeoutHelp)
 	f.StringVar(&c.capture, "capture", "", "append the exchanged messages to this file as JSON Lines")
 	f.StringVar(&c.profile, "profile", profile.Compatible,
 		"how to treat responses that break RFC 7030: compatible warns, strict fails")
 	_ = cmd.MarkFlagRequired(flagServer)
+	cmd.MarkFlagsMutuallyExclusive(flagTLSCACert, flagInsecure)
 	_ = cmd.RegisterFlagCompletionFunc("profile", fixedCompletion(profile.Names))
-	for _, name := range []string{flagServer, "timeout"} {
+	for _, name := range []string{flagServer, "timeout", flagProxy} {
 		_ = cmd.RegisterFlagCompletionFunc(name, cobra.NoFileCompletions)
 	}
 }
 
-// validate checks the server URL, the timeout and the profile.
+// validate checks the server URL, the timeout, the profile and the proxy.
 func (c *estConnection) validate() error {
 	if _, err := parseESTServer(c.server); err != nil {
 		return err
@@ -109,6 +118,9 @@ func (c *estConnection) validate() error {
 	}
 	if !slices.Contains(profile.Names, c.profile) {
 		return fmt.Errorf("invalid --profile %q, want compatible or strict", c.profile)
+	}
+	if _, err := parseProxy(c.proxy); err != nil {
+		return err
 	}
 	return nil
 }
@@ -130,7 +142,7 @@ type estServer struct {
 // /.well-known/est with a CA label.
 func parseESTServer(s string) (estServer, error) {
 	u, err := url.Parse(s)
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.Opaque != "" {
+	if err != nil || u.Scheme != schemeHTTPS || u.Host == "" || u.Opaque != "" {
 		return estServer{}, fmt.Errorf("--server %q is not an https URL. EST runs over HTTPS", s)
 	}
 	if u.User != nil {
@@ -165,8 +177,13 @@ type estAuth struct {
 	passwordFile string
 	certFile     string
 	keyFile      string
+	keyPassword
 	// srp signs in with TLS-SRP instead of HTTP Basic authentication.
 	srp bool
+	// token signs in with a bearer token instead of a password. tokenFile names its file and implies
+	// token.
+	token     bool
+	tokenFile string
 }
 
 // addFlags registers the sign-in flags. certHelp describes --cert. Unless certAlone is set, --cert
@@ -177,15 +194,30 @@ func (a *estAuth) addFlags(cmd *cobra.Command, certHelp string, certAlone bool) 
 	f.StringVar(&a.passwordFile, "password-file", "", "read the password from a file, or - for standard input")
 	f.StringVar(&a.certFile, "cert", "", certHelp)
 	f.StringVar(&a.keyFile, "key", "", "private key for --cert, to sign in with a TLS client certificate")
+	a.keyPassword.addFlags(cmd)
 	f.BoolVar(&a.srp, "srp", false,
 		"sign in as --user with TLS-SRP, which also authenticates the server, instead of HTTP Basic authentication")
+	f.BoolVar(&a.token, flagToken, false, "sign in with a bearer token over HTTP Bearer authentication instead of --user")
+	f.StringVar(&a.tokenFile, flagTokenFile, "",
+		"read the bearer token from a file, or - for standard input, which implies --token")
 	if !certAlone {
 		cmd.MarkFlagsRequiredTogether("cert", "key")
 	}
 	// TLS-SRP authenticates the server with the password, so it has no certificate to check.
-	cmd.MarkFlagsMutuallyExclusive("srp", "tls-ca-cert")
+	cmd.MarkFlagsMutuallyExclusive("srp", flagTLSCACert)
+	cmd.MarkFlagsMutuallyExclusive("srp", flagInsecure)
+	// A request carries one Authorization header, so a token and a password cannot both sign in.
+	cmd.MarkFlagsMutuallyExclusive(flagToken, "user")
+	cmd.MarkFlagsMutuallyExclusive(flagTokenFile, "user")
+	cmd.MarkFlagsMutuallyExclusive(flagTokenFile, "password-file")
 	_ = cmd.RegisterFlagCompletionFunc("user", cobra.NoFileCompletions)
 }
+
+// Flags of the bearer token sign-in.
+const (
+	flagToken     = "token"
+	flagTokenFile = "token-file"
+)
 
 // validate checks flags that only make sense together.
 func (a *estAuth) validate() error {
@@ -199,13 +231,18 @@ func (a *estAuth) validate() error {
 	case a.srp && a.keyFile != "":
 		return errors.New("--srp signs in without a TLS client certificate. Leave out --key")
 	}
-	return nil
+	if err := a.checkStdin("--password-file", a.passwordFile); err != nil {
+		return err
+	}
+	return a.checkStdin("--token-file", a.tokenFile)
 }
 
 // estCredentials are the loaded sign-in credentials.
 type estCredentials struct {
 	user     string
 	password string
+	// token signs in with HTTP Bearer authentication instead of user and password.
+	token string
 	// srp signs in as user with TLS-SRP instead of HTTP Basic authentication.
 	srp bool
 	// chain is the --cert certificate followed by its chain. key signs in with it, when set.
@@ -229,6 +266,19 @@ func (a *estAuth) load(stdin io.Reader, prompt io.Writer) (*estCredentials, erro
 		}
 		creds.password = string(password)
 	}
+	if a.token || a.tokenFile != "" {
+		token, err := secret.Source{
+			Kind:      secret.Token,
+			File:      a.tokenFile,
+			LookupEnv: os.LookupEnv,
+			Stdin:     stdin,
+			Prompt:    prompt,
+		}.Read()
+		if err != nil {
+			return nil, err
+		}
+		creds.token = string(token)
+	}
 	if a.certFile != "" {
 		chain, err := pemfile.ReadCertificates(a.certFile)
 		if err != nil {
@@ -237,13 +287,9 @@ func (a *estAuth) load(stdin io.Reader, prompt io.Writer) (*estCredentials, erro
 		creds.chain = chain
 	}
 	if a.keyFile != "" {
-		data, err := os.ReadFile(a.keyFile)
+		key, err := a.keyPassword.loadSigner(a.keyFile, stdin, prompt)
 		if err != nil {
 			return nil, err
-		}
-		key, err := keys.Parse(data)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", a.keyFile, err)
 		}
 		if _, composite := key.(*compositemldsa.PrivateKey); composite {
 			return nil, errors.New("TLS cannot sign in with a composite ML-DSA key. Use --user instead")
@@ -272,6 +318,7 @@ func (c *estConnection) open(p *printer, creds *estCredentials) (*estSession, er
 		profile:  c.profile,
 		capture:  c.capture,
 		protocol: trace.EST,
+		insecure: c.insecure,
 	})
 	if err != nil {
 		return nil, err
@@ -280,8 +327,9 @@ func (c *estConnection) open(p *printer, creds *estCredentials) (*estSession, er
 	s.client = &est.Client{
 		Host:                  srv.host,
 		AdditionalPathSegment: srv.label,
-		//nolint:gosec // G402: est cacerts --bootstrap shows the fingerprints for an out-of-band check.
-		InsecureSkipVerify: c.insecure,
+		// G402: --insecure is reported as a warning and est cacerts --bootstrap shows the fingerprints
+		// for an out-of-band check.
+		InsecureSkipVerify: c.insecure || c.unverified, //nolint:gosec
 		// The profile reports a chain in an enrollment response, so the client must accept it.
 		AllowCertificateChain: true,
 		WrapTransport:         rec.recorder.Wrap,
@@ -310,9 +358,18 @@ func (c *estConnection) open(p *printer, creds *estCredentials) (*estSession, er
 		}
 		s.client.ExplicitAnchor = pool
 	}
+	proxy, err := parseProxy(c.proxy)
+	if err != nil {
+		return nil, err
+	}
+	if proxy != nil {
+		s.client.Proxy = http.ProxyURL(proxy)
+	}
 	switch {
 	case creds.srp:
 		s.client.SRPUsername, s.client.SRPPassword = creds.user, creds.password
+	case creds.token != "":
+		s.client.BearerToken = creds.token
 	case creds.user != "":
 		s.client.Username, s.client.Password = creds.user, creds.password
 	}
@@ -567,10 +624,12 @@ func (s *estSession) refusalHint(status int) string {
 		switch {
 		case s.creds.user != "":
 			return "Check --user and the password."
+		case s.creds.token != "":
+			return "Check the token."
 		case s.creds.key != nil:
 			return "The server did not accept the client certificate. Try --user and a password."
 		}
-		return "Sign in with --user and a password, or with --cert and --key."
+		return "Sign in with --user and a password, with --token, or with --cert and --key."
 	case http.StatusForbidden:
 		return "The credentials are not authorized for this request."
 	case http.StatusRequestEntityTooLarge:
@@ -628,7 +687,7 @@ func (s *estSession) transportHint(err, problem error) string {
 		return "Check the path and CA label in --server."
 	case unknownAuthority:
 		return "The TLS certificate of the server is not trusted. Pass its CA with --tls-ca-cert, " +
-			"or get the CA certificates with certrally est cacerts --bootstrap."
+			"or get the CA certificates with certrally est cacerts --bootstrap. --insecure skips the check for a test."
 	case isAlert && (alert == alertBadCertificate || alert == alertUnknownCA || alert == alertCertificateRequired):
 		if s.creds.key == nil {
 			return "The server asks for a TLS client certificate. Sign in with --cert and --key."

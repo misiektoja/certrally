@@ -25,8 +25,22 @@ series_of() { printf '%s\n' "$1" | cut -d. -f1,2; }
 # Prints the newer of two versions, comparing each dotted field numerically
 newer_of() { printf '%s\n%s\n' "$1" "$2" | sort -t. -k1,1n -k2,2n -k3,3n | tail -1; }
 
-# Prints the newest stable patch published for a release series
-latest_patch() { curl -fsSL "$releases_url" | jq -r --arg series "$1" '.[] | select(.stable) | .version | ltrimstr("go") | select(. == $series or startswith($series + "."))' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1; }
+# Succeeds when every line of its input is a plain dotted version such as 1.27.3. Versions are written
+# into sed expressions, so one that carries a delimiter, a newline or any other character would change
+# the expression.
+well_formed() { ! grep -Eqv '^[0-9]+\.[0-9]+(\.[0-9]+)?$'; }
+
+# Prints the newest stable patch published for a release series. It fails when the feed names a
+# version in the series that is not well formed, rather than trusting the rest of the feed.
+latest_patch() {
+    local versions
+    versions="$(curl -fsSL "$releases_url" | jq -r --arg series "$1" '.[] | select(.stable) | .version | ltrimstr("go") | select(. == $series or startswith($series + "."))')"
+    if [ -n "$versions" ] && ! printf '%s\n' "$versions" | well_formed; then
+        echo "error: $releases_url names a release in the $1 series that is not a plain dotted version, so nothing is updated" >&2
+        return 1
+    fi
+    printf '%s\n' "$versions" | sort -t. -k1,1n -k2,2n -k3,3n | tail -1
+}
 
 # Fails when a file carries no line matching a pattern, so an edit can never drift silently
 require_line() {
@@ -49,6 +63,10 @@ mode="${1:-check}"
 current="$(current_patch)"
 if [ -z "$current" ]; then
     echo "error: no go directive found in $go_mod" >&2
+    exit 1
+fi
+if ! printf '%s\n' "$current" | well_formed; then
+    echo "error: $go_mod declares go $current, which is not a plain dotted version" >&2
     exit 1
 fi
 

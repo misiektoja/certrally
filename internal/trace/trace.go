@@ -10,6 +10,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -64,6 +65,9 @@ type Event struct {
 type Summary struct {
 	// Body is the body type, such as "ir", "ip" or "error".
 	Body string
+	// Nested lists the body types of the messages inside a nested body, such as the ir that a
+	// registration authority forwards.
+	Nested []string
 	// Protection names the protection algorithm. It is "none" for an unprotected message.
 	Protection string
 	// Sender is the sender name in the header. It is peer-controlled text.
@@ -81,6 +85,15 @@ type Summary struct {
 	ExtraCerts int
 }
 
+// Label returns the body type, followed by the body types inside a nested message, such as
+// "nested(ir)".
+func (s *Summary) Label() string {
+	if len(s.Nested) == 0 {
+		return s.Body
+	}
+	return s.Body + "(" + strings.Join(s.Nested, ", ") + ")"
+}
+
 // Record is the JSON form of an Event, shared by JSON output and capture files. Byte strings in the
 // header are hex. Peer-controlled text is kept as sent, because JSON escaping makes it safe.
 type Record struct {
@@ -93,7 +106,9 @@ type Record struct {
 	ContentType string `json:"contentType,omitempty"`
 	Size        int    `json:"size"`
 	// The following fields are set when the body parses as a PKIMessage.
-	Body          string   `json:"body,omitempty"`
+	Body string `json:"body,omitempty"`
+	// Nested lists the body types inside a nested message.
+	Nested        []string `json:"nested,omitempty"`
 	Protection    string   `json:"protection,omitempty"`
 	Sender        string   `json:"sender,omitempty"`
 	TransactionID string   `json:"transactionId,omitempty"`
@@ -142,7 +157,7 @@ func (ev Event) Record(withDER bool) Record {
 		rec.DER = ev.DER
 	}
 	if m := ev.Message; m != nil {
-		rec.Body, rec.Protection, rec.Sender = m.Body, m.Protection, m.Sender
+		rec.Body, rec.Nested, rec.Protection, rec.Sender = m.Body, m.Nested, m.Protection, m.Sender
 		rec.TransactionID, rec.SenderKID = hex.EncodeToString(m.TransactionID), hex.EncodeToString(m.SenderKID)
 		rec.Status, rec.StatusText, rec.CheckAfter, rec.ExtraCerts = m.Status, m.StatusText, m.CheckAfter, m.ExtraCerts
 		rec.FailInfo = FailureNames(m.FailInfo)
@@ -383,10 +398,18 @@ func Summarize(der []byte) *Summary {
 		s.Status = info.Status.String()
 		s.FailInfo, s.StatusText = info.FailInfo, info.StatusString
 	}
-	if msg.Body.Type == pkicmp.BodyTypePollRep {
+	switch msg.Body.Type {
+	case pkicmp.BodyTypePollRep:
 		if rep, err := msg.Body.PollRep(); err == nil && len(*rep) > 0 {
 			s.CheckAfter = (*rep)[0].CheckAfter
 		}
+	case pkicmp.BodyTypeNested:
+		if inner, err := msg.Body.Nested(); err == nil {
+			for _, m := range inner {
+				s.Nested = append(s.Nested, m.Body.Type.String())
+			}
+		}
+	default:
 	}
 	return s
 }

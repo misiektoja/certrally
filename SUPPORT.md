@@ -1,6 +1,6 @@
 # Getting help
 
-Start with the [README](README.md). It covers installation, every command, the trust model and the [exit statuses](README.md#exit-status). [docs/json.md](docs/json.md) describes the `--json` output, [docs/profiles.md](docs/profiles.md) the RFC 9483 and RFC 7030 rules certrally checks and [docs/interop.md](docs/interop.md) how the tested CA servers behave.
+Start with the [README](README.md). It covers installation, the main commands, the trust model and the [exit statuses](README.md#exit-status). Its [documentation list](README.md#documentation) links the pages that describe the other options. [docs/json.md](docs/json.md) describes the `--json` output, [docs/profiles.md](docs/profiles.md) the RFC 9483 and RFC 7030 rules certrally checks and [docs/interop.md](docs/interop.md) how the tested CA servers behave.
 
 ## Check first
 

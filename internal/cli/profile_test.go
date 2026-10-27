@@ -53,7 +53,7 @@ func TestStrictProfile(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			args := append(slices.Clone(tt.args), "--server", ca.url, "--profile", "strict")
+			args := append(slices.Clone(tt.args), "--server", ca.url, "--profile", "strict", "--ca-cert", ca.caFile)
 			code, doc := runJSON(t, args...)
 			if code != exitOK || doc["warnings"] != nil || doc["profile"] != "strict" {
 				t.Errorf("exited with %d: %v", code, doc)
@@ -176,7 +176,13 @@ func TestProfileRootIssuer(t *testing.T) {
 		args := append([]string{"enroll", "--server", stripExtraCerts(t, ca.url), "--ref", testRef, "--profile", "strict",
 			"--cert-out", filepath.Join(dir, "c.pem"), "--key-out", filepath.Join(dir, "k.pem"), "--force"}, trust...)
 		code, doc := runJSON(t, args...)
-		if code != exitOK || doc["warnings"] != nil {
+		// Without --ca-cert the run trusts the first response over plain HTTP, which warns.
+		var want []any
+		if trust == nil {
+			want = []any{plainHTTPTrustWarning}
+		}
+		warnings, _ := doc["warnings"].([]any)
+		if code != exitOK || !slices.Equal(warnings, want) {
 			t.Errorf("%q exited with %d: %v", trust, code, doc)
 		}
 	}
@@ -310,7 +316,8 @@ func TestProfileCopiedSenderKID(t *testing.T) {
 	capture := filepath.Join(dir, "cr.jsonl")
 	enroll := func(name string, extra ...string) []string {
 		return append([]string{"enroll", "--server", proxy, "--type", "cr", "--subject", "CN=device-42",
-			"--cert", certFile, "--key", keyFile, "--cert-out", filepath.Join(dir, name+".pem"), "--key-out", filepath.Join(dir, name+".key")}, extra...)
+			"--cert", certFile, "--key", keyFile, "--ca-cert", ca.caFile,
+			"--cert-out", filepath.Join(dir, name+".pem"), "--key-out", filepath.Join(dir, name+".key")}, extra...)
 	}
 
 	t.Run("compatible", func(t *testing.T) {

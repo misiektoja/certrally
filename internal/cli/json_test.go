@@ -111,6 +111,9 @@ func TestEnrollJSON(t *testing.T) {
 	if get(doc, "result.status") != "accepted" || get(doc, "result.confirmed") != true {
 		t.Errorf("result = %v", doc["result"])
 	}
+	if id := get(doc, "result.transactionId"); id == nil || id != get(doc, "exchange.0.transactionId") {
+		t.Errorf("result.transactionId = %v, want that of the exchange", id)
+	}
 	cert := readCert(t, certOut)
 	if !parsePEMCertificate(t, get(doc, "result.certificate.pem")).Equal(cert) {
 		t.Error("result.certificate.pem is not the saved certificate")
@@ -214,6 +217,8 @@ func TestCommandsJSON(t *testing.T) {
 	ca := startCA(t, nil)
 	other := startCA(t, nil)
 	certFile, keyFile := enrollIR(t, ca, "--subject", "CN=device-42")
+	serialFile, serialKeyFile := enrollIR(t, ca, "--subject", "CN=device-43")
+	serialCert := readCert(t, serialFile)
 	crlFile := filepath.Join(t.TempDir(), "ca.crl")
 
 	tests := []struct {
@@ -236,7 +241,13 @@ func TestCommandsJSON(t *testing.T) {
 			"result.items.0.infoType": "caCerts", "result.items.0.oid": "1.3.6.1.5.5.7.4.17",
 		}},
 		{"revoke", []string{"revoke", "--cert", certFile, "--key", keyFile, "--reason", "superseded", "--yes"}, exitOK, map[string]any{
-			"result.reason": "superseded", "result.certificate.subject": "CN=device-42", "exchange.1.body": "rp",
+			"result.reason": "superseded", "result.certificate.subject": "CN=device-42", "result.serial": serialHex(readCert(t, certFile).SerialNumber),
+			"result.issuer": "CN=Test CA", "result.invalidityDate": nil, "exchange.1.body": "rp",
+		}},
+		{"revoke by serial", []string{"revoke", "--cert", serialFile, "--key", serialKeyFile, "--serial", "0x" + serialCert.SerialNumber.Text(16),
+			"--issuer", "CN=Test CA", "--invalidity-date", "2026-10-01T12:00:00+02:00", "--yes"}, exitOK, map[string]any{
+			"result.reason": "unspecified", "result.certificate": nil, "result.serial": serialHex(serialCert.SerialNumber),
+			"result.issuer": "CN=Test CA", "result.invalidityDate": "2026-10-01T10:00:00Z",
 		}},
 		{"ping", []string{"ping", "-c", "2", "-i", "0s"}, exitOK, map[string]any{
 			"result.sent": float64(2), "result.answered": float64(2), "result.sender": "CN=Test CA", "result.verified": nil,

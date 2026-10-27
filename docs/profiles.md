@@ -30,13 +30,13 @@ When `strict` stops an `ip`, `cp` or `kup` response, certrally neither confirms 
 | `pvno` is 2 or 3 | RFC 9483 section 3.5 |
 | `senderNonce` is present and at least 128 bits long | RFC 9483 section 3.5 |
 | Only `ip`, `cp` and `kup` carry `implicitConfirm` in `generalInfo` | RFC 9483 section 3.1 |
-| `implicitConfirm` is granted only when the request asked for it. certrally never asks for it | RFC 9810 section 5.1.1.1 |
+| `implicitConfirm` is granted only when the request asked for it, which `enroll --implicit-confirm` does | RFC 9810 section 5.1.1.1 |
 | `confirmWaitTime` comes with `messageTime` and never with `implicitConfirm` | RFC 9483 section 3.1 |
 | No response carries `certProfile` | RFC 9483 section 3.1 |
 | The response is protected the same way as the request: a MAC answers a MAC and a signature answers a signature. Error messages are exempt, because a CA signs them when it cannot check the request | RFC 9483 section 3.2 |
 | A signed response has a `senderKID` when its protection certificate has a subject key identifier | RFC 9483 section 3.1 |
 | The `senderKID` of a signed response is the subject key identifier of a certificate in `extraCerts` or among the trusted ones. It counts as broken only when one of those certificates has the sender's name and a subject key identifier | RFC 9483 section 3.1 |
-| The first signed response of an operation starts `extraCerts` with its protection certificate. Error messages are exempt | RFC 9483 section 3.3 |
+| The first signed response of an operation starts `extraCerts` with its protection certificate, the certificate whose key verifies the signature. Error messages are exempt | RFC 9483 section 3.3 |
 | An `ip`, `cp` or `kup` that issues a certificate carries `extraCerts` with the chain of the new certificate. A certificate issued directly by a self-signed CA certificate that certrally trusts or finds in `caPubs` needs none, because self-signed certificates are left out of `extraCerts` | RFC 9483 section 3.3 |
 | An `error` message has the status `rejection`. While the CA prepares a certificate the status may be `waiting` | RFC 9483 section 3.6.4 |
 | A `pkiconf` holds an ASN.1 NULL rather than nothing | RFC 9810 section 5.3.17 |

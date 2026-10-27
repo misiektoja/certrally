@@ -69,7 +69,7 @@ func startESTServer(t *testing.T, ca *estca.CA, h http.Handler, configure func(*
 		}
 	}
 	if h == nil {
-		router, err := newESTMockRouter(ca, estTestUser, []byte(estTestPassword))
+		router, err := newESTMockRouter(ca, estTestUser, []byte(estTestPassword), nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -206,7 +206,7 @@ func TestESTEnrollAndRenew(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !key.Public().(interface{ Equal(crypto.PublicKey) bool }).Equal(pub) {
+		if !keys.Public(key).(interface{ Equal(crypto.PublicKey) bool }).Equal(pub) {
 			t.Error("the saved key does not belong to the certificate")
 		}
 		info, err := os.Stat(skgKey)
@@ -294,6 +294,170 @@ func TestESTBootstrap(t *testing.T) {
 	code, _, errOut = run(t, append(base, "--fingerprint", "12:34")...)
 	if code != exitLocal || !errorContains(errOut, "64 hex digits") {
 		t.Errorf("short fingerprint: exit %d:\n%s", code, errOut)
+	}
+}
+
+// bundleHandler answers every request with certs as a certs-only PKCS#7, the form of a cacerts
+// response.
+func bundleHandler(t *testing.T, certs []*x509.Certificate) http.Handler {
+	t.Helper()
+	var der []byte
+	for _, cert := range certs {
+		der = append(der, cert.Raw...)
+	}
+	p7, err := pkcs7.DegenerateCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/pkcs7-mime; smime-type=certs-only")
+		_, _ = io.WriteString(w, base64.StdEncoding.EncodeToString(p7))
+	})
+}
+
+// testCAPair returns a self-signed root CA certificate and the certificate of a CA it issued.
+func testCAPair(t *testing.T) (root, sub *x509.Certificate) {
+	t.Helper()
+	template := func(name string) *x509.Certificate {
+		return &x509.Certificate{
+			Subject:               pkix.Name{CommonName: name},
+			NotBefore:             time.Now().Add(-time.Hour),
+			NotAfter:              time.Now().Add(24 * time.Hour),
+			IsCA:                  true,
+			BasicConstraintsValid: true,
+			KeyUsage:              x509.KeyUsageCertSign,
+		}
+	}
+	rootKey, root := testCertificate(t, template("Test Root CA"), nil, nil)
+	_, sub = testCertificate(t, template("Test Issuing CA"), root, rootKey)
+	return root, sub
+}
+
+// fingerprintOf returns the hex SHA-256 fingerprint of cert.
+func fingerprintOf(cert *x509.Certificate) string {
+	sum := sha256.Sum256(cert.Raw)
+	return hex.EncodeToString(sum[:])
+}
+
+// TestESTBootstrapSavesCheckedCertificates checks that est cacerts --bootstrap --fingerprint saves
+// the certificate with that fingerprint and the certificates it issued, and reports the rest of the
+// response as unverified without saving it.
+func TestESTBootstrapSavesCheckedCertificates(t *testing.T) {
+	usePassword(t, "")
+	ca, err := estca.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := estca.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, sub := testCAPair(t)
+	tests := []struct {
+		name        string
+		bundle      []*x509.Certificate
+		fingerprint *x509.Certificate
+		want        []*x509.Certificate
+		unverified  int
+		tlsIssued   bool
+	}{
+		{"the matched certificate", []*x509.Certificate{other.Certificate(), ca.Certificate()}, ca.Certificate(), []*x509.Certificate{ca.Certificate()}, 1, true},
+		{"another matched certificate", []*x509.Certificate{other.Certificate(), ca.Certificate()}, other.Certificate(), []*x509.Certificate{other.Certificate()}, 1, false},
+		{"the certificates it issued", []*x509.Certificate{sub, other.Certificate(), root}, root, []*x509.Certificate{sub, root}, 1, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := startESTServer(t, ca, bundleHandler(t, tc.bundle), nil)
+			out := filepath.Join(t.TempDir(), "ca.pem")
+			code, doc := runJSON(t, "est", "cacerts", "--server", srv.url, "--bootstrap", "--fingerprint", fingerprintOf(tc.fingerprint), "--out", out)
+			if code != exitOK || get(doc, "result.verified") != "fingerprint" {
+				t.Fatalf("exit %d, result %v, error %v", code, doc["result"], doc["error"])
+			}
+			saved, err := pemfile.ReadCertificates(out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(saved) != len(tc.want) {
+				t.Fatalf("saved %d certificates, want %d", len(saved), len(tc.want))
+			}
+			for i := range saved {
+				if !saved[i].Equal(tc.want[i]) {
+					t.Errorf("saved certificate %d is %s, want %s", i, saved[i].Subject, tc.want[i].Subject)
+				}
+			}
+			if received, _ := get(doc, "result.certificates").([]any); len(received) != len(tc.bundle) {
+				t.Errorf("the result lists %d certificates, want all %d received", len(received), len(tc.bundle))
+			}
+			if unverified, _ := get(doc, "result.unverified").([]any); len(unverified) != tc.unverified {
+				t.Errorf("unverified = %v, want %d certificates", unverified, tc.unverified)
+			}
+			if tc.unverified > 0 && !hasWarning(doc, "was not saved") {
+				t.Errorf("no warning about the unsaved certificate: %v", doc["warnings"])
+			}
+			if got := get(doc, "result.tlsIssued"); got != tc.tlsIssued {
+				t.Errorf("tlsIssued = %v, want %v", got, tc.tlsIssued)
+			}
+		})
+	}
+}
+
+// TestESTBootstrapConfirm checks the questions est cacerts --bootstrap asks on a terminal: which
+// certificate has the published fingerprint, or whether the only one does.
+func TestESTBootstrapConfirm(t *testing.T) {
+	usePassword(t, "")
+	ca, err := estca.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := estca.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const which = "Which certificate has the SHA-256 fingerprint the CA published?"
+	const single = "Does the SHA-256 fingerprint match the one the CA published?"
+	bundle := []*x509.Certificate{other.Certificate(), ca.Certificate()}
+	tests := []struct {
+		name   string
+		bundle []*x509.Certificate
+		answer map[string]string
+		want   []*x509.Certificate
+		errMsg string
+	}{
+		{"chosen certificate", bundle, map[string]string{which: "1"}, []*x509.Certificate{ca.Certificate()}, ""},
+		{"none of them", bundle, map[string]string{which: ""}, nil, "no fingerprint was confirmed"},
+		{"cancelled", bundle, map[string]string{which: stop}, nil, "no fingerprint was confirmed"},
+		{"single certificate confirmed", bundle[1:], map[string]string{single: "yes"}, []*x509.Certificate{ca.Certificate()}, ""},
+		{"single certificate denied", bundle[1:], map[string]string{single: "no"}, nil, "no fingerprint was confirmed"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := startESTServer(t, ca, bundleHandler(t, tc.bundle), nil)
+			useWizard(t, tc.answer)
+			out := filepath.Join(t.TempDir(), "ca.pem")
+			code, outText, errOut := run(t, "est", "cacerts", "--server", srv.url, "--bootstrap", "--out", out)
+			if tc.errMsg != "" {
+				if code == exitOK || !errorContains(errOut, tc.errMsg) {
+					t.Fatalf("exit %d:\n%s", code, errOut)
+				}
+				if _, err := os.Stat(out); !os.IsNotExist(err) {
+					t.Error("certificates were saved without a confirmed fingerprint")
+				}
+				return
+			}
+			if code != exitOK {
+				t.Fatalf("exit %d:\n%s", code, errOut)
+			}
+			saved, err := pemfile.ReadCertificates(out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(saved) != len(tc.want) || !saved[0].Equal(tc.want[0]) {
+				t.Errorf("saved %d certificates, the first %s", len(saved), saved[0].Subject)
+			}
+			if !strings.Contains(outText, "was confirmed") {
+				t.Errorf("report:\n%s", outText)
+			}
+		})
 	}
 }
 
@@ -698,6 +862,7 @@ func TestESTMockErrors(t *testing.T) {
 	}{
 		{[]string{"--user", ""}, "--user must not be empty"},
 		{[]string{"--retry-after", "-1"}, "--retry-after must not be negative"},
+		{[]string{"--password-file", "-", "--token-file", "-"}, "--password-file and --token-file cannot both read standard input"},
 		{[]string{"--listen", "127.0.0.1:0", "--srp-listen", "127.0.0.1:99999", "--ca-out", caOut}, "--srp-listen"},
 	}
 	for _, tt := range tests {
@@ -728,12 +893,22 @@ func TestESTUsageErrors(t *testing.T) {
 			"--key-out is only used with a new key"},
 		{append([]string{"est", "enroll", "--subject", "CN=x", "--cert-out", out("c")}, server...), "--key-out is required"},
 		{append([]string{"est", "reenroll", "--cert", out("c0"), "--cert-out", out("c"), "--key-out", out("k")}, server...),
-			"renewing without --key needs --user"},
+			"renewing without --key needs --user or --token"},
 		{append([]string{"est", "csrattrs", "--srp"}, server...), "--srp needs --user"},
 		{append([]string{"est", "csrattrs", "--srp", "--user", "u", "--tls-ca-cert", out("ca")}, server...), "none of the others can be"},
 		{append([]string{"est", "csrattrs", "--srp", "--user", "u", "--cert", out("c"), "--key", out("k")}, server...), "Leave out --key"},
 		{append([]string{"est", "cacerts", "--bootstrap", "--srp", "--user", "u"}, server...), "none of the others can be"},
+		// A sign-in would reach the unchecked server, and the cacerts request needs none.
+		{append([]string{"est", "cacerts", "--bootstrap", "--user", "u"}, server...), "none of the others can be"},
+		{append([]string{"est", "cacerts", "--bootstrap", "--password-file", out("p")}, server...), "none of the others can be"},
+		{append([]string{"est", "cacerts", "--bootstrap", "--token"}, server...), "none of the others can be"},
+		{append([]string{"est", "cacerts", "--bootstrap", "--token-file", out("t")}, server...), "none of the others can be"},
 		{append([]string{"est", "csrattrs", "--password-file", out("p")}, server...), "--password-file needs --user"},
+		{append([]string{"est", "csrattrs", "--token", "--user", "u"}, server...), "none of the others can be"},
+		{append([]string{"est", "csrattrs", "--token-file", out("t"), "--user", "u", "--password-file", out("p")}, server...), "none of the others can be"},
+		{append([]string{"est", "csrattrs", "--token-file", "-", "--cert", out("c"), "--key", out("k"), "--key-password-file", "-"}, server...),
+			"--token-file and --key-password-file cannot both read standard input"},
+		{append([]string{"est", "csrattrs", "--token"}, server...), "no token: use --token-file"},
 		{[]string{"est", "csrattrs", "--server", "https://127.0.0.1:1", "--timeout", "0s"}, "--timeout must be positive"},
 		{[]string{"est", "csrattrs", "--server", "https://127.0.0.1:1", "--profile", "loose"}, "invalid --profile"},
 		{[]string{"est", "csrattrs", "--server", "http://127.0.0.1:1"}, "is not an https URL"},

@@ -62,7 +62,7 @@ func TestKeygen(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if k, ok := key.Public().(interface{ Equal(crypto.PublicKey) bool }); !ok || !k.Equal(pub) {
+			if k, ok := keys.Public(key).(interface{ Equal(crypto.PublicKey) bool }); !ok || !k.Equal(pub) {
 				t.Error("the public key does not match the private key")
 			}
 			csr, err := x509.ParseCertificateRequest(readPEM(t, csrOut, "CERTIFICATE REQUEST"))
@@ -75,7 +75,7 @@ func TestKeygen(t *testing.T) {
 			if csr.Subject.String() != "CN=device-42" || len(csr.DNSNames) != 1 {
 				t.Errorf("request names %s %v", csr.Subject, csr.DNSNames)
 			}
-			for _, want := range []string{"Key generated", keys.Describe(key.Public()), keyOut, csrOut} {
+			for _, want := range []string{"Key generated", keys.Describe(keys.Public(key)), keyOut, csrOut} {
 				if !strings.Contains(out, want) {
 					t.Errorf("report lacks %q:\n%s", want, out)
 				}

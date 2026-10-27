@@ -79,10 +79,10 @@ func TestServerKeyGen(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := keys.Describe(key.Public()); got != keys.Describe(pub) {
+		if got := keys.Describe(keys.Public(key)); got != keys.Describe(pub) {
 			t.Errorf("%s: key %s, certificate %s", keyType, got, keys.Describe(pub))
 		}
-		if !key.Public().(interface{ Equal(crypto.PublicKey) bool }).Equal(pub) {
+		if !keys.Public(key).(interface{ Equal(crypto.PublicKey) bool }).Equal(pub) {
 			t.Errorf("%s: the key does not belong to the certificate", keyType)
 		}
 	}

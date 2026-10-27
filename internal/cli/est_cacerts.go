@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/x509"
@@ -12,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,7 +21,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/misiektoja/certrally/internal/dn"
-	"github.com/misiektoja/certrally/internal/pemfile"
 	"github.com/misiektoja/certrally/internal/trace"
 	"github.com/misiektoja/certrally/internal/ui"
 )
@@ -33,6 +34,7 @@ type estCACertsOptions struct {
 	force       bool
 	bootstrap   bool
 	fingerprint string
+	format      outFormat
 }
 
 // newESTCACertsCommand returns est cacerts.
@@ -44,9 +46,12 @@ func newESTCACertsCommand() *cobra.Command {
 		Long: "Get the current CA certificates from an EST server (RFC 7030 section 4.1).\n\n" +
 			"When nothing can verify the server yet, --bootstrap connects without checking its TLS certificate " +
 			"(RFC 7030 section 4.1.1). Compare a fingerprint with one the CA publishes, then pass it with " +
-			"--fingerprint or confirm it when asked. Otherwise the certificates are not saved. If the CA issued " +
-			"the TLS certificate of the server, later commands can trust the saved certificates with " +
-			"--tls-ca-cert. A TLS-SRP sign-in with --srp authenticates the server without a certificate.\n\n" +
+			"--fingerprint or confirm it when asked. The certificate with that fingerprint is saved together " +
+			"with the certificates it issued. The other certificates of the response are not saved. If the CA " +
+			"issued the TLS certificate of the server, later commands can trust the saved certificates with " +
+			"--tls-ca-cert. The request needs no credentials, so --bootstrap refuses the flags that sign in, " +
+			"which would send them to the unchecked server. A TLS-SRP sign-in with --srp authenticates the " +
+			"server without a certificate.\n\n" +
 			estExitStatusHelp,
 		Example: "  certrally est cacerts --server https://est.example.com --out ca.pem\n" +
 			"  certrally est cacerts --server https://est.example.com --bootstrap \\\n" +
@@ -61,11 +66,19 @@ func newESTCACertsCommand() *cobra.Command {
 	o.outputOptions.addFlags(cmd)
 	f := cmd.Flags()
 	f.StringVar(&o.out, "out", "", "write the certificates to this file, or - for standard output")
+	o.format.addFlags(cmd, formatPEM, outFormatCertsHelp)
 	f.BoolVar(&o.force, "force", false, "replace an existing --out file")
 	f.BoolVar(&o.bootstrap, "bootstrap", false, "connect without checking the TLS certificate of the server")
-	f.StringVar(&o.fingerprint, "fingerprint", "", "hex SHA-256 fingerprint that one of the certificates must have")
-	cmd.MarkFlagsMutuallyExclusive("bootstrap", "tls-ca-cert")
+	f.StringVar(&o.fingerprint, "fingerprint", "",
+		"hex SHA-256 fingerprint of the certificate to trust, which is saved with the certificates it issued")
+	cmd.MarkFlagsMutuallyExclusive("bootstrap", flagTLSCACert)
+	cmd.MarkFlagsMutuallyExclusive("bootstrap", flagInsecure)
 	cmd.MarkFlagsMutuallyExclusive("bootstrap", "srp")
+	// The cacerts request needs no sign-in (RFC 7030 section 4.1.2), and go-pki-est would send the
+	// credentials on it to a server that nothing checked.
+	for _, credential := range []string{"user", "password-file", flagToken, flagTokenFile} {
+		cmd.MarkFlagsMutuallyExclusive("bootstrap", credential)
+	}
 	_ = cmd.RegisterFlagCompletionFunc("fingerprint", cobra.NoFileCompletions)
 	return cmd
 }
@@ -107,6 +120,9 @@ func (o *estCACertsOptions) validate(p *printer, stdin io.Reader) ([]byte, error
 		}
 		fingerprint = fp
 	}
+	if err := o.format.validate(); err != nil {
+		return nil, err
+	}
 	if err := o.checkStdout(o.out); err != nil {
 		return nil, err
 	}
@@ -129,7 +145,7 @@ func runESTCACerts(ctx context.Context, o *estCACertsOptions, p *printer, stdin 
 	if err != nil {
 		return err
 	}
-	o.insecure = o.bootstrap
+	o.unverified = o.bootstrap
 
 	certs, s, err := estRun(ctx, &o.estConnection, &o.estAuth, stdin, p, false,
 		func(ctx context.Context, s *estSession) ([]*x509.Certificate, error) {
@@ -140,13 +156,18 @@ func runESTCACerts(ctx context.Context, o *estCACertsOptions, p *printer, stdin 
 	}
 	result := &estCACertsJSON{Certificates: certificatesResult(certs), Saved: []string{}, Verified: verifiedTLS}
 	switch {
-	case o.bootstrap:
+	case o.bootstrap, o.insecure:
 		result.Verified = verifiedNone
 	case o.srp:
 		result.Verified = verifiedSRP
 	}
+	// matched is the certificate a fingerprint check covers. The check also covers the certificates
+	// that chain to it. The rest of the response stays unverified and is not saved, since anyone who
+	// answered the unchecked connection could have added it.
+	var matched *x509.Certificate
 	if fingerprint != nil {
-		if matchFingerprint(certs, fingerprint) == nil {
+		matched = matchFingerprint(certs, fingerprint)
+		if matched == nil {
 			s.p.doc.Result = result
 			err := fmt.Errorf("none of the %s has the SHA-256 fingerprint %x",
 				count(len(certs), "certificate", "certificates"), fingerprint)
@@ -156,7 +177,7 @@ func runESTCACerts(ctx context.Context, o *estCACertsOptions, p *printer, stdin 
 				Message: err.Error(),
 				Hint:    "Do not trust these certificates. Check --fingerprint against the one the CA published.",
 			}, err)
-			listCACerts(p, certs)
+			listCACerts(p, certs, nil)
 			return ferr
 		}
 		result.Verified = verifiedFingerprint
@@ -169,46 +190,131 @@ func runESTCACerts(ctx context.Context, o *estCACertsOptions, p *printer, stdin 
 			ui.Section(p.stderr, ui.Sanitize(dn.Format(cert.RawSubject)), caCertFields(cert))
 		}
 		listed = true
-		ok, err := newAsker(ctx, stdin, p.stderr).confirm("Does a SHA-256 fingerprint match the one the CA published?", false)
-		if err != nil && !errors.Is(err, errEnrollCancelled) {
+		if matched, err = confirmFingerprint(ctx, stdin, p, certs); err != nil {
 			return err
-		}
-		if !ok {
-			return errors.New("the certificates were not saved, because no fingerprint was confirmed")
 		}
 		result.Verified = verifiedConfirmed
 	}
 
+	trusted, unverified := certs, []*x509.Certificate(nil)
+	if matched != nil {
+		trusted, unverified = coveredBy(certs, matched)
+		result.Unverified = certificatesResult(unverified)
+		for _, cert := range unverified {
+			p.warn(ui.Sanitize(dn.Format(cert.RawSubject)) + " was not saved: it neither has the checked fingerprint " +
+				"nor was issued by the certificate that has it.")
+		}
+	}
+
 	if o.out != "" {
-		if err := writeData(o.out, pemfile.EncodeCertificates(certs), 0o644, o.force, p.stdout); err != nil {
+		data, err := o.format.certificates(trusted)
+		if err != nil {
+			return err
+		}
+		if err := writeData(o.out, data, 0o644, o.force, p.stdout); err != nil {
 			return err
 		}
 		result.Saved = savedPaths(o.out)
 	}
-	fields := []ui.Field{{Name: fieldVerified, Value: verifiedText(result.Verified, certs, fingerprint)}}
-	fields = append(fields, s.serverCertificateFields(certs)...)
+	fields := []ui.Field{{Name: fieldVerified, Value: verifiedText(result.Verified, matched, o.skipFlag())}}
+	fields = append(fields, s.serverCertificateFields(trusted)...)
 	fields = append(fields, ui.Field{Name: fieldSaved, Value: strings.Join(result.Saved, ", ")})
-	if result.Verified == verifiedNone {
+	switch {
+	case result.Verified == verifiedNone && len(result.Saved) > 0:
+		fields = append(fields, ui.Field{
+			Name:  fieldNote,
+			Value: "Check a fingerprint with the CA before trusting the saved certificates.",
+		})
+	case result.Verified == verifiedNone:
 		fields = append(fields, ui.Field{
 			Name:  fieldNote,
 			Value: "Check a fingerprint with the CA, then save the certificates with --fingerprint and --out.",
 		})
 	}
 	if tls := s.lastTLS(); tls != nil && len(tls.ServerCertificates) > 0 {
-		issued := chainsToCerts(tls.ServerCertificates, certs)
+		issued := chainsToCerts(tls.ServerCertificates, trusted)
 		result.TLSIssued = &issued
 	}
 	p.result("Received "+count(len(certs), "CA certificate", "CA certificates"), fields, result)
 	if !listed {
-		listCACerts(p, certs)
+		listCACerts(p, certs, unverified)
 	}
 	return nil
 }
 
-// listCACerts adds a section for each certificate below the report.
-func listCACerts(p *printer, certs []*x509.Certificate) {
+// errNoFingerprintConfirmed reports that a bootstrap ended without a confirmed fingerprint.
+var errNoFingerprintConfirmed = errors.New("the certificates were not saved, because no fingerprint was confirmed")
+
+// confirmFingerprint asks which of certs has the fingerprint the CA published and returns it. A
+// single certificate gets a yes or no question. A cancelled question counts as no.
+func confirmFingerprint(ctx context.Context, stdin io.Reader, p *printer, certs []*x509.Certificate) (*x509.Certificate, error) {
+	ask := newAsker(ctx, stdin, p.stderr)
+	if len(certs) == 1 {
+		ok, err := ask.confirm("Does the SHA-256 fingerprint match the one the CA published?", false)
+		if err != nil && !errors.Is(err, errEnrollCancelled) {
+			return nil, err
+		}
+		if !ok {
+			return nil, errNoFingerprintConfirmed
+		}
+		return certs[0], nil
+	}
+	choices := make([]choice, 0, len(certs)+1)
+	for i, cert := range certs {
+		sum := sha256.Sum256(cert.Raw)
+		label := ui.Sanitize(dn.Format(cert.RawSubject)) + "  " + hexBytes(sum[:4]) + "..."
+		choices = append(choices, choice{label: label, value: strconv.Itoa(i)})
+	}
+	choices = append(choices, choice{label: "None of them", value: ""})
+	answer, err := ask.choose("Which certificate has the SHA-256 fingerprint the CA published?",
+		"That certificate and the certificates it issued are saved.", choices, "")
+	if err != nil && !errors.Is(err, errEnrollCancelled) {
+		return nil, err
+	}
+	i, convErr := strconv.Atoi(answer)
+	if err != nil || convErr != nil || i < 0 || i >= len(certs) {
+		return nil, errNoFingerprintConfirmed
+	}
+	return certs[i], nil
+}
+
+// coveredBy splits certs into those that a fingerprint check of matched covers, in the order of
+// certs, and the rest. The check covers matched and every certificate whose signatures chain to it.
+func coveredBy(certs []*x509.Certificate, matched *x509.Certificate) (covered, rest []*x509.Certificate) {
+	trusted := map[*x509.Certificate]bool{matched: true}
+	for grown := true; grown; {
+		grown = false
+		for _, cert := range certs {
+			if trusted[cert] {
+				continue
+			}
+			for issuer := range trusted {
+				if bytes.Equal(cert.RawIssuer, issuer.RawSubject) && signedBy(cert, issuer) {
+					trusted[cert], grown = true, true
+					break
+				}
+			}
+		}
+	}
 	for _, cert := range certs {
-		p.section(ui.Sanitize(dn.Format(cert.RawSubject)), caCertFields(cert))
+		if trusted[cert] {
+			covered = append(covered, cert)
+		} else {
+			rest = append(rest, cert)
+		}
+	}
+	return covered, rest
+}
+
+// listCACerts adds a section for each certificate below the report and marks those in unverified
+// as not saved.
+func listCACerts(p *printer, certs, unverified []*x509.Certificate) {
+	for _, cert := range certs {
+		fields := caCertFields(cert)
+		if slices.Contains(unverified, cert) {
+			fields = append(fields, ui.Field{Name: fieldNote, Value: "not saved, nothing verified it"})
+		}
+		p.section(ui.Sanitize(dn.Format(cert.RawSubject)), fields)
 	}
 }
 
@@ -222,16 +328,25 @@ func matchFingerprint(certs []*x509.Certificate, fp []byte) *x509.Certificate {
 	return nil
 }
 
-// verifiedText describes how the certificates were checked.
-func verifiedText(verified string, certs []*x509.Certificate, fp []byte) string {
+// skipFlag names the flag that skipped the check of the server certificate.
+func (o *estCACertsOptions) skipFlag() string {
+	if o.bootstrap {
+		return "--bootstrap"
+	}
+	return "--" + flagInsecure
+}
+
+// verifiedText describes how the certificates were checked. matched is the certificate whose
+// fingerprint was checked, if any. skipFlag names the flag that skipped the check when verified is
+// verifiedNone.
+func verifiedText(verified string, matched *x509.Certificate, skipFlag string) string {
 	switch verified {
 	case verifiedFingerprint:
-		subject := dn.Format(matchFingerprint(certs, fp).RawSubject)
-		return "the fingerprint of " + ui.Sanitize(subject) + " matches --fingerprint"
+		return "the fingerprint of " + ui.Sanitize(dn.Format(matched.RawSubject)) + " matches --fingerprint"
 	case verifiedConfirmed:
-		return "fingerprint confirmed"
+		return "the fingerprint of " + ui.Sanitize(dn.Format(matched.RawSubject)) + " was confirmed"
 	case verifiedNone:
-		return "no, --bootstrap did not check the server"
+		return "no, " + skipFlag + " did not check the server"
 	case verifiedSRP:
 		return "the TLS-SRP sign-in, in which the server proved it holds the verifier of --user"
 	}

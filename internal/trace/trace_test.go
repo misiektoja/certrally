@@ -187,6 +187,26 @@ func TestSummarizeRevocation(t *testing.T) {
 	}
 }
 
+// TestSummarizeNested checks that the body types inside a nested message are listed and labelled.
+func TestSummarizeNested(t *testing.T) {
+	inner := pkicmp.NewPKIMessage(pkicmp.NewCertConfBody(&pkicmp.CertConfirmContent{}), pkicmp.MessageOptions{
+		Sender:    pkicmp.NewDirectoryName(pkix.Name{CommonName: "device"}),
+		Recipient: pkicmp.NewDirectoryName(pkix.Name{CommonName: "b"}),
+	})
+	der := message(t, pkicmp.NewNestedBody(inner))
+	m := Summarize(der)
+	if m == nil || m.Body != "nested" || strings.Join(m.Nested, ",") != "certConf" || m.Label() != "nested(certConf)" {
+		t.Fatalf("summary = %+v", m)
+	}
+	rec := Event{Kind: Request, Size: len(der), DER: der, Message: m}.Record(false)
+	if rec.Body != "nested" || strings.Join(rec.Nested, ",") != "certConf" {
+		t.Errorf("record = %+v", rec)
+	}
+	if plain := Summarize(message(t, pkicmp.NewCertConfBody(&pkicmp.CertConfirmContent{}))); plain.Label() != "certConf" {
+		t.Errorf("label = %q", plain.Label())
+	}
+}
+
 // TestRecord checks the JSON form of a CMP response and of a failure.
 func TestRecord(t *testing.T) {
 	der := message(t, pkicmp.NewErrorBody(&pkicmp.ErrorMsgContent{PKIStatusInfo: pkicmp.PKIStatusInfo{
