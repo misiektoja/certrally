@@ -28,6 +28,7 @@ func TestRead(t *testing.T) {
 		src  Source
 		want string
 	}{
+		{"value beats file and environment", Source{Value: []byte("from-flag"), File: file, LookupEnv: withEnv}, "from-flag"},
 		{"file beats environment", Source{File: file, LookupEnv: withEnv}, "from-file"},
 		{"environment", Source{LookupEnv: withEnv}, "from-env"},
 		{"standard input", Source{File: "-", Stdin: strings.NewReader("piped\n\n")}, "piped\n"},
@@ -69,12 +70,30 @@ func TestReadPassword(t *testing.T) {
 		t.Errorf("password: %q, %v", got, err)
 	}
 	_, err = Source{Kind: Password, LookupEnv: env(map[string]string{EnvVar: "secret"})}.Read()
-	if !errors.Is(err, ErrMissing) || !strings.Contains(err.Error(), "--password-file") ||
+	if !errors.Is(err, ErrMissing) || !strings.Contains(err.Error(), "--password or --password-file") ||
 		!strings.Contains(err.Error(), PasswordEnvVar) {
 		t.Errorf("missing password: %v", err)
 	}
 	if _, err := (Source{Kind: Password, File: "-", Stdin: strings.NewReader("\n")}).Read(); err == nil ||
 		!strings.Contains(err.Error(), "password") {
 		t.Errorf("empty password: %v", err)
+	}
+}
+
+// TestValue checks that a command-line secret is stored, that an empty one is refused and that the
+// flag never shows it.
+func TestValue(t *testing.T) {
+	var v Value
+	if v.Bytes() != nil {
+		t.Error("an unset value holds a secret")
+	}
+	if err := v.Set(""); err == nil {
+		t.Error("empty value accepted")
+	}
+	if err := v.Set("s3cret"); err != nil || string(v.Bytes()) != "s3cret" {
+		t.Errorf("Set: %q, %v", v.Bytes(), err)
+	}
+	if v.String() != "" {
+		t.Errorf("String() = %q, want it empty", v.String())
 	}
 }

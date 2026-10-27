@@ -316,7 +316,7 @@ func testCertificate(t *testing.T, template, issuer *x509.Certificate, issuerKey
 	return key, cert
 }
 
-// TestInspectMAC checks MACs with the shared secret from --secret-file and from the environment.
+// TestInspectMAC checks MACs with the shared secret from --secret, --secret-file and the environment.
 func TestInspectMAC(t *testing.T) {
 	useSecret(t, testSecret)
 	ca := startCA(t, nil)
@@ -343,8 +343,10 @@ func TestInspectMAC(t *testing.T) {
 		{"environment", testSecret, []string{capture}, "valid", ""},
 		{"--secret-file", "", []string{capture, "--secret-file", secretFile}, "valid", ""},
 		{"--secret-file before environment", testSecret, []string{capture, "--secret-file", wrongFile}, "invalid", "it does not match the shared secret from --secret-file"},
+		{"--secret", "", []string{capture, "--secret", testSecret}, "valid", ""},
+		{"--secret before environment", testSecret, []string{capture, "--secret", "wrong"}, "invalid", "it does not match the shared secret from --secret"},
 		{"wrong secret in environment", "wrong", []string{capture}, "invalid", "it does not match the shared secret from CERTRALLY_SECRET"},
-		{"no secret", "", []string{capture}, "unchecked", "it needs the shared secret from --secret-file or CERTRALLY_SECRET"},
+		{"no secret", "", []string{capture}, "unchecked", "it needs the shared secret from --secret, --secret-file or CERTRALLY_SECRET"},
 		{"too many iterations", "", []string{slow, "--secret-file", secretFile}, "unchecked", "too large"},
 	}
 	for _, tt := range tests {
@@ -463,7 +465,7 @@ func derSequence(n int) []byte {
 func TestInspectSecretFromStdin(t *testing.T) {
 	useSecret(t, "other")
 	var a anchors
-	err := a.readSecret("-", strings.NewReader(testSecret+"\n"))
+	err := a.readSecret(nil, "-", strings.NewReader(testSecret+"\n"))
 	if err != nil || string(a.secret) != testSecret || a.secretSource != "--secret-file" {
 		t.Errorf("readSecret = %q from %q, %v", a.secret, a.secretSource, err)
 	}

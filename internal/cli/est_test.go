@@ -908,7 +908,7 @@ func TestESTUsageErrors(t *testing.T) {
 		{append([]string{"est", "csrattrs", "--token-file", out("t"), "--user", "u", "--password-file", out("p")}, server...), "none of the others can be"},
 		{append([]string{"est", "csrattrs", "--token-file", "-", "--cert", out("c"), "--key", out("k"), "--key-password-file", "-"}, server...),
 			"--token-file and --key-password-file cannot both read standard input"},
-		{append([]string{"est", "csrattrs", "--token"}, server...), "no token: use --token-file"},
+		{append([]string{"est", "csrattrs", "--token"}, server...), "no token: use --token=TOKEN or --token-file"},
 		{[]string{"est", "csrattrs", "--server", "https://127.0.0.1:1", "--timeout", "0s"}, "--timeout must be positive"},
 		{[]string{"est", "csrattrs", "--server", "https://127.0.0.1:1", "--profile", "loose"}, "invalid --profile"},
 		{[]string{"est", "csrattrs", "--server", "http://127.0.0.1:1"}, "is not an https URL"},
