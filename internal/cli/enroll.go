@@ -113,8 +113,8 @@ func newEnrollCommand() *cobra.Command {
 			"With a shared secret (--ref) the request is MAC-protected, which is how a new device gets its first " +
 			"certificate. With --cert and --key it is signed with an existing certificate, which cr and kur " +
 			"requests normally use. A new key is generated unless --new-key or --csr supplies one.\n\n" +
-			"The shared secret is read from --secret-file, the CERTRALLY_SECRET environment variable or a " +
-			"prompt, never from the command line.\n\n" +
+			"The shared secret comes from --secret, --secret-file, the CERTRALLY_SECRET environment variable " +
+			"or a prompt. Other users of the machine can see --secret in the process list.\n\n" +
 			"A CA that cannot decide at once answers that the request waits, and enroll polls until it " +
 			"decides or --timeout ends. With --poll-later enroll stops at that answer instead, saves the new " +
 			"key and records the transaction in the --capture file. certrally poll collects the " +

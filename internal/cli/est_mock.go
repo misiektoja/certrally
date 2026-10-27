@@ -46,7 +46,9 @@ type estMockOptions struct {
 	listen       string
 	srpListen    string
 	user         string
+	password     secret.Value
 	passwordFile string
+	token        secret.Value
 	tokenFile    string
 	caOut        string
 	force        bool
@@ -65,9 +67,9 @@ func newESTMockCommand() *cobra.Command {
 			"Enrollment accepts the password of --user over HTTP Basic authentication or a TLS client " +
 			"certificate the CA issued. Renewal also accepts the password without a client certificate. With " +
 			"--srp-listen, a second port signs in --user with TLS-SRP and the same password. The " +
-			"password comes from --password-file or " + secret.PasswordEnvVar + ". Without either, a random " +
-			"password is generated and printed. A bearer token from --token-file or " + secret.TokenEnvVar +
-			" is accepted too. The CA key and everything it issued live in memory and are lost when it " +
+			"password comes from --password, --password-file or " + secret.PasswordEnvVar + ". Without any of " +
+			"them, a random password is generated and printed. A bearer token from --token, --token-file or " +
+			secret.TokenEnvVar + " is accepted too. The CA key and everything it issued live in memory and are lost when it " +
 			"stops. Stop it with Ctrl-C.",
 		Example: "  certrally est mock\n" +
 			"  certrally est mock --listen 127.0.0.1:9443 --user device-42 --password-file password.txt --ca-out ca.pem\n" +
@@ -81,22 +83,27 @@ func newESTMockCommand() *cobra.Command {
 	f.StringVar(&o.listen, "listen", "127.0.0.1:8443", "address and port to listen on. Port 0 picks a free port")
 	f.StringVar(&o.srpListen, "srp-listen", "", "also serve TLS-SRP on this address and port, such as 127.0.0.1:8444")
 	f.StringVar(&o.user, "user", "demo", "username that HTTP Basic authentication accepts")
+	f.Var(&o.password, flagPassword, "password of --user, which other users of this machine can see in the process list")
 	f.StringVar(&o.passwordFile, "password-file", "", "read the password from a file, or - for standard input")
+	f.Var(&o.token, flagToken,
+		"also accept this bearer token, which other users of this machine can see in the process list")
 	f.StringVar(&o.tokenFile, flagTokenFile, "", "also accept the bearer token in this file, or - for standard input")
+	cmd.MarkFlagsMutuallyExclusive(flagPassword, "password-file")
+	cmd.MarkFlagsMutuallyExclusive(flagToken, flagTokenFile)
 	f.StringVar(&o.caOut, "ca-out", "", "save the CA certificate to this file, for --tls-ca-cert")
 	f.BoolVar(&o.force, "force", false, "replace an existing --ca-out file")
 	f.IntVar(&o.retryAfter, "retry-after", 0,
 		"answer the first request for each key with 202 Accepted and this Retry-After in seconds")
-	for _, name := range []string{"listen", "srp-listen", "user", "retry-after"} {
+	for _, name := range []string{"listen", "srp-listen", "user", flagPassword, flagToken, "retry-after"} {
 		_ = cmd.RegisterFlagCompletionFunc(name, cobra.NoFileCompletions)
 	}
 	return cmd
 }
 
-// readPassword reads the password from --password-file or the environment. It generates a random
-// one instead of prompting, because the user needs to know the password to use it.
+// readPassword reads the password from --password, --password-file or the environment. It generates
+// a random one instead of prompting, because the user needs to know the password to use it.
 func (o *estMockOptions) readPassword(stdin io.Reader) (mockSecret, error) {
-	src := secret.Source{Kind: secret.Password, File: o.passwordFile, LookupEnv: os.LookupEnv}
+	src := secret.Source{Kind: secret.Password, Value: o.password.Bytes(), File: o.passwordFile, LookupEnv: os.LookupEnv}
 	if o.passwordFile == "-" {
 		src.Stdin = stdin
 	}
@@ -114,10 +121,10 @@ func (o *estMockOptions) readPassword(stdin io.Reader) (mockSecret, error) {
 	return mockSecret{value: []byte(hex.EncodeToString(random)), generated: true}, nil
 }
 
-// readToken reads the bearer token from --token-file or the environment. Without either there is
-// no token to accept.
+// readToken reads the bearer token from --token, --token-file or the environment. Without any of
+// them there is no token to accept.
 func (o *estMockOptions) readToken(stdin io.Reader) ([]byte, error) {
-	src := secret.Source{Kind: secret.Token, File: o.tokenFile, LookupEnv: os.LookupEnv}
+	src := secret.Source{Kind: secret.Token, Value: o.token.Bytes(), File: o.tokenFile, LookupEnv: os.LookupEnv}
 	if o.tokenFile == "-" {
 		src.Stdin = stdin
 	}
@@ -397,11 +404,15 @@ func (o *estMockOptions) report(p *printer, urls estMockURLs, caCert *x509.Certi
 	switch {
 	case password.generated:
 		passwordField = string(password.value) + " (generated)"
+	case o.password.Bytes() != nil:
+		passwordField = "from --password"
 	case o.passwordFile != "":
 		passwordField = "from " + o.passwordFile
 	}
 	tokenField := valueNone
 	switch {
+	case o.token.Bytes() != nil:
+		tokenField = "from --" + flagToken
 	case o.tokenFile != "":
 		tokenField = "from " + o.tokenFile
 	case hasToken:

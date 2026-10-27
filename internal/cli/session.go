@@ -186,6 +186,7 @@ func (c *connection) checkCapture(outputs ...string) error {
 // Names of the flags that several commands define. The enroll wizard sets some of them.
 const (
 	flagRef     = "ref"
+	flagSecret  = "secret"
 	flagSAN     = "san"
 	flagSubject = "subject"
 	flagServer  = "server"
@@ -197,8 +198,10 @@ type protection struct {
 	ref        string
 	mac        string
 	secretFile string
-	certFile   string
-	keyFile    string
+	// secretValue is the shared secret given with --secret.
+	secretValue secret.Value
+	certFile    string
+	keyFile     string
 	keyPassword
 	extraCerts string
 	sender     string
@@ -207,14 +210,16 @@ type protection struct {
 	// hash names the digest of the signatures and of a PasswordBasedMac. Empty keeps the defaults.
 	hash        string
 	generalInfo []string
-	// secret is a shared secret typed into the enroll wizard. It takes the place of the sources that
-	// --secret-file names.
+	// secret is a shared secret typed into the enroll wizard. It takes the place of the other sources.
 	secret []byte
 	// raCert and raKey name the certificate and key of a registration authority that forwards every
 	// request in a nested message. Only enroll and poll take them.
 	raCert string
 	raKey  string
 }
+
+// secretHelp is the help of --secret.
+const secretHelp = "shared secret, which other users of this machine can see in the process list"
 
 // Flags of the registration authority that forwards the requests of enroll and poll.
 const (
@@ -227,6 +232,7 @@ func (p *protection) addFlags(cmd *cobra.Command) {
 	f := cmd.Flags()
 	f.StringVar(&p.ref, flagRef, "", "reference that identifies the shared secret to the CA")
 	f.StringVar(&p.mac, "mac", "pbmac1", "algorithm of the shared-secret MAC: pbmac1 or pbm")
+	f.Var(&p.secretValue, flagSecret, secretHelp)
 	f.StringVar(&p.secretFile, "secret-file", "", "read the shared secret from a file, or - for standard input")
 	f.StringVar(&p.certFile, "cert", "", "sign the request with this certificate file, which may include the chain")
 	f.StringVar(&p.keyFile, "key", "", "private key for --cert")
@@ -239,9 +245,10 @@ func (p *protection) addFlags(cmd *cobra.Command) {
 	f.StringArrayVar(&p.generalInfo, "general-info", nil,
 		"add a generalInfo item to the request header: OID:int:N, OID:str:TEXT or OID:hex:DER (repeatable)")
 	cmd.MarkFlagsRequiredTogether("cert", "key")
+	cmd.MarkFlagsMutuallyExclusive(flagSecret, "secret-file")
 	_ = cmd.RegisterFlagCompletionFunc("mac", fixedCompletion(macAlgorithms))
 	_ = cmd.RegisterFlagCompletionFunc("hash", fixedCompletion(hashNames))
-	for _, name := range []string{flagRef, "sender", "iterations", "general-info"} {
+	for _, name := range []string{flagRef, flagSecret, "sender", "iterations", "general-info"} {
 		_ = cmd.RegisterFlagCompletionFunc(name, cobra.NoFileCompletions)
 	}
 }
@@ -263,7 +270,7 @@ func (p *protection) validate() error {
 	switch {
 	case !slices.Contains(macAlgorithms, p.mac):
 		return fmt.Errorf("invalid --mac %q, want pbmac1 or pbm", p.mac)
-	case p.signed() && (p.ref != "" || p.secretFile != ""):
+	case p.signed() && (p.ref != "" || p.secretFile != "" || p.secretValue.Bytes() != nil):
 		return errors.New("choose one protection: --ref with a shared secret, or --cert and --key")
 	case !p.signed() && p.ref == "":
 		return errors.New("choose a protection: --ref with a shared secret, or --cert and --key")
@@ -343,7 +350,13 @@ func (p *protection) load(stdin io.Reader, prompt io.Writer) (*protected, error)
 		s := p.secret
 		if s == nil {
 			var err error
-			s, err = secret.Source{File: p.secretFile, LookupEnv: os.LookupEnv, Stdin: stdin, Prompt: prompt}.Read()
+			s, err = secret.Source{
+				Value:     p.secretValue.Bytes(),
+				File:      p.secretFile,
+				LookupEnv: os.LookupEnv,
+				Stdin:     stdin,
+				Prompt:    prompt,
+			}.Read()
 			if err != nil {
 				return nil, err
 			}

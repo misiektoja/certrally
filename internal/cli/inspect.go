@@ -34,6 +34,7 @@ import (
 type inspectOptions struct {
 	outputOptions
 	caCerts    []string
+	secret     secret.Value
 	secretFile string
 }
 
@@ -54,7 +55,7 @@ func newInspectCommand() *cobra.Command {
 			"certrally checks a signature with the certificates the message carries and those in --ca-cert. " +
 			"With --ca-cert it also checks that the signer chains to those certificates at the time the capture " +
 			"recorded the message, or at the current time for other files. It checks a MAC with " +
-			"the shared secret from --secret-file or the " + secret.EnvVar + " environment variable. " +
+			"the shared secret from --secret, --secret-file or the " + secret.EnvVar + " environment variable. " +
 			"inspect does not judge the messages. lint checks them against RFC 9483.\n\n" +
 			"Exit status: 0 success, 1 a file cannot be read or holds no CMP or EST message.",
 		Example: "  certrally enroll --server https://ca.example.com/.well-known/cmp --ref device-42 \\\n" +
@@ -67,9 +68,13 @@ func newInspectCommand() *cobra.Command {
 	}
 	f := cmd.Flags()
 	f.StringArrayVar(&o.caCerts, "ca-cert", nil, "check signatures with the CA certificates in this file (repeatable)")
+	f.Var(&o.secret, flagSecret, "check MACs with this shared secret, which other users of this machine can see in the "+
+		"process list")
 	f.StringVar(&o.secretFile, "secret-file", "",
 		"check MACs with the shared secret in this file, or - for standard input")
 	f.BoolVar(&o.json, "json", false, "print the messages as one JSON document on standard output")
+	cmd.MarkFlagsMutuallyExclusive(flagSecret, "secret-file")
+	_ = cmd.RegisterFlagCompletionFunc(flagSecret, cobra.NoFileCompletions)
 	return cmd
 }
 
@@ -83,7 +88,7 @@ func runInspect(o *inspectOptions, p *printer, paths []string, stdin io.Reader) 
 		return err
 	}
 	a := &anchors{caCerts: caCerts}
-	if err := a.readSecret(o.secretFile, stdin); err != nil {
+	if err := a.readSecret(o.secret.Bytes(), o.secretFile, stdin); err != nil {
 		return err
 	}
 	msgs, err := readMessages(paths, stdin)
@@ -156,23 +161,26 @@ type anchors struct {
 	secretSource string
 }
 
-// readSecret reads the shared secret from file or, when file is empty, from the environment. A file
-// of - reads stdin. Without a secret MACs are not checked. inspect never prompts because it often
-// runs on files that need no secret.
-func (a *anchors) readSecret(file string, stdin io.Reader) error {
-	src := secret.Source{File: file, LookupEnv: os.LookupEnv}
+// readSecret takes the shared secret from value, from file or, when neither is given, from the
+// environment. A file of - reads stdin. Without a secret MACs are not checked. inspect never prompts
+// because it often runs on files that need no secret.
+func (a *anchors) readSecret(value []byte, file string, stdin io.Reader) error {
+	src := secret.Source{Value: value, File: file, LookupEnv: os.LookupEnv}
 	if file == stdoutPath {
 		src.Stdin = stdin
 	}
-	value, err := src.Read()
+	read, err := src.Read()
 	switch {
 	case errors.Is(err, secret.ErrMissing):
 		return nil
 	case err != nil:
 		return err
 	}
-	a.secret, a.secretSource = value, secret.EnvVar
-	if file != "" {
+	a.secret, a.secretSource = read, secret.EnvVar
+	switch {
+	case value != nil:
+		a.secretSource = "--secret"
+	case file != "":
 		a.secretSource = "--secret-file"
 	}
 	return nil
@@ -506,7 +514,7 @@ func anySigner(msg *pkicmp.PKIMessage, candidates []*x509.Certificate) *x509.Cer
 // outcome is not valid. A wrong secret and a changed message fail the same way.
 func checkMAC(msg *pkicmp.PKIMessage, a *anchors) (outcome, problem string) {
 	if a.secret == nil {
-		return checkUnchecked, "it needs the shared secret from --secret-file or " + secret.EnvVar
+		return checkUnchecked, "it needs the shared secret from --secret, --secret-file or " + secret.EnvVar
 	}
 	_, err := msg.Verify(pkicmp.VerifyOptions{RequiredProtection: pkicmp.ProtectionMAC, SharedSecret: a.secret})
 	if err == nil {

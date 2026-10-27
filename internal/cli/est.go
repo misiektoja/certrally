@@ -55,9 +55,10 @@ func newESTCommand() *cobra.Command {
 			"A client signs in with a TLS client certificate (--cert and --key), with a password (--user) over " +
 			"HTTP Basic authentication, with a bearer token (--token) or with a certificate and a password or " +
 			"token. With --srp, --user signs in with TLS-SRP (RFC 7030 section 3.3.3) instead, which also " +
-			"authenticates the server without a certificate. The password and the token are read from " +
-			"--password-file or --token-file, the " + secret.PasswordEnvVar + " or " + secret.TokenEnvVar +
-			" environment variable or a prompt, never from the command line.",
+			"authenticates the server without a certificate. The password comes from --password, " +
+			"--password-file, the " + secret.PasswordEnvVar + " environment variable or a prompt. The token " +
+			"comes from --token=TOKEN, --token-file, the " + secret.TokenEnvVar + " environment variable or a " +
+			"prompt. Other users of the machine can see --password and --token=TOKEN in the process list.",
 	}
 	cmd.AddCommand(
 		newESTCACertsCommand(),
@@ -174,6 +175,7 @@ func parseESTServer(s string) (estServer, error) {
 // estAuth holds the flags that sign in to an EST server.
 type estAuth struct {
 	user         string
+	password     secret.Value
 	passwordFile string
 	certFile     string
 	keyFile      string
@@ -182,8 +184,41 @@ type estAuth struct {
 	srp bool
 	// token signs in with a bearer token instead of a password. tokenFile names its file and implies
 	// token.
-	token     bool
+	token     tokenFlag
 	tokenFile string
+}
+
+// tokenFlag is --token. Without a value it selects the bearer token sign-in, which reads the token
+// from --token-file, the environment or a prompt. --token=TOKEN also gives the token.
+type tokenFlag struct {
+	secret.Value
+	// set is true when --token is given, with or without a value.
+	set bool
+}
+
+// tokenBare is what pflag passes for --token without a value. A command-line argument cannot hold a
+// NUL byte, so no token equals it.
+const tokenBare = "\x00"
+
+// Set records --token and stores the token when one is given.
+func (t *tokenFlag) Set(s string) error {
+	t.set = true
+	if s == tokenBare {
+		return nil
+	}
+	return t.Value.Set(s)
+}
+
+// tokenSelected reports whether the bearer token signs in.
+func (a *estAuth) tokenSelected() bool { return a.token.set || a.tokenFile != "" }
+
+// noArgs rejects arguments. A token written after a space following --token arrives as an argument,
+// so the error names the = form instead of repeating the token.
+func (a *estAuth) noArgs(cmd *cobra.Command, args []string) error {
+	if len(args) > 0 && a.token.set && a.token.Bytes() == nil {
+		return errors.New("give the token as --token=TOKEN, with = instead of a space")
+	}
+	return cobra.NoArgs(cmd, args)
 }
 
 // addFlags registers the sign-in flags. certHelp describes --cert. Unless certAlone is set, --cert
@@ -191,13 +226,16 @@ type estAuth struct {
 func (a *estAuth) addFlags(cmd *cobra.Command, certHelp string, certAlone bool) {
 	f := cmd.Flags()
 	f.StringVar(&a.user, "user", "", "username for HTTP Basic authentication, or for TLS-SRP with --srp")
+	f.Var(&a.password, flagPassword, "password of --user, which other users of this machine can see in the process list")
 	f.StringVar(&a.passwordFile, "password-file", "", "read the password from a file, or - for standard input")
 	f.StringVar(&a.certFile, "cert", "", certHelp)
 	f.StringVar(&a.keyFile, "key", "", "private key for --cert, to sign in with a TLS client certificate")
 	a.keyPassword.addFlags(cmd)
 	f.BoolVar(&a.srp, "srp", false,
 		"sign in as --user with TLS-SRP, which also authenticates the server, instead of HTTP Basic authentication")
-	f.BoolVar(&a.token, flagToken, false, "sign in with a bearer token over HTTP Bearer authentication instead of --user")
+	f.Var(&a.token, flagToken, "sign in with a bearer token over HTTP Bearer authentication instead of --user. "+
+		"--token=TOKEN gives the token, which other users of this machine can see in the process list")
+	f.Lookup(flagToken).NoOptDefVal = tokenBare
 	f.StringVar(&a.tokenFile, flagTokenFile, "",
 		"read the bearer token from a file, or - for standard input, which implies --token")
 	if !certAlone {
@@ -210,8 +248,15 @@ func (a *estAuth) addFlags(cmd *cobra.Command, certHelp string, certAlone bool) 
 	cmd.MarkFlagsMutuallyExclusive(flagToken, "user")
 	cmd.MarkFlagsMutuallyExclusive(flagTokenFile, "user")
 	cmd.MarkFlagsMutuallyExclusive(flagTokenFile, "password-file")
+	cmd.MarkFlagsMutuallyExclusive(flagTokenFile, flagPassword)
+	cmd.MarkFlagsMutuallyExclusive(flagPassword, "password-file")
 	_ = cmd.RegisterFlagCompletionFunc("user", cobra.NoFileCompletions)
+	_ = cmd.RegisterFlagCompletionFunc(flagPassword, cobra.NoFileCompletions)
+	_ = cmd.RegisterFlagCompletionFunc(flagToken, cobra.NoFileCompletions)
 }
+
+// flagPassword gives the password of --user.
+const flagPassword = "password"
 
 // Flags of the bearer token sign-in.
 const (
@@ -224,6 +269,10 @@ func (a *estAuth) validate() error {
 	switch {
 	case a.passwordFile != "" && a.user == "":
 		return errors.New("--password-file needs --user")
+	case a.password.Bytes() != nil && a.user == "":
+		return errors.New("--password needs --user")
+	case a.token.Bytes() != nil && a.tokenFile != "":
+		return errors.New("choose one source of the token: --token=TOKEN or --token-file")
 	case a.keyFile != "" && a.certFile == "":
 		return errors.New("--key needs --cert")
 	case a.srp && a.user == "":
@@ -256,6 +305,7 @@ func (a *estAuth) load(stdin io.Reader, prompt io.Writer) (*estCredentials, erro
 	if a.user != "" {
 		password, err := secret.Source{
 			Kind:      secret.Password,
+			Value:     a.password.Bytes(),
 			File:      a.passwordFile,
 			LookupEnv: os.LookupEnv,
 			Stdin:     stdin,
@@ -266,9 +316,10 @@ func (a *estAuth) load(stdin io.Reader, prompt io.Writer) (*estCredentials, erro
 		}
 		creds.password = string(password)
 	}
-	if a.token || a.tokenFile != "" {
+	if a.tokenSelected() {
 		token, err := secret.Source{
 			Kind:      secret.Token,
+			Value:     a.token.Bytes(),
 			File:      a.tokenFile,
 			LookupEnv: os.LookupEnv,
 			Stdin:     stdin,

@@ -68,7 +68,7 @@ func newESTEnrollCommand() *cobra.Command {
 		Example: "  certrally est enroll --server https://est.example.com --user device-42 \\\n" +
 			"    --password-file password.txt --subject CN=device-42 --san device-42.example.com \\\n" +
 			"    --cert-out device.pem --key-out device.key",
-		Args: cobra.NoArgs,
+		Args: o.noArgs,
 		RunE: runWith(&o.outputOptions, func(cmd *cobra.Command, _ []string, p *printer) error {
 			return runESTEnroll(cmd.Context(), o, p, cmd.InOrStdin())
 		}),
@@ -92,7 +92,7 @@ func newESTReenrollCommand() *cobra.Command {
 			"--new-key or --csr supplies one. Pass the current key with --new-key to keep it.\n\n" + estExitStatusHelp,
 		Example: "  certrally est reenroll --server https://est.example.com --cert device.pem --key device.key \\\n" +
 			"    --cert-out device-new.pem --key-out device-new.key",
-		Args: cobra.NoArgs,
+		Args: o.noArgs,
 		RunE: runWith(&o.outputOptions, func(cmd *cobra.Command, _ []string, p *printer) error {
 			return runESTEnroll(cmd.Context(), o, p, cmd.InOrStdin())
 		}),
@@ -114,7 +114,7 @@ func newESTServerKeyGenCommand() *cobra.Command {
 			"the key they generate. It cannot decrypt a key the server encrypts.\n\n" + estExitStatusHelp,
 		Example: "  certrally est serverkeygen --server https://est.example.com --user device-42 \\\n" +
 			"    --subject CN=device-42 --cert-out device.pem --key-out device.key",
-		Args: cobra.NoArgs,
+		Args: o.noArgs,
 		RunE: runWith(&o.outputOptions, func(cmd *cobra.Command, _ []string, p *printer) error {
 			return runESTEnroll(cmd.Context(), o, p, cmd.InOrStdin())
 		}),
@@ -174,7 +174,7 @@ func (o *estEnrollOptions) validate() error {
 		return err
 	}
 	switch {
-	case o.op == estReenroll && o.keyFile == "" && o.user == "" && !o.token && o.tokenFile == "":
+	case o.op == estReenroll && o.keyFile == "" && o.user == "" && !o.tokenSelected():
 		return errors.New("renewing without --key needs --user or --token, to sign in with a password or a token")
 	case o.op == estEnroll && o.csr != "" && (o.subject != "" || len(o.sans) > 0):
 		return errors.New("--subject and --san cannot change a request given with --csr")

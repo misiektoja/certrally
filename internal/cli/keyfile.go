@@ -13,18 +13,26 @@ import (
 	"github.com/misiektoja/certrally/internal/secret"
 )
 
-// flagKeyPasswordFile names the flag that supplies the password of an encrypted private key.
-const flagKeyPasswordFile = "key-password-file"
+// Flags that supply the password of an encrypted private key.
+const (
+	flagKeyPassword     = "key-password"
+	flagKeyPasswordFile = "key-password-file"
+)
 
-// keyPassword holds the flag that supplies the password of an encrypted private key file.
+// keyPassword holds the flags that supply the password of an encrypted private key file.
 type keyPassword struct {
-	file string
+	value secret.Value
+	file  string
 }
 
-// addFlags registers --key-password-file.
+// addFlags registers --key-password and --key-password-file.
 func (k *keyPassword) addFlags(cmd *cobra.Command) {
+	cmd.Flags().Var(&k.value, flagKeyPassword,
+		"password of an encrypted private key, which other users of this machine can see in the process list")
 	cmd.Flags().StringVar(&k.file, flagKeyPasswordFile, "",
 		"read the password of an encrypted private key from a file, or - for standard input")
+	cmd.MarkFlagsMutuallyExclusive(flagKeyPassword, flagKeyPasswordFile)
+	_ = cmd.RegisterFlagCompletionFunc(flagKeyPassword, cobra.NoFileCompletions)
 }
 
 // checkStdin rejects --key-password-file - together with another flag that reads standard input.
@@ -36,8 +44,8 @@ func (k *keyPassword) checkStdin(other, otherFile string) error {
 }
 
 // load reads the private key in path. An encrypted PKCS#8 key is decrypted with the password from
-// --key-password-file, the CERTRALLY_KEY_PASSWORD environment variable or a prompt on stdin. The key
-// is a crypto.Signer, or a crypto.Decapsulator for ML-KEM.
+// --key-password, --key-password-file, the CERTRALLY_KEY_PASSWORD environment variable or a prompt
+// on stdin. The key is a crypto.Signer, or a crypto.Decapsulator for ML-KEM.
 func (k *keyPassword) load(path string, stdin io.Reader, prompt io.Writer) (crypto.PrivateKey, error) {
 	data, err := os.ReadFile(path) //nolint:gosec // G304: the user names the file to read.
 	if err != nil {
@@ -52,6 +60,7 @@ func (k *keyPassword) load(path string, stdin io.Reader, prompt io.Writer) (cryp
 	}
 	password, err := secret.Source{
 		Kind:      secret.KeyPassword,
+		Value:     k.value.Bytes(),
 		File:      k.file,
 		LookupEnv: os.LookupEnv,
 		Stdin:     stdin,
