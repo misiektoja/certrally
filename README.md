@@ -84,7 +84,7 @@ certrally --version
 
 The CMP commands also run under `certrally cmp`, such as `certrally cmp enroll`. Without the prefix, `enroll`, `poll`, `revoke`, `cacerts`, `ping` and `mock` use CMP. The EST commands run under [`certrally est`](#enroll-over-est).
 
-Output is coloured only on a terminal. [docs/output.md](docs/output.md) describes `--color`, `NO_COLOR` and `FORCE_COLOR`.
+Output is coloured only on a terminal. [docs/output.md](docs/output.md) describes `--color`, `NO_COLOR`, `FORCE_COLOR` and the handling of existing output files.
 
 ### Try it with a test CA
 

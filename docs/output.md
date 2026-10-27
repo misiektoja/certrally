@@ -14,3 +14,7 @@ certrally colours its output only when it writes to a terminal. These settings c
 | `TERM=dumb` | No colour |
 
 The colour depth comes from `TERM` and `COLORTERM`.
+
+## Existing files
+
+certrally does not replace an existing output file, such as `--cert-out` or `--key-out`, unless `--force` is given. On a terminal it asks first, once for all the files that exist, and the default answer is no. Without a terminal, and with `--json`, it stops with an error instead. The check runs before anything is sent, so a refusal costs no request.
