@@ -4,10 +4,12 @@ The [README](../README.md#enroll-over-est) introduces the `certrally est` comman
 
 ## Signing in
 
-* **A password** over HTTP Basic authentication with `--user`. The password comes from `--password-file` (`-` reads standard input), the `CERTRALLY_PASSWORD` environment variable or a prompt on a terminal, in that order.
-* **A bearer token** over HTTP Bearer authentication (RFC 6750) with `--token`. The token comes from `--token-file` (`-` reads standard input, which implies `--token`), the `CERTRALLY_TOKEN` environment variable or a prompt on a terminal, in that order. `--token` cannot be combined with `--user`.
+* **A password** over HTTP Basic authentication with `--user`. The password comes from `--password`, `--password-file` (`-` reads standard input), the `CERTRALLY_PASSWORD` environment variable or a prompt on a terminal, in that order.
+* **A bearer token** over HTTP Bearer authentication (RFC 6750) with `--token`. The token comes from `--token=TOKEN`, `--token-file` (`-` reads standard input, which implies `--token`), the `CERTRALLY_TOKEN` environment variable or a prompt on a terminal, in that order. A token on the command line needs the `=`, because `--token` alone only selects the sign-in. `--token` cannot be combined with `--user`.
 * **A TLS client certificate** with `--cert` and `--key`. `est reenroll --cert device.pem --key device.key` renews a certificate this way. Without `--key`, renewal signs in with `--user` or `--token` instead, as RFC 7030 section 2.3 allows for certificates that cannot be used for TLS.
 * **TLS-SRP** with `--srp` and `--user`. The password then authenticates both sides over TLS 1.2, so the server needs no certificate and `--srp` cannot be combined with `--tls-ca-cert`.
+
+Other users of the machine can see `--password` and `--token=TOKEN` in the process list, and the shell may keep them in its history.
 
 ## Server certificate and bootstrap
 
@@ -20,7 +22,7 @@ certrally est cacerts --server https://est.example.com --bootstrap \
   --fingerprint 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08 --out ca.pem
 ```
 
-`--bootstrap` cannot be combined with `--user`, `--password-file`, `--token` or `--token-file`. The request needs no sign-in and the credentials would reach a server that nothing checked.
+`--bootstrap` cannot be combined with `--user`, `--password`, `--password-file`, `--token` or `--token-file`. The request needs no sign-in and the credentials would reach a server that nothing checked.
 
 ## Proxies
 
@@ -40,4 +42,4 @@ When the server answers that a request is pending, `est enroll`, `est reenroll` 
 
 ## Test CA
 
-`certrally est mock` runs an EST test CA on `127.0.0.1:8443` and prints commands that work against it. It accepts the password of `--user` (default `demo`) and certificates it issued. `--srp-listen 127.0.0.1:8444` also serves TLS-SRP for the same user. `--retry-after` answers the first request for each key with `202 Accepted`, to test waiting. It generates a password unless `--password-file` or `CERTRALLY_PASSWORD` gives one. With `--token-file` or `CERTRALLY_TOKEN` it also accepts that bearer token with `est enroll --token`.
+`certrally est mock` runs an EST test CA on `127.0.0.1:8443` and prints commands that work against it. It accepts the password of `--user` (default `demo`) and certificates it issued. `--srp-listen 127.0.0.1:8444` also serves TLS-SRP for the same user. `--retry-after` answers the first request for each key with `202 Accepted`, to test waiting. It generates a password unless `--password`, `--password-file` or `CERTRALLY_PASSWORD` gives one. With `--token`, `--token-file` or `CERTRALLY_TOKEN` it also accepts that bearer token with `est enroll --token`.

@@ -6,7 +6,7 @@ These options work the same for the CMP and EST commands.
 
 certrally writes private keys as unencrypted PKCS#8 PEM with mode 0600. `certrally keygen --list` prints the key types.
 
-`--key` and `--new-key` also take an encrypted PKCS#8 key, as `openssl pkcs8 -topk8` writes it (PBES2 with PBKDF2 and AES). The password comes from `--key-password-file` (`-` reads standard input), the `CERTRALLY_KEY_PASSWORD` environment variable or a prompt on a terminal, in that order. A key encrypted the older way, with `Proc-Type` headers in the PEM file, is not supported. This command converts one:
+`--key` and `--new-key` also take an encrypted PKCS#8 key, as `openssl pkcs8 -topk8` writes it (PBES2 with PBKDF2 and AES). The password comes from `--key-password`, `--key-password-file` (`-` reads standard input), the `CERTRALLY_KEY_PASSWORD` environment variable or a prompt on a terminal, in that order. Other users of the machine can see `--key-password` in the process list. A key encrypted the older way, with `Proc-Type` headers in the PEM file, is not supported. This command converts one:
 
 ```bash
 openssl pkcs8 -topk8 -in old.key -out device.p8

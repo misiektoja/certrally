@@ -107,6 +107,8 @@ certrally enroll --server https://ca.example.com/.well-known/cmp \
   --cert-out device.pem --key-out device.key
 ```
 
+`--secret VALUE` gives the secret on the command line instead, and `CERTRALLY_SECRET` or a prompt also work. [docs/cmp.md](docs/cmp.md#protection) lists the order and the risk of `--secret`.
+
 certrally draws each message as it is sent and received, then describes the certificate:
 
 ```text
@@ -154,7 +156,7 @@ On a terminal, `certrally enroll` without flags asks for each setting: the serve
 certrally enroll --interactive --server https://ca.example.com/.well-known/cmp
 ```
 
-Before it sends the request, certrally prints the same request as one command for scripts and asks for confirmation. The shared secret is hidden while you type it and never appears in that command. The questions cannot be combined with `--json`. With `ACCESSIBLE=1` they are asked line by line, for example for a screen reader.
+Before it sends the request, certrally prints the same request as one command for scripts and asks for confirmation. The shared secret is hidden while you type it. It never appears in that command, and neither do the values of `--secret` and `--key-password`. The questions cannot be combined with `--json`. With `ACCESSIBLE=1` they are asked line by line, for example for a screen reader.
 
 ### Revoke a certificate
 

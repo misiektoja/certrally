@@ -6,6 +6,8 @@ The [README](../README.md#enroll-a-certificate) shows a first enrollment, a key 
 
 Shared-secret requests are protected with PBMAC1. The request header names `CN=<ref>` as the sender and `<ref>` as the key identifier, as RFC 9483 asks.
 
+The shared secret comes from `--secret`, `--secret-file` (`-` reads standard input), the `CERTRALLY_SECRET` environment variable or a prompt on a terminal, in that order. Other users of the machine can see `--secret` in the process list, and the shell may keep it in its history.
+
 * `--mac pbm` selects PasswordBasedMac for CAs that accept only that, such as Nokia NCM, Insta Certifier and the `openssl cmp` mock server.
 * `--iterations` sets the MAC iteration count (default 10000).
 * `--hash sha1|sha256|sha384|sha512` selects the digest of the signatures certrally makes with an RSA or ECDSA key: the message protection with `--cert`, the proof of possession and a PKCS#10 request. With `--mac pbm` it also selects the one-way function and HMAC of the MAC. PBMAC1 always uses SHA-256. The default follows the key type. CAs refuse SHA-1 unless configured to accept it.
@@ -56,7 +58,7 @@ certrally enroll --server https://ca.example.com/.well-known/cmp \
   Note            Collect the certificate with: certrally poll --transaction-id d503c4aad8beeb7b34b820adb1809771 --capture device.jsonl
 ```
 
-`poll` collects the certificate later, also from another directory. It takes the server, the protection, the trusted CA certificates and the output files from the capture file and reads the shared secret again. A run that signed with an encrypted key takes `--key-password-file` the same way. It polls until the CA decides, confirms the certificate and saves it:
+`poll` collects the certificate later, also from another directory. It takes the server, the protection, the trusted CA certificates and the output files from the capture file and reads the shared secret again. A run that signed with an encrypted key takes `--key-password` or `--key-password-file` the same way. It polls until the CA decides, confirms the certificate and saves it:
 
 ```bash
 certrally poll --transaction-id d503c4aad8beeb7b34b820adb1809771 \
