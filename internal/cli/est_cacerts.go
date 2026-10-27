@@ -132,7 +132,7 @@ func (o *estCACertsOptions) validate(p *printer, stdin io.Reader) ([]byte, error
 	if err := p.confirmOutputs(&o.force, o.out); err != nil {
 		return nil, err
 	}
-	if o.bootstrap && o.out != "" && fingerprint == nil && !(p.text() && wizardTerminal(stdin, p.stderr)) {
+	if o.bootstrap && o.out != "" && fingerprint == nil && !(p.text() && wizardTerminal(stdin, p.terminal)) {
 		return nil, errors.New("--bootstrap saves the certificates only after a check. Pass the fingerprint the CA " +
 			"published with --fingerprint, or run on a terminal to confirm it")
 	}
@@ -248,7 +248,7 @@ var errNoFingerprintConfirmed = errors.New("the certificates were not saved, bec
 // confirmFingerprint asks which of certs has the fingerprint the CA published and returns it. A
 // single certificate gets a yes or no question. A cancelled question counts as no.
 func confirmFingerprint(ctx context.Context, stdin io.Reader, p *printer, certs []*x509.Certificate) (*x509.Certificate, error) {
-	ask := newAsker(ctx, stdin, p.stderr)
+	ask := newAsker(ctx, stdin, p.terminal)
 	if len(certs) == 1 {
 		ok, err := ask.confirm("Does the SHA-256 fingerprint match the one the CA published?", false)
 		if err != nil && !errors.Is(err, errEnrollCancelled) {
