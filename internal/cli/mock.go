@@ -48,6 +48,7 @@ const mockConfirmWait = 10 * time.Second
 type mockOptions struct {
 	listen     string
 	ref        string
+	secret     secret.Value
 	secretFile string
 	caOut      string
 	force      bool
@@ -120,9 +121,9 @@ func newMockCommand() *cobra.Command {
 			"It generates the key pair for enroll --central-keygen and signs it with a key generation authority " +
 			"certificate it issued. It accepts requests that a registration authority forwards in a nested " +
 			"message signed with a certificate it issued with the cmcRA extended key usage.\n\n" +
-			"The shared secret comes from --secret-file or " + secret.EnvVar + ". Without either, a random secret " +
-			"is generated and printed. The CA key and everything it issued live in memory and are lost when it " +
-			"stops. Stop it with Ctrl-C.\n\n" +
+			"The shared secret comes from --secret, --secret-file or " + secret.EnvVar + ". Without any of them, " +
+			"a random secret is generated and printed. The CA key and everything it issued live in memory and " +
+			"are lost when it stops. Stop it with Ctrl-C.\n\n" +
 			"The fault flags make the CA delay, reject or confirm requests differently and accept deviations " +
 			"from RFC 9483, to test how a client copes. --accept takes one of:\n" + acceptHelp(),
 		Example: "  certrally mock\n" +
@@ -139,7 +140,9 @@ func newMockCommand() *cobra.Command {
 	f := cmd.Flags()
 	f.StringVar(&o.listen, "listen", "127.0.0.1:8080", "address and port to listen on. Port 0 picks a free port")
 	f.StringVar(&o.ref, flagRef, "demo", "reference that identifies the shared secret")
+	f.Var(&o.secret, flagSecret, secretHelp)
 	f.StringVar(&o.secretFile, "secret-file", "", "read the shared secret from a file, or - for standard input")
+	cmd.MarkFlagsMutuallyExclusive(flagSecret, "secret-file")
 	f.StringVar(&o.caOut, "ca-out", "", "save the CA certificate to this file, for --ca-cert")
 	f.BoolVar(&o.force, "force", false, "replace an existing --ca-out file")
 	f.IntVar(&o.waiting, "waiting", 0,
@@ -162,7 +165,9 @@ func newMockCommand() *cobra.Command {
 		"refuse certificate requests that no registration authority forwarded")
 	_ = cmd.RegisterFlagCompletionFunc("accept", fixedCompletion(acceptNames))
 	_ = cmd.RegisterFlagCompletionFunc("reject", fixedCompletion(failInfoNames))
-	for _, name := range []string{"listen", flagRef, "waiting", "check-after", "mac-iterations", "confirm-wait"} {
+	for _, name := range []string{
+		"listen", flagRef, flagSecret, "waiting", "check-after", "mac-iterations", "confirm-wait",
+	} {
 		_ = cmd.RegisterFlagCompletionFunc(name, cobra.NoFileCompletions)
 	}
 	return cmd
@@ -264,10 +269,10 @@ type mockSecret struct {
 	generated bool
 }
 
-// readSecret reads the shared secret from --secret-file or the environment. It generates a random
-// one instead of prompting, because the user needs to know the secret to use it.
+// readSecret reads the shared secret from --secret, --secret-file or the environment. It generates a
+// random one instead of prompting, because the user needs to know the secret to use it.
 func (o *mockOptions) readSecret(stdin io.Reader) (mockSecret, error) {
-	src := secret.Source{File: o.secretFile, LookupEnv: os.LookupEnv}
+	src := secret.Source{Value: o.secret.Bytes(), File: o.secretFile, LookupEnv: os.LookupEnv}
 	if o.secretFile == "-" {
 		src.Stdin = stdin
 	}
@@ -290,10 +295,9 @@ func runMock(cmd *cobra.Command, o *mockOptions) error {
 	if o.ref == "" {
 		return errors.New("--ref must not be empty")
 	}
-	if o.caOut != "" {
-		if err := pemfile.CheckWritable(o.caOut, o.force); err != nil {
-			return err
-		}
+	p := newPrinter(cmd, outputOptions{})
+	if err := p.confirmOutputs(&o.force, o.caOut); err != nil {
+		return err
 	}
 	flt, err := o.parseFaults()
 	if err != nil {
@@ -341,7 +345,6 @@ func runMock(cmd *cobra.Command, o *mockOptions) error {
 			return err
 		}
 	}
-	p := newPrinter(cmd, outputOptions{})
 	url, remote := mockURL(ln.Addr())
 	o.report(p, url, ca.Cert(), sec)
 	if remote {
@@ -421,6 +424,8 @@ func (o *mockOptions) report(p *printer, url string, caCert *x509.Certificate, s
 	switch {
 	case sec.generated:
 		secretField = string(sec.value) + " (generated)"
+	case o.secret.Bytes() != nil:
+		secretField = "from --secret"
 	case o.secretFile != "":
 		secretField = "from " + o.secretFile
 	}

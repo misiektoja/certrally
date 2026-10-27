@@ -56,7 +56,7 @@ func newESTCACertsCommand() *cobra.Command {
 		Example: "  certrally est cacerts --server https://est.example.com --out ca.pem\n" +
 			"  certrally est cacerts --server https://est.example.com --bootstrap \\\n" +
 			"    --fingerprint 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08 --out ca.pem",
-		Args: cobra.NoArgs,
+		Args: o.noArgs,
 		RunE: runWith(&o.outputOptions, func(cmd *cobra.Command, _ []string, p *printer) error {
 			return runESTCACerts(cmd.Context(), o, p, cmd.InOrStdin())
 		}),
@@ -76,7 +76,7 @@ func newESTCACertsCommand() *cobra.Command {
 	cmd.MarkFlagsMutuallyExclusive("bootstrap", "srp")
 	// The cacerts request needs no sign-in (RFC 7030 section 4.1.2), and go-pki-est would send the
 	// credentials on it to a server that nothing checked.
-	for _, credential := range []string{"user", "password-file", flagToken, flagTokenFile} {
+	for _, credential := range []string{"user", flagPassword, "password-file", flagToken, flagTokenFile} {
 		cmd.MarkFlagsMutuallyExclusive("bootstrap", credential)
 	}
 	_ = cmd.RegisterFlagCompletionFunc("fingerprint", cobra.NoFileCompletions)
@@ -129,10 +129,10 @@ func (o *estCACertsOptions) validate(p *printer, stdin io.Reader) ([]byte, error
 	if err := o.checkCapture(o.out); err != nil {
 		return nil, err
 	}
-	if err := checkOutputs(o.force, o.out); err != nil {
+	if err := p.confirmOutputs(&o.force, o.out); err != nil {
 		return nil, err
 	}
-	if o.bootstrap && o.out != "" && fingerprint == nil && !(p.text() && wizardTerminal(stdin, p.stderr)) {
+	if o.bootstrap && o.out != "" && fingerprint == nil && !(p.text() && wizardTerminal(stdin, p.terminal)) {
 		return nil, errors.New("--bootstrap saves the certificates only after a check. Pass the fingerprint the CA " +
 			"published with --fingerprint, or run on a terminal to confirm it")
 	}
@@ -248,7 +248,7 @@ var errNoFingerprintConfirmed = errors.New("the certificates were not saved, bec
 // confirmFingerprint asks which of certs has the fingerprint the CA published and returns it. A
 // single certificate gets a yes or no question. A cancelled question counts as no.
 func confirmFingerprint(ctx context.Context, stdin io.Reader, p *printer, certs []*x509.Certificate) (*x509.Certificate, error) {
-	ask := newAsker(ctx, stdin, p.stderr)
+	ask := newAsker(ctx, stdin, p.terminal)
 	if len(certs) == 1 {
 		ok, err := ask.confirm("Does the SHA-256 fingerprint match the one the CA published?", false)
 		if err != nil && !errors.Is(err, errEnrollCancelled) {
@@ -379,7 +379,7 @@ func newESTCSRAttrsCommand() *cobra.Command {
 		Long: "Get the CSR attributes of an EST server (RFC 7030 section 4.5): the attributes, extensions and " +
 			"key types the CA wants in a certificate request.\n\n" + estExitStatusHelp,
 		Example: "  certrally est csrattrs --server https://est.example.com",
-		Args:    cobra.NoArgs,
+		Args:    o.noArgs,
 		RunE: runWith(&o.outputOptions, func(cmd *cobra.Command, _ []string, p *printer) error {
 			if err := o.estConnection.validate(); err != nil {
 				return err

@@ -230,8 +230,9 @@ type enrollWizard struct {
 	out io.Writer
 	// signed is set when the request is signed with an existing certificate.
 	signed bool
-	// typedSecret is set when the shared secret was typed into the wizard.
-	typedSecret bool
+	// secretLeftOut is set when the printed command leaves out the shared secret, because it was
+	// typed into the wizard or given with --secret.
+	secretLeftOut bool
 }
 
 // startEnrollWizard runs the wizard for --interactive or for a command line without flags on a
@@ -279,9 +280,11 @@ func (w *enrollWizard) run() error {
 
 	_, _ = fmt.Fprintf(w.out, "\nThe same request without questions:\n  %s\n",
 		commandLine(w.cmd, enrollFlagOrder, "interactive", "color"))
-	if w.typedSecret {
-		_, _ = fmt.Fprintf(w.out, "That command asks for the shared secret unless %s or --secret-file provides it.\n",
-			secret.EnvVar)
+	if w.secretLeftOut {
+		_, _ = fmt.Fprintln(w.out, leftOutNote(secret.SharedSecret))
+	}
+	if w.given(flagKeyPassword) {
+		_, _ = fmt.Fprintln(w.out, leftOutNote(secret.KeyPassword))
 	}
 	_, _ = fmt.Fprintln(w.out)
 	send, err := w.ask.confirm("Send the request?", true)
@@ -292,6 +295,12 @@ func (w *enrollWizard) run() error {
 		return errEnrollCancelled
 	}
 	return nil
+}
+
+// leftOutNote says how the printed command gets a secret of kind that it leaves out.
+func leftOutNote(kind secret.Kind) string {
+	return fmt.Sprintf("That command asks for the %s unless %s, %s or %s provides it.",
+		kind.Name, kind.EnvVar, kind.Flag, kind.FileFlag)
 }
 
 // given reports whether the command line sets the flag.
@@ -364,7 +373,7 @@ func (w *enrollWizard) protection() error {
 	switch {
 	case w.given("cert") || w.given("key"):
 		mode = protectCert
-	case w.given(flagRef) || w.given("secret-file"):
+	case w.given(flagRef) || w.given(flagSecret) || w.given("secret-file"):
 	default:
 		var err error
 		mode, err = w.ask.choose("Authentication", "How the request proves who sends it.", []choice{
@@ -401,6 +410,11 @@ func (w *enrollWizard) sharedSecret() error {
 	}
 
 	const title = "Shared secret"
+	if w.given(flagSecret) {
+		w.ask.show(title, "from --secret")
+		w.secretLeftOut = true
+		return nil
+	}
 	if w.given("secret-file") {
 		w.ask.show(title, "from "+w.o.secretFile)
 		return nil
@@ -423,7 +437,7 @@ func (w *enrollWizard) sharedSecret() error {
 	if err != nil {
 		return err
 	}
-	w.o.protection.secret, w.typedSecret = []byte(v), true
+	w.o.protection.secret, w.secretLeftOut = []byte(v), true
 	return nil
 }
 

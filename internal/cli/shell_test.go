@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/misiektoja/certrally/internal/secret"
 )
 
 // TestShellQuote checks that the printed command survives a POSIX shell.
@@ -38,9 +40,11 @@ func TestCommandLine(t *testing.T) {
 	f.Bool("force", false, "")
 	f.Bool("verify", true, "")
 	f.Duration("timeout", time.Minute, "")
+	f.Var(&secret.Value{}, "secret", "")
 	for _, kv := range [][2]string{
 		{"timeout", "30s"}, {"san", "a.example.com"}, {"san", "ip:192.0.2.7"}, {"force", "true"},
 		{"verify", "false"}, {"subject", "CN=device 42"}, {"server", "http://ca.test/cmp"}, {"hidden", "x"},
+		{"secret", "s3cret"},
 	} {
 		if err := f.Set(kv[0], kv[1]); err != nil {
 			t.Fatal(err)

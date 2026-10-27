@@ -69,7 +69,7 @@ func (o *genmOptions) validate(p *printer) error {
 		return err
 	}
 	p.dataOnStdout = o.out == stdoutPath
-	return checkOutputs(o.force, o.out)
+	return p.confirmOutputs(&o.force, o.out)
 }
 
 // genmLong completes the description of a general message command.
@@ -155,7 +155,9 @@ func newCMPCommand() *cobra.Command {
 		Short: "Commands for the Certificate Management Protocol",
 		Long: "Commands for the Certificate Management Protocol (CMP). enroll, poll, revoke, cacerts, ping and mock " +
 			"also work without the cmp prefix, because CMP is the default protocol. genm sends the support " +
-			"messages of RFC 9483 section 4.3.",
+			"messages of RFC 9483 section 4.3.\n\n" +
+			"The CMP commands trust the CA that answers their first request, unless --ca-cert names the CA to " +
+			"expect. The report lists each certificate trusted this way with its SHA-256 fingerprint.",
 		Args: cobra.NoArgs,
 	}
 	genm := &cobra.Command{

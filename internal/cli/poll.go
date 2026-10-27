@@ -22,6 +22,7 @@ import (
 
 	"github.com/misiektoja/certrally/internal/capture"
 	"github.com/misiektoja/certrally/internal/profile"
+	"github.com/misiektoja/certrally/internal/secret"
 	"github.com/misiektoja/certrally/internal/trace"
 	"github.com/misiektoja/certrally/internal/ui"
 )
@@ -32,6 +33,7 @@ type pollOptions struct {
 	transactionID string
 	capture       string
 	server        string
+	secret        secret.Value
 	secretFile    string
 	keyPassword
 	// newKey is the private key of a request that proves possession with an encrypted certificate.
@@ -63,7 +65,8 @@ func newPollCommand() *cobra.Command {
 			"until the CA decides, confirms the certificate and saves it where enroll was asked to, unless " +
 			"--cert-out or --chain-out names another file. The run is appended to the same file.\n\n" +
 			"The server, the protection and the trusted CA certificates come from the enroll run. The shared " +
-			"secret is read again from --secret-file, the CERTRALLY_SECRET environment variable or a prompt. " +
+			"secret is read again from --secret, --secret-file, the CERTRALLY_SECRET environment variable or a " +
+			"prompt. " +
 			"A poll that ends while the CA still waits records the new state, so the same command can run " +
 			"again.\n\n" +
 			"A request whose key cannot sign and proves possession with an encrypted certificate needs that key " +
@@ -88,7 +91,9 @@ func newPollCommand() *cobra.Command {
 	f.StringVar(&o.transactionID, "transaction-id", "", "transaction ID that enroll printed, in hex")
 	f.StringVar(&o.capture, "capture", "", "capture file of the enroll run, to which this run is appended")
 	f.StringVar(&o.server, flagServer, "", "address of the CMP server, when it is not the one enroll used")
+	f.Var(&o.secret, flagSecret, secretHelp)
 	f.StringVar(&o.secretFile, "secret-file", "", "read the shared secret from a file, or - for standard input")
+	cmd.MarkFlagsMutuallyExclusive(flagSecret, "secret-file")
 	o.keyPassword.addFlags(cmd)
 	f.StringVar(&o.newKey, "new-key", "",
 		"private key of the request, when it is not in the file enroll saved or read (encrypted-cert requests)")
@@ -109,7 +114,7 @@ func newPollCommand() *cobra.Command {
 	o.faultOptions.addFlags(cmd)
 	_ = cmd.MarkFlagRequired("transaction-id")
 	_ = cmd.MarkFlagRequired("capture")
-	for _, name := range []string{"transaction-id", flagServer, flagTimeout, flagProxy} {
+	for _, name := range []string{"transaction-id", flagServer, flagSecret, flagTimeout, flagProxy} {
 		_ = cmd.RegisterFlagCompletionFunc(name, cobra.NoFileCompletions)
 	}
 	return cmd
@@ -235,12 +240,13 @@ func (r *pendingRecord) trust() (*savedTrust, error) {
 	return &savedTrust{caCerts: caCerts, anchors: anchors, tlsRoots: tlsRoots}, nil
 }
 
-// protection returns the protection of the enroll run, with the shared secret read from secretFile
-// and the password of an encrypted key from password.
-func (r *pendingRecord) protection(secretFile string, password keyPassword) *protection {
+// protection returns the protection of the enroll run, with the shared secret from value or
+// secretFile and the password of an encrypted key from password.
+func (r *pendingRecord) protection(value secret.Value, secretFile string, password keyPassword) *protection {
 	return &protection{
 		ref:         r.Ref,
 		mac:         r.MAC,
+		secretValue: value,
 		secretFile:  secretFile,
 		certFile:    r.Cert,
 		keyFile:     r.Key,
@@ -420,10 +426,10 @@ func runPoll(ctx context.Context, o *pollOptions, p *printer, stdin io.Reader) e
 	if err := conn.checkCapture(out.certOut, out.keyOut, out.chainOut); err != nil {
 		return err
 	}
-	if err := checkOutputs(out.force, out.certOut, out.keyOut, out.chainOut); err != nil {
+	if err := p.confirmOutputs(&out.force, out.certOut, out.keyOut, out.chainOut); err != nil {
 		return err
 	}
-	prot := rec.protection(o.secretFile, o.keyPassword)
+	prot := rec.protection(o.secret, o.secretFile, o.keyPassword)
 	if o.raCert != "" {
 		prot.raCert, prot.raKey = o.raCert, o.raKey
 	}

@@ -41,7 +41,7 @@ certrally inspect run.jsonl --ca-cert ca.pem
 
 For EST it shows the HTTP exchange from a capture and the PKCS#10 request, the certificates or the CSR attributes. It also reads PKCS#10 requests, PKCS#7 certificate files and CSR attributes saved as files.
 
-certrally checks a signature with the certificates in the message and in `--ca-cert`, even when the signer certificate has expired. When `senderKID` names none of them, a certificate that verifies the signature still counts as the signer. With `--ca-cert` it also checks that the signer chains to those certificates. It checks the chain at the time the capture recorded the message. For other files it uses the current time. It checks a MAC with the shared secret from `--secret-file` or `CERTRALLY_SECRET` and leaves it unchecked without one.
+certrally checks a signature with the certificates in the message and in `--ca-cert`, even when the signer certificate has expired. When `senderKID` names none of them, a certificate that verifies the signature still counts as the signer. With `--ca-cert` it also checks that the signer chains to those certificates. It checks the chain at the time the capture recorded the message. For other files it uses the current time. It checks a MAC with the shared secret from `--secret`, `--secret-file` or `CERTRALLY_SECRET` and leaves it unchecked without one.
 
 ## lint
 

@@ -11,7 +11,7 @@
 
 certrally is a command line client for certificate enrollment with the Certificate Management Protocol (CMP) and Enrollment over Secure Transport (EST).
 
-![certrally enrolls an ML-DSA-65 certificate from the test CA and revokes it](docs/demo.gif)
+![certrally enrolls an ML-DSA-65 certificate from the test CA with a shared secret](docs/demo.gif)
 
 **CMP** (RFC 9810, which replaces RFC 4210, with the RFC 9483 profile)
 
@@ -84,7 +84,7 @@ certrally --version
 
 The CMP commands also run under `certrally cmp`, such as `certrally cmp enroll`. Without the prefix, `enroll`, `poll`, `revoke`, `cacerts`, `ping` and `mock` use CMP. The EST commands run under [`certrally est`](#enroll-over-est).
 
-Output is coloured only on a terminal. [docs/output.md](docs/output.md) describes `--color`, `NO_COLOR` and `FORCE_COLOR`.
+Output is coloured only on a terminal. [docs/output.md](docs/output.md) describes `--color`, `NO_COLOR`, `FORCE_COLOR` and the handling of existing output files.
 
 ### Try it with a test CA
 
@@ -106,6 +106,8 @@ certrally enroll --server https://ca.example.com/.well-known/cmp \
   --subject CN=device-42,O=Example --san device-42.example.com \
   --cert-out device.pem --key-out device.key
 ```
+
+`--secret VALUE` gives the secret on the command line instead, and `CERTRALLY_SECRET` or a prompt also work. [docs/cmp.md](docs/cmp.md#protection) lists the order and the risk of `--secret`.
 
 certrally draws each message as it is sent and received, then describes the certificate:
 
@@ -154,7 +156,7 @@ On a terminal, `certrally enroll` without flags asks for each setting: the serve
 certrally enroll --interactive --server https://ca.example.com/.well-known/cmp
 ```
 
-Before it sends the request, certrally prints the same request as one command for scripts and asks for confirmation. The shared secret is hidden while you type it and never appears in that command. The questions cannot be combined with `--json`. With `ACCESSIBLE=1` they are asked line by line, for example for a screen reader.
+Before it sends the request, certrally prints the same request as one command for scripts and asks for confirmation. The shared secret is hidden while you type it. It never appears in that command, and neither do the values of `--secret` and `--key-password`. The questions cannot be combined with `--json`. With `ACCESSIBLE=1` they are asked line by line, for example for a screen reader.
 
 ### Revoke a certificate
 

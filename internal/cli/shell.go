@@ -19,8 +19,12 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
+// secretFlag is a flag value that holds a secret, such as --secret.
+type secretFlag interface{ Bytes() []byte }
+
 // commandLine returns the command line that repeats the flags set on cmd, quoted for a POSIX shell.
-// The flags in first come first and the others follow in name order. The flags in skip are left out.
+// The flags in first come first and the others follow in name order. The flags in skip are left out,
+// as are flags that hold a secret, because the command line is printed.
 func commandLine(cmd *cobra.Command, first []string, skip ...string) string {
 	args := []string{cmd.CommandPath()}
 	done := make(map[string]bool, len(skip))
@@ -29,6 +33,9 @@ func commandLine(cmd *cobra.Command, first []string, skip ...string) string {
 	}
 	add := func(f *pflag.Flag) {
 		if f == nil || !f.Changed || done[f.Name] {
+			return
+		}
+		if _, ok := f.Value.(secretFlag); ok {
 			return
 		}
 		done[f.Name] = true

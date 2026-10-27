@@ -1,5 +1,6 @@
-// Package secret obtains shared secrets and passwords without taking them from the command line,
-// where other users could read them from the process list.
+// Package secret obtains shared secrets, passwords and tokens from a command-line value, a file, an
+// environment variable or a prompt. Other users can read a command-line value from the process
+// list, so the other sources suit shared machines better.
 package secret
 
 import (
@@ -29,33 +30,67 @@ const TokenEnvVar = "CERTRALLY_TOKEN" //nolint:gosec // G101: the name of a vari
 // maxSize bounds how much is read from a secret file or standard input.
 const maxSize = 64 * 1024
 
-// Kind names a secret and the variable and flag that supply it.
+// Kind names a secret and the variable and flags that supply it.
 type Kind struct {
 	// Name is how messages and the prompt call the secret.
 	Name string
 	// EnvVar is the environment variable that can hold the secret.
 	EnvVar string
-	// Flag is the option that names a file holding the secret.
+	// Flag is the option that takes the secret on the command line, as messages show it.
 	Flag string
+	// FileFlag is the option that names a file holding the secret.
+	FileFlag string
 }
 
 // The kinds of secret certrally reads.
 var (
 	// SharedSecret protects CMP requests with a MAC.
-	SharedSecret = Kind{Name: "shared secret", EnvVar: EnvVar, Flag: "--secret-file"}
+	SharedSecret = Kind{Name: "shared secret", EnvVar: EnvVar, Flag: "--secret", FileFlag: "--secret-file"}
 	// Password signs in to an EST server with HTTP Basic authentication or TLS-SRP.
-	Password = Kind{Name: "password", EnvVar: PasswordEnvVar, Flag: "--password-file"}
+	Password = Kind{Name: "password", EnvVar: PasswordEnvVar, Flag: "--password", FileFlag: "--password-file"}
 	// KeyPassword decrypts an encrypted private key file.
-	KeyPassword = Kind{Name: "key password", EnvVar: KeyPasswordEnvVar, Flag: "--key-password-file"}
-	// Token signs in to an EST server with HTTP Bearer authentication.
-	Token = Kind{Name: "token", EnvVar: TokenEnvVar, Flag: "--token-file"}
+	KeyPassword = Kind{
+		Name:     "key password",
+		EnvVar:   KeyPasswordEnvVar,
+		Flag:     "--key-password",
+		FileFlag: "--key-password-file",
+	}
+	// Token signs in to an EST server with HTTP Bearer authentication. A bare --token selects the
+	// sign-in, so the value needs the = form.
+	Token = Kind{Name: "token", EnvVar: TokenEnvVar, Flag: "--token=TOKEN", FileFlag: "--token-file"}
 )
 
-// Source says where the secret may come from. The first available source wins: File, then the
-// variable of Kind, then a prompt when Stdin is a terminal.
+// Value is a flag that takes a secret on the command line. String never returns the secret, so
+// help, completion and printed command lines cannot show it.
+type Value struct {
+	secret []byte
+}
+
+// Set stores the secret and refuses an empty one.
+func (v *Value) Set(s string) error {
+	if s == "" {
+		return errors.New("must not be empty")
+	}
+	v.secret = []byte(s)
+	return nil
+}
+
+// String returns "" so that nothing prints the secret.
+func (v *Value) String() string { return "" }
+
+// Type names the kind of value in help.
+func (v *Value) Type() string { return "string" }
+
+// Bytes returns the secret, or nil when the flag was not given.
+func (v *Value) Bytes() []byte { return v.secret }
+
+// Source says where the secret may come from. The first available source wins: Value, then File,
+// then the variable of Kind, then a prompt when Stdin is a terminal.
 type Source struct {
 	// Kind is the secret to read. The zero value reads the shared secret.
 	Kind Kind
+	// Value is the secret given on the command line, nil when there is none.
+	Value []byte
 	// File is a path to read the secret from, or "-" for standard input.
 	File string
 	// LookupEnv reads an environment variable, normally os.LookupEnv.
@@ -74,7 +109,8 @@ type missingError struct{ kind Kind }
 
 // Error says how to provide the secret.
 func (e *missingError) Error() string {
-	return "no " + e.kind.Name + ": use " + e.kind.Flag + ", set " + e.kind.EnvVar + " or run on a terminal to be prompted"
+	return "no " + e.kind.Name + ": use " + e.kind.Flag + " or " + e.kind.FileFlag + ", set " + e.kind.EnvVar +
+		" or run on a terminal to be prompted"
 }
 
 // Is matches ErrMissing.
@@ -99,6 +135,8 @@ func (s Source) Read() ([]byte, error) {
 // read returns the raw secret from the first available source.
 func (s Source) read() ([]byte, error) {
 	switch {
+	case s.Value != nil:
+		return bytes.Clone(s.Value), nil
 	case s.File == "-":
 		return s.readLimited(s.Stdin, "standard input")
 	case s.File != "":
