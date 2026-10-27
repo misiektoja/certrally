@@ -79,6 +79,9 @@ func runKeygen(o *keygenOptions, p *printer) error {
 	if err := o.validate(); err != nil {
 		return err
 	}
+	if err := p.confirmOutputs(&o.force, o.out, o.pubOut, o.csrOut); err != nil {
+		return err
+	}
 	p.dataOnStdout = slices.Contains([]string{o.out, o.pubOut, o.csrOut}, stdoutPath)
 	var subject pkix.Name
 	if o.subject != "" {
@@ -141,7 +144,7 @@ func runKeygen(o *keygenOptions, p *printer) error {
 	return nil
 }
 
-// validate checks flag combinations and the outputs before a key is generated.
+// validate checks flag combinations and the use of standard output before a key is generated.
 func (o *keygenOptions) validate() error {
 	switch {
 	case o.out == "":
@@ -170,8 +173,5 @@ func (o *keygenOptions) validate() error {
 	if stdoutUses > 1 {
 		return errors.New("only one output can go to standard output")
 	}
-	if err := o.checkStdout(o.out, o.pubOut, o.csrOut); err != nil {
-		return err
-	}
-	return checkOutputs(o.force, o.out, o.pubOut, o.csrOut)
+	return o.checkStdout(o.out, o.pubOut, o.csrOut)
 }

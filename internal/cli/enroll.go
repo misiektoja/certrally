@@ -262,10 +262,7 @@ func (o *enrollOptions) validate() error {
 	if err := o.format.validate(); err != nil {
 		return err
 	}
-	if err := o.checkCapture(o.certOut, o.keyOut, o.chainOut); err != nil {
-		return err
-	}
-	return checkOutputs(o.force, o.certOut, o.keyOut, o.chainOut)
+	return o.checkCapture(o.certOut, o.keyOut, o.chainOut)
 }
 
 // validateKey checks the flags that choose the key to certify and how it proves possession. A
@@ -375,6 +372,9 @@ type enrollment struct {
 // runEnroll performs the enroll command.
 func runEnroll(ctx context.Context, o *enrollOptions, p *printer, stdin io.Reader) error {
 	if err := o.validate(); err != nil {
+		return err
+	}
+	if err := p.confirmOutputs(&o.force, o.certOut, o.keyOut, o.chainOut); err != nil {
 		return err
 	}
 	shape, err := o.readShape()

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/json"
@@ -114,15 +115,23 @@ type printer struct {
 	trailer []ui.Field
 	// trusted lists the certificates trusted on the first response, as a section under the report.
 	trusted []ui.Field
+	// ctx, stdin and terminal are where the command asks a question. terminal is standard error
+	// without the color handling of stderr, so that it can be checked for a terminal.
+	ctx      context.Context
+	stdin    io.Reader
+	terminal io.Writer
 }
 
 // newPrinter returns the printer for a command.
 func newPrinter(cmd *cobra.Command, opts outputOptions) *printer {
 	return &printer{
-		opts:    opts,
-		command: commandName(cmd),
-		stdout:  cmd.OutOrStdout(),
-		stderr:  colorprofile.NewWriter(cmd.ErrOrStderr(), os.Environ()),
+		opts:     opts,
+		command:  commandName(cmd),
+		stdout:   cmd.OutOrStdout(),
+		stderr:   colorprofile.NewWriter(cmd.ErrOrStderr(), os.Environ()),
+		ctx:      cmd.Context(),
+		stdin:    cmd.InOrStdin(),
+		terminal: cmd.ErrOrStderr(),
 	}
 }
 

@@ -69,7 +69,7 @@ func (o *genmOptions) validate(p *printer) error {
 		return err
 	}
 	p.dataOnStdout = o.out == stdoutPath
-	return checkOutputs(o.force, o.out)
+	return p.confirmOutputs(&o.force, o.out)
 }
 
 // genmLong completes the description of a general message command.

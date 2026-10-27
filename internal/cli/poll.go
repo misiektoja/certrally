@@ -426,7 +426,7 @@ func runPoll(ctx context.Context, o *pollOptions, p *printer, stdin io.Reader) e
 	if err := conn.checkCapture(out.certOut, out.keyOut, out.chainOut); err != nil {
 		return err
 	}
-	if err := checkOutputs(out.force, out.certOut, out.keyOut, out.chainOut); err != nil {
+	if err := p.confirmOutputs(&out.force, out.certOut, out.keyOut, out.chainOut); err != nil {
 		return err
 	}
 	prot := rec.protection(o.secret, o.secretFile, o.keyPassword)

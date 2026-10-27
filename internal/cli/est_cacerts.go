@@ -129,7 +129,7 @@ func (o *estCACertsOptions) validate(p *printer, stdin io.Reader) ([]byte, error
 	if err := o.checkCapture(o.out); err != nil {
 		return nil, err
 	}
-	if err := checkOutputs(o.force, o.out); err != nil {
+	if err := p.confirmOutputs(&o.force, o.out); err != nil {
 		return nil, err
 	}
 	if o.bootstrap && o.out != "" && fingerprint == nil && !(p.text() && wizardTerminal(stdin, p.stderr)) {

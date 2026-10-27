@@ -193,10 +193,7 @@ func (o *estEnrollOptions) validate() error {
 	if err := o.format.validate(); err != nil {
 		return err
 	}
-	if err := o.checkCapture(o.certOut, o.keyOut); err != nil {
-		return err
-	}
-	return checkOutputs(o.force, o.certOut, o.keyOut)
+	return o.checkCapture(o.certOut, o.keyOut)
 }
 
 // estRequest is a certificate request ready to send.
@@ -210,6 +207,9 @@ type estRequest struct {
 // runESTEnroll performs est enroll, est reenroll or est serverkeygen.
 func runESTEnroll(ctx context.Context, o *estEnrollOptions, p *printer, stdin io.Reader) error {
 	if err := o.validate(); err != nil {
+		return err
+	}
+	if err := p.confirmOutputs(&o.force, o.certOut, o.keyOut); err != nil {
 		return err
 	}
 	var renewed *x509.Certificate

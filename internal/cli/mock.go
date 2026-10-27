@@ -295,10 +295,9 @@ func runMock(cmd *cobra.Command, o *mockOptions) error {
 	if o.ref == "" {
 		return errors.New("--ref must not be empty")
 	}
-	if o.caOut != "" {
-		if err := pemfile.CheckWritable(o.caOut, o.force); err != nil {
-			return err
-		}
+	p := newPrinter(cmd, outputOptions{})
+	if err := p.confirmOutputs(&o.force, o.caOut); err != nil {
+		return err
 	}
 	flt, err := o.parseFaults()
 	if err != nil {
@@ -346,7 +345,6 @@ func runMock(cmd *cobra.Command, o *mockOptions) error {
 			return err
 		}
 	}
-	p := newPrinter(cmd, outputOptions{})
 	url, remote := mockURL(ln.Addr())
 	o.report(p, url, ca.Cert(), sec)
 	if remote {

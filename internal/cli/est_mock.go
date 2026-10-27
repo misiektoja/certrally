@@ -146,10 +146,9 @@ func runESTMock(cmd *cobra.Command, o *estMockOptions) error {
 	if o.passwordFile == "-" && o.tokenFile == "-" {
 		return errors.New("--password-file and --token-file cannot both read standard input")
 	}
-	if o.caOut != "" {
-		if err := pemfile.CheckWritable(o.caOut, o.force); err != nil {
-			return err
-		}
+	p := newPrinter(cmd, outputOptions{})
+	if err := p.confirmOutputs(&o.force, o.caOut); err != nil {
+		return err
 	}
 	password, err := o.readPassword(cmd.InOrStdin())
 	if err != nil {
@@ -200,7 +199,6 @@ func runESTMock(cmd *cobra.Command, o *estMockOptions) error {
 		}
 	}
 
-	p := newPrinter(cmd, outputOptions{})
 	hostPort, remote := mockHostPort(ln.Addr())
 	urls := estMockURLs{https: "https://" + hostPort}
 	if srpLn != nil {
