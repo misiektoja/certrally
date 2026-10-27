@@ -36,10 +36,23 @@ func useWizard(t *testing.T, answers map[string]string) *scriptedAsker {
 	t.Helper()
 	a := &scriptedAsker{t: t, answers: answers, shown: map[string]string{}}
 	terminal, ask := wizardTerminal, newAsker
-	wizardTerminal = func(io.Reader, io.Writer) bool { return true }
-	newAsker = func(context.Context, io.Reader, io.Writer) asker { return a }
+	// A real terminal check never sees a terminal behind the colour writer of the printer, so the
+	// fakes refuse that writer as the real code would.
+	wizardTerminal = func(_ io.Reader, out io.Writer) bool { return !colourWriter(out) }
+	newAsker = func(_ context.Context, _ io.Reader, out io.Writer) asker {
+		if colourWriter(out) {
+			t.Error("a question draws on the colour writer instead of the terminal")
+		}
+		return a
+	}
 	t.Cleanup(func() { wizardTerminal, newAsker = terminal, ask })
 	return a
+}
+
+// colourWriter reports whether out is a colour writer rather than the writer of the command.
+func colourWriter(out io.Writer) bool {
+	_, ok := out.(*colorprofile.Writer)
+	return ok
 }
 
 // answer returns the scripted answer to the question with title.
