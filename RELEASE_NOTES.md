@@ -4,12 +4,16 @@ Notable changes to certrally. Versions follow the `vMAJOR.MINOR.PATCH` tags publ
 
 ## v0.3.0 - 27 Oct 2026
 
-This release takes secrets on the command line and asks before it replaces existing output files.
+This release takes secrets on the command line and asks before it replaces existing output files. It fixes the fingerprint question of `est cacerts --bootstrap`.
 
 ### CMP and EST
 
 * **`--secret`, `--password`, `--key-password` and `--token=TOKEN`** give the CMP shared secret, the EST password, the password of an encrypted key and the EST bearer token on the command line. Every command with the matching `-file` flag takes them, including `poll`, `inspect`, `mock` and `est mock`. Other users of the machine can see these values in the process list, so the files, environment variables and prompt remain available. A bare `--token` still selects the token sign-in, so a token needs the `=` form. The command that the `enroll` questions print never shows these values.
 * **certrally asks before it replaces an existing output file** when it runs on a terminal. The default answer is no and the question comes before any request is sent. Without a terminal, and with `--json`, an existing file still stops the command unless `--force` is given.
+
+### Bug fixes
+
+* **`est cacerts --bootstrap` asks on a terminal which certificate has the published fingerprint.** Before, it did not recognise the terminal and always stopped with an error asking for `--fingerprint`.
 
 ## v0.2.0 - 27 Oct 2026
 
