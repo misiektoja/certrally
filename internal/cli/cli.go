@@ -99,9 +99,8 @@ func rootDescription(version string) string {
 	}
 	return name + " is a certificate enrollment client for the Certificate Management Protocol (CMP) and " +
 		"Enrollment over Secure Transport (EST).\n\n" +
-		"It shows each exchange as a ladder diagram and explains failures. The CMP commands trust the CA " +
-		"that answers their first request, unless --ca-cert names the CA to expect. The EST commands run " +
-		"under certrally est."
+		"It shows each exchange as a ladder diagram and explains failures. Without a prefix, enroll, poll, " +
+		"revoke, cacerts, ping and mock use CMP. The EST commands run under certrally est."
 }
 
 // newRootCommand returns the certrally command with its global flags.
