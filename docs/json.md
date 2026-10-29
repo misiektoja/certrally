@@ -1,6 +1,6 @@
 # JSON output and capture files
 
-certrally can describe its work in JSON for scripts. It can also record the CMP and EST messages of a run for later inspection.
+certrally can describe its work in JSON for scripts. It can also record the CMP, EST and SCEP messages of a run for later inspection.
 
 * `--json` prints the outcome of one command as a JSON document on standard output.
 * `--capture FILE` appends every message of a run, with its bytes, to a JSON Lines file.
@@ -11,13 +11,13 @@ Later versions may add fields. Existing fields keep their names and meaning.
 
 * Names are RFC 4514 strings, such as `CN=device-42,O=Example`, with the attributes in their encoded order. Attribute types other than CN, O, OU, C, L, ST, STREET, POSTALCODE, SERIALNUMBER and UID appear as dotted OIDs.
 * Times are RFC 3339 in UTC.
-* Message bytes and info type values are base64. Transaction IDs, key identifiers and SHA-256 fingerprints are lower-case hex. Certificate serial numbers are upper-case hex.
+* Message bytes and info type values are base64. Transaction IDs, key identifiers, SCEP nonces and fingerprints are lower-case hex. A SCEP transaction ID is the string of the message, which certrally sends as 40 upper-case hex digits. Certificate serial numbers are upper-case hex.
 * Certificates, CRLs, public keys and requests are PEM strings. Private keys never appear in JSON output or capture files.
 * Text from the server, such as `statusText`, is kept as the server sent it.
 
 ## JSON output
 
-`--json` works with `enroll`, `poll`, `revoke`, `cacerts`, `cmp genm` and its subcommands, `ping`, `inspect`, `lint`, `keygen` and the `est` commands except `est mock`. Standard output then holds exactly one JSON document, whatever the outcome. The ladder diagram and the text report are not printed. The exit status is the same as without `--json`.
+`--json` works with `enroll`, `poll`, `revoke`, `cacerts`, `cmp genm` and its subcommands, `ping`, `inspect`, `lint`, `keygen`, the `est` commands except `est mock` and the `scep` commands except `scep mock`. Standard output then holds exactly one JSON document, whatever the outcome. The ladder diagram and the text report are not printed. The exit status is the same as without `--json`.
 
 When certrally cannot parse the command line, for example because of an unknown flag or a missing required flag, the document holds the error and the error is also printed on standard error. `--json` cannot be combined with `--quiet` or with an output file of `-`.
 
@@ -39,7 +39,7 @@ certrally enroll --server https://ca.example.com/.well-known/cmp --ref device-42
 | `result` | object | The [result](#results) of the command. Present on success and with some failures |
 | `error` | object | The [error](#errors) when `ok` is `false` |
 | `faults` | array | One entry per [`enroll` or `poll --fault`](faults.md) value, in the order of the help text. `name` is the fault and `messages` lists the body types it changed, such as `certConf`. An empty `messages` means the fault found no message to change. Absent without `--fault` |
-| `trustedOnFirstResponse` | array | The certificates a CMP command trusted from its first response, each with the fields of a certificate in a [result](#results), so that `sha256` can be compared with the fingerprint the CA published. Absent with `--ca-cert`, on the EST commands and on `poll`, which keeps the trust of the `enroll` run |
+| `trustedOnFirstResponse` | array | The certificates a CMP command trusted from its first response or a SCEP command from its GetCACert answer, each with the fields of a certificate in a [result](#results), so that `sha256` can be compared with the fingerprint the CA published. Absent with `--ca-cert` or `--fingerprint`, on the EST commands and on `poll` and `scep poll`, which keep the trust of the enrollment |
 | `warnings` | array of strings | Problems that did not fail the command, such as a CRL signature that does not verify or a response that breaks a rule of the `compatible` profile |
 
 An enrollment produces a document like this, shortened:
@@ -91,19 +91,23 @@ An EST enrollment records its connection, the request and the response:
 | `protection` | The protection algorithm, such as `PBMAC1` or `ML-DSA-65`. It is `none` for an unprotected message |
 | `sender` | The sender name in the header |
 | `transactionId`, `senderKid` | Header fields, as hex |
-| `status`, `failInfo`, `statusText` | The first PKIStatusInfo of an `ip`, `cp`, `kup`, `rp` or `error` body. `failInfo` lists the failure bit names |
+| `status`, `failInfo`, `statusText` | The first PKIStatusInfo of an `ip`, `cp`, `kup`, `rp` or `error` body. `failInfo` lists the failure bit names. For SCEP, the pkiStatus of a CertRep, `SUCCESS`, `PENDING` or `FAILURE`, and the failInfo name |
 | `checkAfter` | The seconds a `pollRep` asks the client to wait |
 | `extraCerts` | The number of certificates in `extraCerts` |
-| `method`, `path`, `operation` | The HTTP method and path of an EST request and its EST operation, such as `simpleenroll`. Responses also carry `operation` |
+| `method`, `path`, `operation` | The HTTP method and path of an EST request and its EST operation, such as `simpleenroll`. A SCEP request has the method and its SCEP operation, such as `GetCACert` or `PKIOperation`. Responses also carry `operation` |
+| `caName` | The CA name that a SCEP request sends in its `message` parameter |
+| `messageType`, `senderNonce`, `recipientNonce` | The message type of a SCEP pkiMessage, such as `PKCSReq` or `CertRep`, and its nonces |
+| `digest`, `cipher` | The signature digest and the content cipher of a SCEP pkiMessage, such as `SHA-256` and `AES-128-CBC` |
+| `capabilities` | The capabilities of a SCEP GetCACaps answer |
 | `content` | The EST message in the body: `pkcs10`, `certs-only`, `csrattrs` or `serverkeygen`. Absent for a body that is not one of them, such as an error |
 | `subject` | The subject of an EST PKCS#10 request |
-| `certificates` | The number of certificates in an EST `certs-only` response or in the certificate part of a `serverkeygen` response |
-| `retryAfter` | The seconds the `Retry-After` header of an EST response asks for |
+| `certificates` | The number of certificates in an EST `certs-only` response, in the certificate part of a `serverkeygen` response or in a SCEP certificate answer |
+| `retryAfter` | The seconds the `Retry-After` header of an EST or SCEP response asks for |
 | `parts` | The parts of an EST `serverkeygen` response, each with `contentType` and `size`. The key part is never decoded or stored |
-| `text` | The text of an EST error response, as the server sent it |
+| `text` | The text of an EST or SCEP error response, as the server sent it |
 | `tls` | The connection of a `connect` record: `version`, `cipherSuite`, `server` with the subject of the server certificate and `srpUser` for a TLS-SRP sign-in |
-| `problem` | Why a response cannot be a CMP or EST answer (for example `HTTP 404 Not Found`), why its EST message does not decode or why a request failed |
-| `der` | The message bytes. For EST, the decoded body, and for `serverkeygen` only its certificate part. Only capture files include them |
+| `problem` | Why a response cannot be a CMP, EST or SCEP answer (for example `HTTP 404 Not Found`), why its EST message does not decode or why a request failed |
+| `der` | The message bytes. For EST, the decoded body, and for `serverkeygen` only its certificate part. For SCEP, the pkiMessage of a request, also when it travels in the URL, or the body of a response. Only capture files include them |
 
 ### Errors
 
@@ -112,7 +116,7 @@ An EST enrollment records its connection, the request and the response:
 | `title` | One line that says what failed, as in the text report |
 | `message` | The underlying error |
 | `status`, `failInfo`, `statusText` | The CA status of a rejection |
-| `httpStatus`, `retryAfter` | The HTTP status and `Retry-After` seconds of an EST refusal. `statusText` then holds the text of the server |
+| `httpStatus`, `retryAfter` | The HTTP status and `Retry-After` seconds of an EST or SCEP refusal. `statusText` then holds the text of the server |
 | `unauthenticated` | `true` when certrally could not verify the rejection, so any peer on the path could have sent it |
 | `hint` | What to check or change, when certrally can tell |
 | `note` | More context, such as advice for an issued but unconfirmed certificate |
@@ -135,8 +139,13 @@ A certificate in a result has `subject`, `issuer`, `serial`, `notBefore`, `notAf
 | `est cacerts` | `certificates`, `saved` and `verified`, which says how the certificates were checked: `tls` by the TLS certificate of the server, `srp` by a TLS-SRP sign-in, `fingerprint` by `--fingerprint`, `confirmed` by a person at the prompt or `none` after `--bootstrap` or `--insecure`. `tlsIssued` tells whether the trusted certificates issued the TLS certificate of the server. `unverified` lists the received certificates that the fingerprint check did not cover, which are not saved, and is absent otherwise |
 | `est csrattrs` | `attributes`, each with `oid`, `name` when certrally knows one and `values` for an attribute that has them |
 | `est enroll`, `est reenroll`, `est serverkeygen` | `certificate`, `key` with the type of a new key and `saved`. `key` is absent when `--new-key` or `--csr` supplied the key |
+| `scep caps` | `capabilities`, the `digest`, `cipher` and `method` that certrally picks from them, and `renewal` and `nextCACert`, which tell whether the server lists Renewal and GetNextCACert |
+| `scep cacert`, `scep chain`, `scep nextca` | `certificates`, each also with `sha1` and, except for `scep chain`, `roles`: `issuing CA`, `RA encryption`, `RA signature` or `other`. `ca` is the issuing CA, absent for `scep chain`. `saved`, and `verified`, which says how the certificates were checked: `tls`, `fingerprint`, `signed` by the current CA for `scep nextca` or `none`. `unverified` lists the received certificates that the fingerprint check did not cover, which are not saved |
+| `scep enroll`, `scep renew`, `scep poll` | `status` (`SUCCESS` or `PENDING`), `messageType`, `transactionId`, `digest`, `cipher`, `certificate`, `chain`, `key` with the type of a new key, `state` with the state file of a pending request, `polls` with the number of CertPoll requests sent and `saved` |
+| `scep getcert` | `certificates`, `saved` |
+| `scep getcrl` | `crl` as for `cmp genm crl`, `saved` |
 | `inspect` | `messages`, one [inspected message](#inspected-messages) per message in file order |
-| `lint` | `checked` and `skipped` count the responses checked and those left unchecked: CMP responses without a request before them and EST responses outside capture files. `findings` lists each deviation with `source`, `body` (the CMP body type or EST operation), `text` and `rule`. With exit status 6 the result is present |
+| `lint` | `checked` and `skipped` count the responses checked and those left unchecked: CMP responses without a request before them and EST and SCEP responses outside capture files. `findings` lists each deviation with `source`, `body` (the CMP body type or the EST or SCEP operation), `text` and `rule`. With exit status 6 the result is present |
 
 `saved` lists the files written, in the order they were written.
 
@@ -145,11 +154,12 @@ A certificate in a result has `subject`, `issuer`, `serial`, `notBefore`, `notAf
 | Field | Meaning |
 |---|---|
 | `source` | Where the message was read, such as `run.jsonl:4` for line 4 of a capture file, `ip.der` or `msgs.pem#2` for the second PEM block |
-| `protocol` | `cmp` or `est` |
+| `protocol` | `cmp`, `est` or `scep` |
 | `direction` | `request` or `response`. A capture records it. For other files it follows from the body type, and only an EST PKCS#10 request is a request |
 | `time`, `server` | When a capture recorded the message and the server of its run |
 | `size`, `body` | The message size in bytes and, for CMP, the PKIBody type |
 | `est` | The EST exchange: `operation`, `method`, `path`, `httpStatus`, `contentType`, `retryAfter`, `parts` and `text` as in [message records](#message-records) from a capture, and `content` |
+| `scep` | The SCEP exchange from a capture: `operation`, `method`, `httpStatus`, `contentType`, `caName`, `messageType`, `transactionId`, `senderNonce`, `recipientNonce`, `status`, `failInfo`, `digest`, `cipher`, `capabilities`, `retryAfter` and `text` as in [message records](#message-records) |
 | `header` | For CMP: `pvno`, `sender`, `recipient`, `messageTime`, `transactionId`, `senderNonce`, `recipNonce`, `senderKid`, `recipKid`, `freeText`, `generalInfo` with the info type names and `certProfile`. An empty `sender` or `recipient` is the NULL-DN |
 | `protection` | For CMP: `algorithm`, `none` for an unprotected message. `check` is `valid`, `invalid` or `unchecked`, with the reason in `problem`. A MAC is `unchecked` without the shared secret. `signer` is the subject of the certificate whose signature verifies. With `--ca-cert`, `trusted` tells whether the signer chains to those certificates at the capture `time`, or at the time of the run for a message without one |
 | `requests` | The requests of `ir`, `cr`, `kur`, `p10cr` and an EST PKCS#10 request: `certReqId` (absent for `p10cr` and EST), `subject`, `key`, `extensions`, `pop` (`signature`, `raVerified`, `keyEncipherment`, `keyAgreement` or `none`), `popSignature` and `popProblem` for a signature proof and `oldCert` with `issuer` and `serial` for a key update |
@@ -163,7 +173,7 @@ A certificate in a result has `subject`, `issuer`, `serial`, `notBefore`, `notAf
 | `challenges` | The challenges of `popdecc`, which the CA sends for a key that proves possession by decryption: `owf`, `witness` and `encryptedRandSize`. Only the first challenge names the one-way function `owf` |
 | `answers` | The decrypted numbers of `popdecr` in hex, in the order of the challenges |
 | `nested` | The body types of the messages in a `nested` body |
-| `certificates` | The certificates of an EST `certs-only` message or `serverkeygen` response |
+| `certificates` | The certificates of an EST `certs-only` message or `serverkeygen` response, of a SCEP certificate answer or those that a SCEP pkiMessage carries |
 | `attributes` | The EST CSR attributes, like those of `est csrattrs` |
 | `problems` | Parts of the message that could not be decoded |
 
@@ -171,7 +181,7 @@ A certificate in a result has `subject`, `issuer`, `serial`, `notBefore`, `notAf
 
 `--capture FILE` works with every command that talks to a server. It appends the run to `FILE` as JSON Lines, one JSON object per line:
 
-1. A `start` line with `format` (currently 1), `tool`, `version`, `command`, `server` and `time`. A run of an EST command adds `protocol` with the value `est`. A run with `--insecure` adds `insecure` with the value `true`, because it did not check the TLS certificate of the server.
+1. A `start` line with `format` (currently 1), `tool`, `version`, `command`, `server` and `time`. A run of an EST or SCEP command adds `protocol` with the value `est` or `scep`. A run with `--insecure` adds `insecure` with the value `true`, because it did not check the TLS certificate of the server.
 2. One [message record](#message-records) per request, response, failure or EST connection, including `der`.
 3. A `transaction` line with `time`, `id`, `state` and `resume` when the run leaves a waiting transaction for `poll` (`state` is `waiting`) or `poll` ends one (`ended`). `id` is the transaction ID. `resume` holds what `poll` needs: the server, the protection settings and the names of their files, the trusted CA certificates, the output files with their format, the name of the key file when the CA encrypts the certificate for the key and the state of the CMP transaction. It holds no secret or private key. `poll` uses the last line of a transaction.
 4. An `end` line with `time` and `exitStatus`.

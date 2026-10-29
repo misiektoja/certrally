@@ -1,6 +1,6 @@
 # Keys and output files
 
-These options work the same for the CMP and EST commands.
+These options work the same for the CMP, EST and SCEP commands. The SCEP commands generate only RSA and ECDSA keys, and their `--key` must be RSA.
 
 ## Key files
 
@@ -25,4 +25,4 @@ certrally keygen --key-type ml-dsa-65 --out device.key \
 
 ## DER output
 
-`--out-format der` writes the output files as DER instead of PEM. A certificate, a PKCS#8 key, a public key, a request and a CRL are written as is. A file that holds several certificates, such as `--chain-out` and the `--out` of `cacerts` and `est cacerts`, becomes PKCS#7. `poll` keeps the format of the `enroll` run unless its own `--out-format` replaces it. The default is `pem`.
+`--out-format der` writes the output files as DER instead of PEM. A certificate, a PKCS#8 key, a public key, a request and a CRL are written as is. A file that holds several certificates, such as `--chain-out` and the `--out` of `cacerts`, `est cacerts` and `scep cacert`, becomes PKCS#7. `poll` keeps the format of the `enroll` run unless its own `--out-format` replaces it. The default is `pem`.

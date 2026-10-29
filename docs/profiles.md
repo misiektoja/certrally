@@ -1,6 +1,6 @@
 # Response profiles
 
-certrally checks every CMP response against rules of the Lightweight CMP Profile (RFC 9483) and RFC 9810 that some CAs do not follow. It checks EST responses against [rules of RFC 7030](#est-rules) in the same way. `--profile` chooses what happens when a response breaks one of them:
+certrally checks every CMP response against rules of the Lightweight CMP Profile (RFC 9483) and RFC 9810 that some CAs do not follow. It checks EST responses against [rules of RFC 7030](#est-rules) and SCEP responses against [rules of RFC 8894](#scep-rules) in the same way. `--profile` chooses what happens when a response breaks one of them:
 
 | Profile | Effect |
 |---|---|
@@ -54,6 +54,20 @@ With `compatible`, certrally saves the issued certificate from a response that c
 
 An HTTP error from the EST server ends the command with exit status 3 in both profiles. An answer that is not EST at all, such as a redirect, a `404 Not Found` or a web page, ends it with exit status 2.
 
+## SCEP rules
+
+| Rule | Source |
+|---|---|
+| A GetCACaps answer holds no control characters, such as a NUL byte, besides the line breaks between capabilities | RFC 8894 section 3.5.2 |
+| A GetCACert answer with one certificate has the content type `application/x-x509-ca-cert`, and one with several has `application/x-x509-ca-ra-cert` | RFC 8894 sections 4.2.1.1 and 4.2.1.2 |
+| A PKIOperation answer has the content type `application/x-pki-message` | RFC 8894 section 4.3.1 |
+| A GetNextCACert answer has the content type `application/x-x509-next-ca-cert` | RFC 8894 section 4.7.1 |
+| A CertRep has a senderNonce attribute | RFC 8894 section 3.2.1 |
+
+With `compatible`, certrally drops control characters around each capability and accepts the answer. Only answers with HTTP status 200 and content are checked.
+
+A FAILURE answer ends the command with exit status 3 in both profiles, and so does an HTTP error status such as `503 Service Unavailable` once the retries are used up. An answer without content, a redirect, a `404 Not Found` or a web page ends it with exit status 2.
+
 ## Checking recorded runs
 
 `certrally lint` applies the same rules to responses recorded with `--capture` or saved as message files. It exits with status 6 when a response breaks a rule and with 0 when none does.
@@ -64,6 +78,6 @@ certrally lint run.jsonl
 
 Each response is checked as the answer to the request before it in the same run. Messages from other files form one exchange in command line order, such as `certrally lint ir.der ip.der certConf.der pkiconf.der`. Without `--ca-cert` the certificates in the first response of each exchange count as trusted, as they do during a run.
 
-An EST response is checked on its own, without its request. The EST rules concern the HTTP response, so `lint` checks only EST responses in capture files and skips EST message files.
+An EST or SCEP response is checked on its own, without its request. These rules concern the HTTP response, so `lint` checks only EST and SCEP responses in capture files and skips EST message files.
 
 `lint` also checks what certrally enforces during a CMP run, because messages from other clients have not been through those checks: each response carries the `transactionID` of its request (RFC 9483 section 3.1) and a `recipNonce` equal to the `senderNonce` of its request or, for a delayed response, of an earlier request of the same transaction (RFC 9483 section 3.5).
