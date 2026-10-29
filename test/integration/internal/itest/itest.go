@@ -4,6 +4,7 @@
 package itest
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/x509"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -172,4 +174,64 @@ func (c *Certrally) WriteFile(t *testing.T, name string, data []byte) {
 	if err := os.WriteFile(c.Path(name), data, 0o600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// startTimeout limits how long Start waits for a long-running command to report that it is ready.
+const startTimeout = 15 * time.Second
+
+// output collects the combined output of a command that keeps running.
+type output struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+// Write appends p to the output.
+func (o *output) Write(p []byte) (int, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.buf.Write(p)
+}
+
+// String returns the output so far.
+func (o *output) String() string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.buf.String()
+}
+
+// Start runs a long-running certrally command, such as a mock server, until the test ends. It waits
+// until the output contains ready and returns the output so far. The output is logged when the test
+// ends.
+func (c *Certrally) Start(t *testing.T, ready string, args ...string) string {
+	t.Helper()
+	argv := slices.Concat(args, []string{"--color", "never"})
+	cmd := exec.CommandContext(t.Context(), c.bin, argv...) //nolint:gosec // G204: the tests choose the arguments.
+	cmd.Dir = c.Dir
+	out := &output{}
+	cmd.Stdout, cmd.Stderr = out, out
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start certrally: %v", err)
+	}
+	done := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		close(done)
+	}()
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		<-done
+		t.Logf("$ certrally %s\n%s", strings.Join(args, " "), out)
+	})
+	deadline := time.Now().Add(startTimeout)
+	for ; !strings.Contains(out.String(), ready); time.Sleep(20 * time.Millisecond) {
+		select {
+		case <-done:
+			t.Fatalf("certrally %s exited before it was ready", strings.Join(args, " "))
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("certrally %s was not ready within %s", strings.Join(args, " "), startTimeout)
+		}
+	}
+	return out.String()
 }
