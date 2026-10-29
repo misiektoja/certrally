@@ -206,6 +206,57 @@ func TestRecorderSCEPResponses(t *testing.T) {
 	}
 }
 
+// TestRecorderSCEPCertRepWithErrorStatus checks that a CertRep sent with an HTTP error status is
+// decoded, and that an error answer of another media type keeps its text.
+func TestRecorderSCEPCertRepWithErrorStatus(t *testing.T) {
+	ca, err := scepca.New(scepca.Options{PendingPolls: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := ca.Handler(scepserver.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	r := &Recorder{Protocol: SCEP, Next: http.DefaultTransport}
+	client, err := scepclient.New(srv.URL+"/scep", scepclient.Options{HTTPClient: &http.Client{Transport: r}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	certs, err := client.GetCACert(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res, err := client.Enroll(ctx, certs, scepEnrollRequest(t)); err != nil || res.Status != scep.PENDING {
+		t.Fatalf("enroll: %v, %v", err, res)
+	}
+	events := r.Events()
+	certRep := events[len(events)-1].DER
+
+	tests := []struct {
+		name, contentType string
+		body              []byte
+		status, text      string
+		problem           bool
+	}{
+		{name: "PENDING CertRep", contentType: "application/x-pki-message", body: certRep, status: SCEPPending},
+		{name: "damaged CertRep", contentType: "application/x-pki-message", body: []byte("not a pkiMessage"), problem: true},
+		{name: "text", contentType: "text/plain", body: []byte("No password in request"), text: "No password in request"},
+	}
+	for _, tt := range tests {
+		replay := &Recorder{Protocol: SCEP, Next: respondHeader(http.StatusAccepted, http.Header{"Content-Type": {tt.contentType}}, tt.body)}
+		ev := scepCall(t, replay, http.MethodGet, SCEPPKIOperation, "", nil)
+		if ev.HTTPStatus != http.StatusAccepted || ev.SCEP.Status != tt.status || ev.SCEP.Text != tt.text || (ev.SCEP.Problem != "") != tt.problem {
+			t.Errorf("%s: HTTP %d, %+v", tt.name, ev.HTTPStatus, ev.SCEP)
+		}
+		if tt.status != "" && (ev.SCEP.MessageType != SCEPCertRep || ev.SCEP.TransactionID == "" || ev.Transport != nil) {
+			t.Errorf("%s: %+v, %v", tt.name, ev.SCEP, ev.Transport)
+		}
+	}
+}
+
 // TestSummarizeSCEPRequest checks how the pkiMessage of a request is found in a GET or POST.
 func TestSummarizeSCEPRequest(t *testing.T) {
 	ca, err := scepca.New(scepca.Options{})

@@ -28,6 +28,10 @@ func TestCheckSCEP(t *testing.T) {
 			ContentType: "application/x-pki-message", Body: []byte{0x30}, MessageType: "CertRep"}, []string{
 			"The PKIOperation answer has no senderNonce attribute (RFC 8894 section 3.2.1).",
 		}},
+		{"CertRep with HTTP 400", SCEPResponse{Operation: "PKIOperation", HTTPStatus: 400,
+			ContentType: "application/x-pki-message", Body: []byte{0x30}, MessageType: "CertRep"}, []string{
+			"The PKIOperation answer has no senderNonce attribute (RFC 8894 section 3.2.1).",
+		}},
 		{"PKIOperation without content type", SCEPResponse{Operation: "PKIOperation", HTTPStatus: 200, Body: []byte{0x30},
 			MessageType: "CertRep", SenderNonce: true}, []string{
 			"The PKIOperation answer has no content type instead of application/x-pki-message (RFC 8894 section 4.3.1).",

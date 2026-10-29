@@ -66,6 +66,8 @@ func TestLadderSCEP(t *testing.T) {
 			MessageType: trace.SCEPCertRep, Status: trace.SCEPPending, Digest: "SHA-1"}},
 		{Kind: trace.Response, HTTPStatus: 200, Size: 900, SCEP: &trace.SCEPSummary{Operation: trace.SCEPPKIOperation,
 			MessageType: trace.SCEPCertRep, Status: trace.SCEPFailure, FailInfo: "badRequest"}},
+		{Kind: trace.Response, HTTPStatus: 400, Size: 900, SCEP: &trace.SCEPSummary{Operation: trace.SCEPPKIOperation,
+			MessageType: trace.SCEPCertRep, Status: trace.SCEPFailure, FailInfo: "badCertId"}},
 		{Kind: trace.Response, HTTPStatus: 503, SCEP: &trace.SCEPSummary{Operation: trace.SCEPPKIOperation, RetryAfter: &retry}},
 		{Kind: trace.Response, HTTPStatus: 400, SCEP: &trace.SCEPSummary{Operation: trace.SCEPGetCACert, Text: "unknown CA"}},
 	}
@@ -75,7 +77,7 @@ func TestLadderSCEP(t *testing.T) {
 	out := b.String()
 	for _, want := range []string{
 		"GetCACert  GET  Issuing CA", "HTTP 200 OK  empty", "2 capabilities", "PKCSReq  GET  SHA-1 DES-EDE3-CBC  2.0 KiB",
-		"CertRep  PENDING", "CertRep  FAILURE  badRequest", "HTTP 503 Service Unavailable  retry after 10 s",
+		"CertRep  PENDING", "CertRep  FAILURE  badRequest", "CertRep  FAILURE  badCertId  HTTP 400", "HTTP 503 Service Unavailable  retry after 10 s",
 		`HTTP 400 Bad Request  "unknown CA"`,
 	} {
 		if !strings.Contains(out, want) {

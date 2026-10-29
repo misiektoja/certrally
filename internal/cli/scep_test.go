@@ -8,11 +8,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -494,6 +496,88 @@ func TestSCEPEmptyPKIOperation(t *testing.T) {
 		if code != exitTransport || !strings.Contains(text(get(doc, "error.hint")), tt.hint) {
 			t.Errorf("%s: exit %d, error %v", tt.name, code, doc["error"])
 		}
+	}
+}
+
+// pkiStatusAsHTTPStatus answers a PENDING CertRep with HTTP 202 and a FAILURE CertRep with HTTP
+// 400, as some CA products do.
+func pkiStatusAsHTTPStatus(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec := httptest.NewRecorder()
+		next.ServeHTTP(rec, r)
+		status := rec.Code
+		if r.URL.Query().Get("operation") == trace.SCEPPKIOperation && status == http.StatusOK {
+			summary, _ := trace.SummarizeSCEPResponse(trace.SCEPPKIOperation, rec.Result(), rec.Body.Bytes())
+			switch summary.Status {
+			case trace.SCEPPending:
+				status = http.StatusAccepted
+			case trace.SCEPFailure:
+				status = http.StatusBadRequest
+			}
+		}
+		maps.Copy(w.Header(), rec.Header())
+		w.WriteHeader(status)
+		_, _ = w.Write(rec.Body.Bytes())
+	})
+}
+
+// lastSCEPResponse returns the last response of the exchange.
+func lastSCEPResponse(doc map[string]any) any {
+	events, _ := doc["exchange"].([]any)
+	for _, ev := range slices.Backward(events) {
+		if get(ev, "kind") == "response" {
+			return ev
+		}
+	}
+	return nil
+}
+
+// TestSCEPCertRepWithErrorStatus checks enrollment, a refusal, inspect and lint against a server
+// that sends PENDING and FAILURE CertReps with HTTP 202 and 400.
+func TestSCEPCertRepWithErrorStatus(t *testing.T) {
+	useChallenge(t, scepTestChallenge)
+	srv := startSCEPServer(t, scepca.Options{Challenge: []byte(scepTestChallenge), PendingPolls: 1}, scepserver.Options{},
+		pkiStatusAsHTTPStatus)
+	dir := t.TempDir()
+	capture := filepath.Join(dir, "run.jsonl")
+	code, doc := runJSON(t, srv.trusted("enroll", "--subject", "CN=accepted", "--poll-later", "--capture", capture,
+		"--cert-out", filepath.Join(dir, "cert.pem"), "--key-out", filepath.Join(dir, "key.pem"))...)
+	resp := lastSCEPResponse(doc)
+	if code != exitOK || get(doc, "result.status") != "PENDING" || get(resp, "httpStatus") != float64(http.StatusAccepted) ||
+		get(resp, "messageType") != "CertRep" || get(resp, "status") != "PENDING" {
+		t.Fatalf("enroll: exit %d, response %v, error %v", code, resp, doc["error"])
+	}
+	if code, doc := runJSON(t, "scep", "poll", "--state", filepath.Join(dir, "cert.pem.state")); code != exitOK {
+		t.Fatalf("poll: exit %d, error %v", code, doc["error"])
+	}
+
+	wrong := filepath.Join(dir, "wrong.txt")
+	writeFile(t, wrong, []byte("wrong\n"))
+	refused := srv.trusted("enroll", "--subject", "CN=refused", "--challenge-file", wrong, "--capture", capture,
+		"--cert-out", filepath.Join(dir, "refused.pem"), "--key-out", filepath.Join(dir, "refused.key"))
+	code, doc = runJSON(t, refused...)
+	resp = lastSCEPResponse(doc)
+	if code != exitRejected || get(doc, "error.status") != "FAILURE" || text(get(doc, "error.failInfo.0")) != "badRequest" ||
+		get(resp, "httpStatus") != float64(http.StatusBadRequest) || get(resp, "status") != "FAILURE" {
+		t.Errorf("wrong challenge: exit %d, response %v, error %v", code, resp, doc["error"])
+	}
+	code, stdout, stderr := run(t, refused...)
+	if code != exitRejected || !strings.Contains(removeSpace(stdout+stderr), "CertRepFAILUREbadRequestHTTP400") {
+		t.Errorf("ladder of the refusal: exit %d\n%s%s", code, stdout, stderr)
+	}
+
+	code, doc = runJSON(t, "inspect", capture)
+	messages, _ := get(doc, "result.messages").([]any)
+	var pending, failure bool
+	for _, m := range messages {
+		pending = pending || (get(m, "scep.httpStatus") == float64(http.StatusAccepted) && get(m, "scep.status") == "PENDING")
+		failure = failure || (get(m, "scep.httpStatus") == float64(http.StatusBadRequest) && get(m, "scep.failInfo") == "badRequest")
+	}
+	if code != exitOK || !pending || !failure {
+		t.Errorf("inspect: exit %d, PENDING with HTTP 202 %v, FAILURE with HTTP 400 %v", code, pending, failure)
+	}
+	if code, doc := runJSON(t, "lint", capture); code != exitOK {
+		t.Errorf("lint: exit %d, result %v, error %v", code, doc["result"], doc["error"])
 	}
 }
 
