@@ -50,6 +50,40 @@ func TestLadder(t *testing.T) {
 	}
 }
 
+// TestLadderSCEP checks the labels of SCEP requests and answers.
+func TestLadderSCEP(t *testing.T) {
+	w, b := plain()
+	l := NewLadder(w, "certrally", "scep.example.com")
+	retry := 10
+	events := []trace.Event{
+		{Kind: trace.Request, SCEP: &trace.SCEPSummary{Method: "GET", Operation: trace.SCEPGetCACert, CAName: "Issuing CA"}},
+		{Kind: trace.Response, HTTPStatus: 200, SCEP: &trace.SCEPSummary{Operation: trace.SCEPGetCACert}},
+		{Kind: trace.Response, HTTPStatus: 200, Size: 30, SCEP: &trace.SCEPSummary{Operation: trace.SCEPGetCACaps,
+			Capabilities: []string{"SHA-1", "DES3"}}},
+		{Kind: trace.Request, DER: make([]byte, 2048), SCEP: &trace.SCEPSummary{Method: "GET", Operation: trace.SCEPPKIOperation,
+			MessageType: "PKCSReq", Digest: "SHA-1", Cipher: "DES-EDE3-CBC"}},
+		{Kind: trace.Response, HTTPStatus: 200, Size: 900, SCEP: &trace.SCEPSummary{Operation: trace.SCEPPKIOperation,
+			MessageType: trace.SCEPCertRep, Status: trace.SCEPPending, Digest: "SHA-1"}},
+		{Kind: trace.Response, HTTPStatus: 200, Size: 900, SCEP: &trace.SCEPSummary{Operation: trace.SCEPPKIOperation,
+			MessageType: trace.SCEPCertRep, Status: trace.SCEPFailure, FailInfo: "badRequest"}},
+		{Kind: trace.Response, HTTPStatus: 503, SCEP: &trace.SCEPSummary{Operation: trace.SCEPPKIOperation, RetryAfter: &retry}},
+		{Kind: trace.Response, HTTPStatus: 400, SCEP: &trace.SCEPSummary{Operation: trace.SCEPGetCACert, Text: "unknown CA"}},
+	}
+	for _, ev := range events {
+		l.Event(ev)
+	}
+	out := b.String()
+	for _, want := range []string{
+		"GetCACert  GET  Issuing CA", "HTTP 200 OK  empty", "2 capabilities", "PKCSReq  GET  SHA-1 DES-EDE3-CBC  2.0 KiB",
+		"CertRep  PENDING", "CertRep  FAILURE  badRequest", "HTTP 503 Service Unavailable  retry after 10 s",
+		`HTTP 400 Bad Request  "unknown CA"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("ladder lacks %q:\n%s", want, out)
+		}
+	}
+}
+
 // TestReport checks alignment and that empty fields are left out.
 func TestReport(t *testing.T) {
 	w, b := plain()
