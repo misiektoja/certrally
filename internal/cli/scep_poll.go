@@ -149,9 +149,9 @@ func readSCEPState(path string) (*scepState, error) {
 func (st *scepState) request(kp *keyPassword, stdin io.Reader, prompt io.Writer) (*scepRequest, []*x509.Certificate, error) {
 	req := &scepRequest{transactionID: scep.TransactionID(st.TransactionID)}
 	switch st.MessageType {
-	case "PKCSReq":
+	case scepPKCSReq:
 		req.messageType = scep.PKCSReq
-	case "RenewalReq":
+	case scepRenewalReq:
 		req.messageType = scep.RenewalReq
 	default:
 		return nil, nil, fmt.Errorf("unknown message type %q", st.MessageType)

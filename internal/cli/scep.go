@@ -526,7 +526,7 @@ func (s *scepSession) refusal(err error) *failure {
 			Title:      "The SCEP server refused the request",
 			Message:    err.Error(),
 			HTTPStatus: httpErr.StatusCode,
-			Hint:       scepRefusalHint(httpErr.StatusCode, s.conn),
+			Hint:       scepRefusalHint(httpErr.StatusCode, s.lastMessageType(), s.conn),
 		}
 		if events := s.recorder.Events(); len(events) > 0 {
 			if e := events[len(events)-1].SCEP; e != nil {
@@ -554,8 +554,16 @@ func (s *scepSession) refusal(err error) *failure {
 	if info != "" {
 		f.FailInfo = []string{info}
 	}
-	f.Hint = scepFailInfoHints[info]
+	f.Hint = scepFailInfoHint(info, s.lastMessageType())
 	return f
+}
+
+// scepFailInfoHint suggests what to change for a failInfo in the answer to a message type.
+func scepFailInfoHint(info, messageType string) string {
+	if hint, ok := scepBadCertIDHints[messageType]; ok && info == "badCertId" {
+		return hint
+	}
+	return scepFailInfoHints[info]
 }
 
 // scepFailInfoHints suggests what to change for each failInfo of RFC 8894 section 3.2.1.4.
@@ -564,12 +572,36 @@ var scepFailInfoHints = map[string]string{
 	"badMessageCheck": "The CA could not verify the request signature. Try another --hash.",
 	"badRequest":      "The CA did not accept the request. Check the challenge password, --subject and --san.",
 	"badTime":         "The CA rejected the message time. Check the system clock.",
-	"badCertId":       "The CA does not know this certificate. Check --serial and --ca.",
+	"badCertId":       "The CA found no certificate that matches the request.",
+}
+
+// The names of the SCEP request message types, as in trace.SCEPSummary.MessageType.
+const (
+	scepPKCSReq    = "PKCSReq"
+	scepRenewalReq = "RenewalReq"
+	scepCertPoll   = "CertPoll"
+	scepGetCert    = "GetCert"
+	scepGetCRL     = "GetCRL"
+)
+
+// scepBadCertIDHints suggests what to check when the CA finds no certificate for a message type.
+var scepBadCertIDHints = map[string]string{
+	scepRenewalReq: "The CA does not renew the certificate in --cert. It may not have issued it, or it may renew " +
+		"only through a new enrollment.",
+	scepGetCert:  "The CA knows no certificate with this --serial and issuer. Check --serial and --issuer.",
+	scepGetCRL:   "The CA has no CRL for this certificate. Check --cert, or --serial and --issuer.",
+	scepCertPoll: "The CA has no pending request with this transaction ID. Check --server and --ca.",
 }
 
 // scepRefusalHint suggests what to change for an HTTP error status. It returns "" when it has
 // nothing.
-func scepRefusalHint(status int, c *scepConnection) string {
+func scepRefusalHint(status int, messageType string, c *scepConnection) string {
+	// Some servers refuse an enrollment with a wrong or missing challenge password, or with a subject
+	// they do not know, through an HTTP error instead of a FAILURE answer.
+	if (messageType == scepPKCSReq || messageType == scepRenewalReq) &&
+		(status == http.StatusBadRequest || status == http.StatusUnauthorized || status == http.StatusForbidden) {
+		return "The server did not accept the request. Check the challenge password, --subject and --ca."
+	}
 	switch status {
 	case http.StatusBadRequest:
 		if c.caName == "" {
@@ -604,7 +636,7 @@ func (s *scepSession) transportHint(err, problem error) string {
 	if strings.HasSuffix(problem.Error(), "with an empty body") {
 		// Some servers answer a message type they do not support without content.
 		switch t := s.lastMessageType(); t {
-		case "RenewalReq", "GetCert", "GetCRL":
+		case scepRenewalReq, scepGetCert, scepGetCRL:
 			return "The server answered without content. It may not support " + t + "."
 		}
 		if s.conn.caName == "" {
