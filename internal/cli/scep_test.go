@@ -24,6 +24,7 @@ import (
 	"github.com/misiektoja/certrally/internal/pemfile"
 	"github.com/misiektoja/certrally/internal/scepca"
 	"github.com/misiektoja/certrally/internal/secret"
+	"github.com/misiektoja/certrally/internal/trace"
 )
 
 // scepTestChallenge is the challenge password the SCEP test servers accept.
@@ -491,6 +492,57 @@ func TestSCEPEmptyPKIOperation(t *testing.T) {
 	for _, tt := range tests {
 		code, doc := runJSON(t, tt.args...)
 		if code != exitTransport || !strings.Contains(text(get(doc, "error.hint")), tt.hint) {
+			t.Errorf("%s: exit %d, error %v", tt.name, code, doc["error"])
+		}
+	}
+}
+
+// TestSCEPBadCertIDHint checks that the badCertId hint names what identifies the certificate in the
+// failed message.
+func TestSCEPBadCertIDHint(t *testing.T) {
+	tests := []struct{ messageType, want, not string }{
+		{"RenewalReq", "--cert", "--serial"},
+		{"GetCert", "--serial", ""},
+		{"GetCRL", "--cert", ""},
+		{"CertPoll", "pending request", "--serial"},
+	}
+	for _, tt := range tests {
+		hint := scepFailInfoHint("badCertId", tt.messageType)
+		if !strings.Contains(hint, tt.want) || (tt.not != "" && strings.Contains(hint, tt.not)) {
+			t.Errorf("%s: hint %q", tt.messageType, hint)
+		}
+	}
+}
+
+// TestSCEPEnrollRefused checks the hint and the server text when a server refuses a PKCSReq with an
+// HTTP error and an HTML or plain text page.
+func TestSCEPEnrollRefused(t *testing.T) {
+	useChallenge(t, scepTestChallenge)
+	tests := []struct {
+		name, contentType, body, text string
+		status                        int
+	}{
+		{"html", "text/html;charset=UTF-8", "<html><head><title>Error</title></head><body>No password in request.</body></html>",
+			"No password in request.", http.StatusBadRequest},
+		{"text", "text/plain", "Wrong username or password", "Wrong username or password", http.StatusUnauthorized},
+		{"forbidden", "text/html", "<html><body>User device not found.</body></html>", "User device not found.", http.StatusForbidden},
+	}
+	for _, tt := range tests {
+		srv := startSCEPServer(t, scepca.Options{}, scepserver.Options{}, func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Query().Get("operation") != trace.SCEPPKIOperation {
+					next.ServeHTTP(w, r)
+					return
+				}
+				w.Header().Set("Content-Type", tt.contentType)
+				w.WriteHeader(tt.status)
+				_, _ = w.Write([]byte(tt.body))
+			})
+		})
+		code, doc := runJSON(t, srv.trusted("enroll", "--subject", "CN=device", "--cert-out", filepath.Join(t.TempDir(), "device.pem"),
+			"--key-out", filepath.Join(t.TempDir(), "device.key"))...)
+		if code != exitRejected || get(doc, "error.statusText.0") != tt.text ||
+			!strings.Contains(text(get(doc, "error.hint")), "challenge password") {
 			t.Errorf("%s: exit %d, error %v", tt.name, code, doc["error"])
 		}
 	}
