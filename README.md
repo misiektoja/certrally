@@ -45,7 +45,7 @@ certrally is a command line client for certificate enrollment with the Certifica
 * JSON output, capture files and exit statuses for scripts
 * `inspect` and `lint` to decode recorded messages and check them
 
-Tested with EJBCA, Nokia NCM, Insta Certifier and the `openssl cmp` mock server over CMP, with Cisco libest over EST and with Nokia NCM and micromdm/scep over SCEP. See [docs/interop.md](docs/interop.md).
+Tested with EJBCA, Nokia NCM, Insta Certifier and the `openssl cmp` mock server over CMP, with Cisco libest over EST and with EJBCA, Nokia NCM, OpenXPKI and micromdm/scep over SCEP. See [docs/interop.md](docs/interop.md).
 
 ## Install
 
