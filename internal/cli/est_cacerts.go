@@ -37,6 +37,9 @@ type estCACertsOptions struct {
 	format      outFormat
 }
 
+// hintCheckFingerprint is the hint for CA certificates that a --fingerprint does not cover.
+const hintCheckFingerprint = "Do not trust these certificates. Check --fingerprint against the one the CA published."
+
 // newESTCACertsCommand returns est cacerts.
 func newESTCACertsCommand() *cobra.Command {
 	o := &estCACertsOptions{}
@@ -175,7 +178,7 @@ func runESTCACerts(ctx context.Context, o *estCACertsOptions, p *printer, stdin 
 				code:    exitProtocol,
 				Title:   "No CA certificate has the expected fingerprint",
 				Message: err.Error(),
-				Hint:    "Do not trust these certificates. Check --fingerprint against the one the CA published.",
+				Hint:    hintCheckFingerprint,
 			}, err)
 			listCACerts(p, certs, nil)
 			return ferr

@@ -47,17 +47,19 @@ func newInspectCommand() *cobra.Command {
 	o := &inspectOptions{}
 	cmd := &cobra.Command{
 		Use:   "inspect FILE... [flags]",
-		Short: "Decode CMP and EST messages from capture or message files",
+		Short: "Decode CMP, EST and SCEP messages from capture or message files",
 		Long: "Decode CMP messages and show their header, protection, body and extra certificates. Decode EST " +
 			"requests and responses and show the HTTP exchange, the PKCS#10 request, the certificates or the " +
-			"CSR attributes.\n\n" +
+			"CSR attributes. Decode the SCEP requests and responses of a capture file and show the HTTP exchange, " +
+			"the pkiMessage attributes and the certificates. The content of a pkiMessage is encrypted for its " +
+			"recipient, so inspect does not decode it.\n\n" +
 			fileArgsHelp + "\n\n" +
 			"certrally checks a signature with the certificates the message carries and those in --ca-cert. " +
 			"With --ca-cert it also checks that the signer chains to those certificates at the time the capture " +
 			"recorded the message, or at the current time for other files. It checks a MAC with " +
 			"the shared secret from --secret, --secret-file or the " + secret.EnvVar + " environment variable. " +
 			"inspect does not judge the messages. lint checks them against RFC 9483.\n\n" +
-			"Exit status: 0 success, 1 a file cannot be read or holds no CMP or EST message.",
+			"Exit status: 0 success, 1 a file cannot be read or holds no CMP, EST or SCEP message.",
 		Example: "  certrally enroll --server https://ca.example.com/.well-known/cmp --ref device-42 \\\n" +
 			"    --cert-out device.pem --key-out device.key --capture enroll.jsonl\n" +
 			"  certrally inspect enroll.jsonl",
@@ -226,6 +228,9 @@ func describeMessage(m cmpfile.Message, a *anchors) *messageReport {
 	if m.EST != nil {
 		return describeESTMessage(m)
 	}
+	if m.SCEP != nil {
+		return describeSCEPMessage(m)
+	}
 	msg := m.Msg
 	r := &messageReport{json: messageJSON{
 		Source:    m.Source,
@@ -269,7 +274,9 @@ func (r *messageReport) title() (title, details string) {
 	}
 	name := j.Body
 	parts := []string{ui.Sanitize(j.Source)}
-	if e := j.EST; e != nil {
+	switch {
+	case j.EST != nil:
+		e := j.EST
 		name = ui.Sanitize(cmp.Or(e.Operation, e.Content))
 		if e.HTTPStatus != 0 {
 			parts = append(parts, fmt.Sprintf("HTTP %d", e.HTTPStatus))
@@ -277,7 +284,16 @@ func (r *messageReport) title() (title, details string) {
 		if e.Operation != "" && e.Content != "" && e.Content != e.Operation {
 			parts = append(parts, e.Content)
 		}
-	} else {
+	case j.SCEP != nil:
+		e := j.SCEP
+		name = ui.Sanitize(cmp.Or(e.MessageType, e.Operation))
+		if e.HTTPStatus != 0 {
+			parts = append(parts, fmt.Sprintf("HTTP %d", e.HTTPStatus))
+		}
+		if e.Status != "" {
+			parts = append(parts, e.Status)
+		}
+	default:
 		parts = append(parts, j.Protection.Algorithm)
 	}
 	parts = append(parts, count(j.Size, "byte", "bytes"))
@@ -956,7 +972,7 @@ func statusResult(info pkicmp.PKIStatusInfo) statusJSON {
 func statusFields(info pkicmp.PKIStatusInfo) []ui.Field {
 	return []ui.Field{
 		{Name: fieldStatus, Value: info.Status.String()},
-		{Name: "Fail info", Value: strings.Join(trace.FailureNames(info.FailInfo), ", ")},
+		{Name: fieldFailInfo, Value: strings.Join(trace.FailureNames(info.FailInfo), ", ")},
 		{Name: "Status text", Value: quoteText(info.StatusString)},
 	}
 }

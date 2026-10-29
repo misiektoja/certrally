@@ -604,11 +604,11 @@ func (s *estSession) failure(err error) *failure {
 			Hint:    s.transportHint(err, problem),
 		}
 	case exitLocal:
-		return &failure{code: code, Title: "The request was not completed", Message: err.Error()}
+		return &failure{code: code, Title: titleNotCompleted, Message: err.Error()}
 	case exitProfile:
 		return profileFailure(err)
 	default:
-		return &failure{code: code, Title: "The exchange failed", Message: err.Error()}
+		return &failure{code: code, Title: titleExchangeFailed, Message: err.Error()}
 	}
 }
 

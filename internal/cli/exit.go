@@ -36,6 +36,12 @@ type exitError struct {
 	err  error
 }
 
+// Failure titles of a transport error that every protocol shares.
+const (
+	titleNotCompleted   = "The request was not completed"
+	titleExchangeFailed = "The exchange failed"
+)
+
 // Error returns the underlying error text.
 func (e *exitError) Error() string { return e.err.Error() }
 
@@ -104,7 +110,7 @@ func (f *failure) fields(rec *recording) []ui.Field {
 	case f.Status != "":
 		fields = append(fields,
 			ui.Field{Name: fieldStatus, Value: f.Status},
-			ui.Field{Name: "Fail info", Value: strings.Join(f.FailInfo, ", ")},
+			ui.Field{Name: fieldFailInfo, Value: strings.Join(f.FailInfo, ", ")},
 			ui.Field{Name: "CA says", Value: quoteText(f.StatusText)},
 		)
 	case f.HTTPStatus != 0:
@@ -114,8 +120,8 @@ func (f *failure) fields(rec *recording) []ui.Field {
 		}
 		fields = append(fields,
 			ui.Field{Name: fieldStatus, Value: fmt.Sprintf("HTTP %d %s", f.HTTPStatus, http.StatusText(f.HTTPStatus))},
-			ui.Field{Name: "Server says", Value: quoteText(f.StatusText)},
-			ui.Field{Name: "Retry after", Value: retry},
+			ui.Field{Name: fieldServerSays, Value: quoteText(f.StatusText)},
+			ui.Field{Name: fieldRetryAfter, Value: retry},
 		)
 	case f.code == exitTransport && rec != nil:
 		fields = append(fields, ui.Field{Name: fieldServer, Value: rec.server}, errorField(f.Message))
@@ -161,7 +167,7 @@ func (s *session) failure(err error) *failure {
 	case exitTransport:
 		return s.transportFailure(err)
 	case exitLocal:
-		return &failure{code: code, Title: "The request was not completed", Message: err.Error()}
+		return &failure{code: code, Title: titleNotCompleted, Message: err.Error()}
 	case exitProfile:
 		return profileFailure(err)
 	default:
@@ -169,7 +175,7 @@ func (s *session) failure(err error) *failure {
 		if hint == "" {
 			hint = verificationHint(err)
 		}
-		return &failure{code: code, Title: "The exchange failed", Message: err.Error(), Hint: hint}
+		return &failure{code: code, Title: titleExchangeFailed, Message: err.Error(), Hint: hint}
 	}
 }
 

@@ -53,6 +53,16 @@ const (
 	fieldForwardedBy = "Forwarded by"
 	// fieldFaults names the deliberately wrong messages that --fault sent.
 	fieldFaults = "Faults"
+	// fieldSHA256 and fieldSHA1 hold certificate fingerprints.
+	fieldSHA256 = "SHA-256"
+	fieldSHA1   = "SHA-1"
+	// fieldRequest describes what a request asked for.
+	fieldRequest = "Request"
+	// fieldFailInfo, fieldServerSays and fieldRetryAfter describe why and for how long a server
+	// refused a request.
+	fieldFailInfo   = "Fail info"
+	fieldServerSays = "Server says"
+	fieldRetryAfter = "Retry after"
 )
 
 // outputOptions holds the flags that choose how a command reports its outcome.
