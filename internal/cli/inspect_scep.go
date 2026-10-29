@@ -59,7 +59,9 @@ func describeSCEPMessage(m cmpfile.Message) *messageReport {
 	if rec.Problem != "" {
 		r.problem("%s", rec.Problem)
 	}
-	if len(m.DER) == 0 || rec.HTTPStatus >= http.StatusMultipleChoices {
+	// Some servers send a CertRep with an HTTP error status, so a pkiMessage is decoded whatever the
+	// status.
+	if len(m.DER) == 0 || (rec.HTTPStatus >= http.StatusMultipleChoices && e.MessageType == "") {
 		return r
 	}
 	switch {

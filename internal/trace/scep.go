@@ -25,6 +25,9 @@ const (
 	SCEPPKIOperation   = "PKIOperation"
 )
 
+// scepPKIMessageType is the media type of a pkiMessage (RFC 8894 section 4.3).
+const scepPKIMessageType = "application/x-pki-message"
+
 // SCEP message types and statuses, as in SCEPSummary.MessageType and SCEPSummary.Status.
 const (
 	SCEPCertRep = "CertRep"
@@ -161,7 +164,11 @@ func SummarizeSCEPResponse(operation string, resp *http.Response, body []byte) (
 	s := &SCEPSummary{Operation: operation, RetryAfter: retryAfter(resp.Header.Get("Retry-After"))}
 	if resp.StatusCode != http.StatusOK {
 		mediaType, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
-		if isErrorType(mediaType) || mediaType == "text/html" {
+		switch {
+		// Some servers send a PENDING or FAILURE CertRep with an HTTP error status, such as 202 or 400.
+		case operation == SCEPPKIOperation && mediaType == scepPKIMessageType && len(body) > 0:
+			s.pkiMessage(body)
+		case isErrorType(mediaType) || mediaType == "text/html":
 			s.Text = errorText(body)
 		}
 		return s, body

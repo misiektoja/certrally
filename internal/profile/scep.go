@@ -33,9 +33,10 @@ var scepContentTypes = map[string]struct{ mediaType, rule string }{
 }
 
 // CheckSCEP returns the rules of RFC 8894 that a SCEP response breaks. The go-scep client accepts
-// these deviations.
+// these deviations. Error answers are not checked unless they carry a CertRep, which some servers
+// send with an HTTP error status.
 func CheckSCEP(r SCEPResponse) []Finding {
-	if r.HTTPStatus != http.StatusOK || len(r.Body) == 0 {
+	if len(r.Body) == 0 || (r.HTTPStatus != http.StatusOK && r.MessageType == "") {
 		return nil
 	}
 	var findings []Finding

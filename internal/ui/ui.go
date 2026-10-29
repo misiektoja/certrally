@@ -222,7 +222,7 @@ func scepResponseLabel(ev trace.Event, timing string) (string, lipgloss.Style) {
 	switch {
 	case e.Problem != "":
 		style, parts = bad, []string{status, e.Problem}
-	case ev.HTTPStatus == http.StatusOK && e.MessageType != "":
+	case e.MessageType != "":
 		parts = []string{e.MessageType}
 		if e.Status != "" {
 			parts = append(parts, e.Status)
@@ -236,6 +236,9 @@ func scepResponseLabel(ev trace.Event, timing string) (string, lipgloss.Style) {
 		case trace.SCEPSuccess:
 		default:
 			style = bad
+		}
+		if ev.HTTPStatus != http.StatusOK {
+			details = append(details, fmt.Sprintf("HTTP %d", ev.HTTPStatus))
 		}
 		if e.Digest != "" {
 			details = append(details, e.Digest)
