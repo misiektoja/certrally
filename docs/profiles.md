@@ -64,7 +64,7 @@ An HTTP error from the EST server ends the command with exit status 3 in both pr
 | A GetNextCACert answer has the content type `application/x-x509-next-ca-cert` | RFC 8894 section 4.7.1 |
 | A CertRep has a senderNonce attribute | RFC 8894 section 3.2.1 |
 
-With `compatible`, certrally drops control characters around each capability and accepts the answer. Only answers with HTTP status 200 and content are checked.
+With `compatible`, certrally drops control characters around each capability and accepts the answer. certrally checks only answers that have content and either HTTP status 200 or a CertRep.
 
 A FAILURE answer ends the command with exit status 3 in both profiles, and so does an HTTP error status such as `503 Service Unavailable` once the retries are used up. An answer without content, a redirect, a `404 Not Found` or a web page ends it with exit status 2.
 

@@ -104,7 +104,7 @@ An EST enrollment records its connection, the request and the response:
 | `certificates` | The number of certificates in an EST `certs-only` response, in the certificate part of a `serverkeygen` response or in a SCEP certificate answer |
 | `retryAfter` | The seconds the `Retry-After` header of an EST or SCEP response asks for |
 | `parts` | The parts of an EST `serverkeygen` response, each with `contentType` and `size`. The key part is never decoded or stored |
-| `text` | The text of an EST or SCEP error response, as the server sent it |
+| `text` | The text of an EST or SCEP error response, as the server sent it. For a SCEP error page in HTML, the text of the page without its markup |
 | `tls` | The connection of a `connect` record: `version`, `cipherSuite`, `server` with the subject of the server certificate and `srpUser` for a TLS-SRP sign-in |
 | `problem` | Why a response cannot be a CMP, EST or SCEP answer (for example `HTTP 404 Not Found`), why its EST message does not decode or why a request failed |
 | `der` | The message bytes. For EST, the decoded body, and for `serverkeygen` only its certificate part. For SCEP, the pkiMessage of a request, also when it travels in the URL, or the body of a response. Only capture files include them |

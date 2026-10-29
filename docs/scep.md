@@ -30,6 +30,8 @@ Over HTTPS the server certificate is checked against the system roots or `--tls-
 
 A PKCSReq carries a challenge password that authorizes the request. It comes from `--challenge`, `--challenge-file` (`-` reads standard input) or the `CERTRALLY_CHALLENGE` environment variable, in that order. certrally never asks for it, because many servers need none. Other users of the machine can see `--challenge` in the process list. Some servers also check the challenge password in a RenewalReq, so `scep renew` accepts the same flags.
 
+Some servers refuse a missing or wrong challenge password with an HTTP error such as `400 Bad Request` or `403 Forbidden` instead of a FAILURE answer. Some do the same for a subject they do not know. certrally exits with status 3, shows the text of the error page and suggests checking the challenge password, `--subject` and `--ca`.
+
 ## Algorithms
 
 Before a PKIOperation certrally sends GetCACaps and picks the algorithms from the answer:
@@ -48,7 +50,7 @@ certrally decrypts answers encrypted with AES or DES-EDE3-CBC and always with th
 
 ## Waiting for the CA
 
-A CA that an operator must approve answers PENDING. `scep enroll` and `scep renew` then send CertPoll every `--poll-interval` (default 30 seconds) until the CA issues or rejects the certificate, within `--timeout` (default 5 minutes). `--poll-later` stops at the first PENDING answer.
+A CA that an operator must approve answers PENDING. `scep enroll` and `scep renew` then send CertPoll every `--poll-interval` (default 30 seconds) until the CA issues or rejects the certificate, within `--timeout` (default 5 minutes). `--poll-later` stops at the first PENDING answer. Some servers send a PENDING answer with HTTP `202 Accepted` and a FAILURE answer with `400 Bad Request`. certrally reads the CertRep whatever the HTTP status.
 
 A request that is still pending is saved in a state file, by default the `--cert-out` file name with `.state` appended, or the file in `--state`. It holds the request, the certificate that signs it, the temporary signer key when there is one, the CA certificates and the output file names. It never holds the challenge password. It is written with mode 0600 and removed once the CA decides. At the end of `--timeout`, certrally keeps the state file and exits with status 2.
 
@@ -60,7 +62,7 @@ certrally scep poll --state device.pem.state
 
 ## Renewal
 
-`scep renew` sends a RenewalReq signed with the certificate in `--cert` and its key in `--key`, which must be RSA. The request repeats the subject and subjectAltName of the certificate. A new key is generated unless `--new-key` or `--csr` supplies one. The server must list Renewal in its capabilities. certrally warns when it does not.
+`scep renew` sends a RenewalReq signed with the certificate in `--cert` and its key in `--key`, which must be RSA. The request repeats the subject and subjectAltName of the certificate. A new key is generated unless `--new-key` or `--csr` supplies one. The server must list Renewal in its capabilities. certrally warns when it does not. Some servers list Renewal and still answer a RenewalReq with FAILURE and `badCertId`. They may expect a PKCSReq signed with the current certificate instead, which certrally does not send.
 
 ## Certificates and CRLs from the CA
 
