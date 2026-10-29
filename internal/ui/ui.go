@@ -1,4 +1,5 @@
-// Package ui renders the ladder view of a CMP or EST exchange and the result reports of certrally.
+// Package ui renders the ladder view of a CMP, EST or SCEP exchange and the result reports of
+// certrally.
 package ui
 
 import (
@@ -90,6 +91,10 @@ func requestLabel(ev trace.Event) string {
 	if e := ev.EST; e != nil {
 		return estRequestLabel(e, ev.Size)
 	}
+	if e := ev.SCEP; e != nil {
+		// A GET request carries its pkiMessage in the URL, so its size is that of the pkiMessage.
+		return scepRequestLabel(e, max(ev.Size, len(ev.DER)))
+	}
 	if ev.Message == nil {
 		return label(request, "request", formatSize(ev.Size))
 	}
@@ -104,6 +109,9 @@ func responseLabel(ev trace.Event) (string, lipgloss.Style) {
 	}
 	if ev.EST != nil {
 		return estResponseLabel(ev, timing)
+	}
+	if ev.SCEP != nil {
+		return scepResponseLabel(ev, timing)
 	}
 	m := ev.Message
 	if m == nil {
@@ -186,6 +194,76 @@ func estResponseLabel(ev trace.Event, timing string) (string, lipgloss.Style) {
 		details = formatSize(ev.Size) + "  " + timing
 	}
 	return label(style, strings.Join(parts, "  "), details), style
+}
+
+// scepRequestLabel describes a SCEP request by its operation or message type, its method and the CA
+// name or the algorithms of its pkiMessage.
+func scepRequestLabel(e *trace.SCEPSummary, size int) string {
+	details := []string{e.Method}
+	switch {
+	case e.CAName != "":
+		details = append(details, e.CAName)
+	case e.Digest != "":
+		details = append(details, strings.TrimSpace(e.Digest+" "+e.Cipher))
+	}
+	if size > 0 {
+		details = append(details, formatSize(size))
+	}
+	return label(request, Sanitize(e.Label()), Sanitize(strings.Join(details, "  ")))
+}
+
+// scepResponseLabel describes a SCEP response and returns the style its arrow uses.
+func scepResponseLabel(ev trace.Event, timing string) (string, lipgloss.Style) {
+	e := ev.SCEP
+	status := fmt.Sprintf("HTTP %d %s", ev.HTTPStatus, http.StatusText(ev.HTTPStatus))
+	style := good
+	var parts []string
+	details := []string{}
+	switch {
+	case e.Problem != "":
+		style, parts = bad, []string{status, e.Problem}
+	case ev.HTTPStatus == http.StatusOK && e.MessageType != "":
+		parts = []string{e.MessageType}
+		if e.Status != "" {
+			parts = append(parts, e.Status)
+		}
+		if e.FailInfo != "" {
+			parts = append(parts, e.FailInfo)
+		}
+		switch e.Status {
+		case trace.SCEPPending:
+			style = warn
+		case trace.SCEPSuccess:
+		default:
+			style = bad
+		}
+		if e.Digest != "" {
+			details = append(details, e.Digest)
+		}
+	case ev.HTTPStatus == http.StatusOK && e.Operation == trace.SCEPGetCACaps:
+		parts = []string{plural(len(e.Capabilities), "capability", "capabilities")}
+	case ev.HTTPStatus == http.StatusOK && ev.Size == 0:
+		style, parts = warn, []string{status, "empty"}
+	case ev.HTTPStatus == http.StatusOK && e.Certificates > 0:
+		parts = []string{plural(e.Certificates, "certificate", "certificates")}
+	case ev.HTTPStatus/100 == 2:
+		parts = []string{status}
+	case ev.HTTPStatus == http.StatusServiceUnavailable:
+		style, parts = warn, []string{status}
+	default:
+		style, parts = bad, []string{status}
+		if e.Text != "" {
+			parts = append(parts, fmt.Sprintf("%q", Sanitize(e.Text)))
+		}
+	}
+	if e.RetryAfter != nil {
+		parts = append(parts, fmt.Sprintf("retry after %d s", *e.RetryAfter))
+	}
+	if ev.Size > 0 {
+		details = append(details, formatSize(ev.Size))
+	}
+	details = append(details, timing)
+	return label(style, Sanitize(strings.Join(parts, "  ")), strings.Join(details, "  ")), style
 }
 
 // plural returns n followed by the singular or plural noun.

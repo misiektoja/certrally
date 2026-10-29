@@ -1,6 +1,6 @@
 // Package profile checks CMP responses against the rules of the Lightweight CMP Profile (RFC 9483)
 // and RFC 9810 that the go-pki-cmp client relaxes for interoperability. CheckEST checks EST
-// responses against RFC 7030 in the same way.
+// responses against RFC 7030 and CheckSCEP checks SCEP responses against RFC 8894 in the same way.
 //
 // The client already rejects a response with the wrong transaction ID, wrong nonces or a protection
 // that does not verify. Check covers deviations that the client accepts. CheckReply covers the

@@ -1,4 +1,4 @@
-// Package cmpfile reads CMP and EST messages from capture files and from files that hold one message
+// Package cmpfile reads CMP, EST and SCEP messages from capture files and from files that hold one message
 // as DER, PEM, base64 or hex.
 package cmpfile
 
@@ -25,7 +25,7 @@ import (
 	"github.com/misiektoja/certrally/internal/trace"
 )
 
-// Message is a CMP or EST message read from a file.
+// Message is a CMP, EST or SCEP message read from a file.
 type Message struct {
 	// Source locates the message, such as "run.jsonl:4" for line 4 of a capture file or "ip.der".
 	Source string
@@ -48,6 +48,9 @@ type Message struct {
 	// EST describes an EST message. A capture records the HTTP exchange. For other files only Kind
 	// and Content are set. It is nil for a CMP message.
 	EST *trace.Record
+	// SCEP describes a SCEP message, which only a capture records. DER then holds the pkiMessage of
+	// a request and the body of a response.
+	SCEP *trace.Record
 }
 
 // Kinds of capture lines that hold a message.
@@ -263,13 +266,19 @@ type captureLine struct {
 	DER      []byte    `json:"der"`
 }
 
+// Protocols of a capture run besides CMP, as the start line names them.
+const (
+	protocolEST  = "est"
+	protocolSCEP = "scep"
+)
+
 // captureFormat is the newest capture format Parse understands.
 const captureFormat = 1
 
 // parseCapture returns the messages of every run in a capture file. In a CMP run, requests without
 // a response, failures and responses that are not CMP messages, such as an HTML error page, are
-// skipped. In an EST run every request and response is kept, because the HTTP exchange is the EST
-// message even without a body. Connections and failures are skipped.
+// skipped. In an EST or SCEP run every request and response is kept, because the HTTP exchange is
+// the message even without a body. Connections and failures are skipped.
 func parseCapture(name string, data []byte) ([]Message, error) {
 	var msgs []Message
 	run, server, protocol := 0, "", ""
@@ -295,12 +304,12 @@ func parseCapture(name string, data []byte) ([]Message, error) {
 			}
 			run, server, protocol = run+1, line.Server, line.Protocol
 		case kindRequest, kindResponse:
-			if protocol == "est" {
+			if protocol == protocolEST || protocol == protocolSCEP {
 				var rec trace.Record
 				if err := json.Unmarshal(text, &rec); err != nil {
 					return nil, fmt.Errorf("%s:%d: not a capture line: %w", name, n, err)
 				}
-				msgs = append(msgs, Message{
+				m := Message{
 					Source:  fmt.Sprintf("%s:%d", name, n),
 					File:    name,
 					Run:     max(run, 1),
@@ -308,8 +317,13 @@ func parseCapture(name string, data []byte) ([]Message, error) {
 					Time:    line.Time,
 					Server:  server,
 					DER:     rec.DER,
-					EST:     &rec,
-				})
+				}
+				if protocol == protocolSCEP {
+					m.SCEP = &rec
+				} else {
+					m.EST = &rec
+				}
+				msgs = append(msgs, m)
 				continue
 			}
 			if len(line.DER) == 0 || line.Body == "" {
@@ -338,7 +352,7 @@ func parseCapture(name string, data []byte) ([]Message, error) {
 		return nil, fmt.Errorf("%s: not a capture file, it has no start line", name)
 	}
 	if len(msgs) == 0 {
-		return nil, fmt.Errorf("%s: the capture holds no CMP or EST message", name)
+		return nil, fmt.Errorf("%s: the capture holds no CMP, EST or SCEP message", name)
 	}
 	return msgs, nil
 }
