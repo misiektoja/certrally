@@ -2,6 +2,21 @@
 
 Notable changes to certrally. Versions follow the `vMAJOR.MINOR.PATCH` tags published in this repository.
 
+## v0.4.0 - TBD
+
+This release adds SCEP (RFC 8894) under `certrally scep`: enrollment, renewal, pending requests, CA certificates, queries and a SCEP test CA.
+
+### SCEP
+
+* **`scep enroll` and `scep renew`** request and renew certificates with PKCSReq and RenewalReq for RSA or ECDSA keys. The challenge password comes from `--challenge`, `--challenge-file` or `CERTRALLY_CHALLENGE` and a server with several CAs needs `--ca`. certrally picks the digest, cipher and HTTP method from the server capabilities. `--hash` and `--cipher` choose others, down to SHA-1, MD5 and DES for old CAs. **`--allow-des`** accepts answers that a server encrypts with single DES.
+* **`scep poll`** collects a certificate that the CA keeps pending, for example until an operator approves it. `scep enroll` and `scep renew` poll on their own within `--timeout` and save a request that is still pending in a state file for `scep poll`. `--poll-later` stops at the first PENDING answer.
+* **`scep cacert`, `scep chain` and `scep nextca`** get the CA and RA certificates, the chain up to the root and the next CA certificate. `--fingerprint` checks a SHA-256 or SHA-1 fingerprint and `--out` saves the checked certificates for `--ca-cert`.
+* **`scep caps`, `scep getcert` and `scep getcrl`** list the server capabilities and get a certificate by its serial number or a CRL.
+* **CertReps sent with an HTTP error status**, such as PENDING with 202 or FAILURE with 400, are read like any other answer. When a server refuses an enrollment with an HTTP error, certrally shows the text of its error page without HTML markup and suggests checking the challenge password, `--subject` and `--ca`.
+* **HTTP 503 answers are sent again** up to `--busy-retries` times, after `Retry-After` or `--busy-wait`. `--proxy` also takes a SOCKS5 proxy for SCEP.
+* **`certrally scep mock`** runs a SCEP test CA on `127.0.0.1:8090`. Its flags add an RA certificate, a next CA certificate, pending requests, busy answers and the capabilities of an old CA.
+* **SCEP answers are checked against RFC 8894**, such as a GetCACaps list with a NUL byte or a CertRep without senderNonce. `--json`, `--capture`, `inspect` and `lint` work with the SCEP commands. See [SCEP details](https://github.com/misiektoja/certrally/blob/v0.4.0/docs/scep.md).
+
 ## v0.3.0 - 27 Oct 2026
 
 This release takes secrets on the command line and asks before it replaces existing output files. It fixes the fingerprint question of `est cacerts --bootstrap`.
