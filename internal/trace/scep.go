@@ -7,8 +7,10 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"html"
 	"mime"
 	"net/http"
+	"regexp"
 	"strings"
 	"unicode"
 
@@ -168,7 +170,9 @@ func SummarizeSCEPResponse(operation string, resp *http.Response, body []byte) (
 		// Some servers send a PENDING or FAILURE CertRep with an HTTP error status, such as 202 or 400.
 		case operation == SCEPPKIOperation && mediaType == scepPKIMessageType && len(body) > 0:
 			s.pkiMessage(body)
-		case isErrorType(mediaType) || mediaType == "text/html":
+		case mediaType == "text/html":
+			s.Text = htmlText(body)
+		case isErrorType(mediaType):
 			s.Text = errorText(body)
 		}
 		return s, body
@@ -193,6 +197,27 @@ func SummarizeSCEPResponse(operation string, resp *http.Response, body []byte) (
 		s.pkiMessage(body)
 	}
 	return s, body
+}
+
+// htmlHidden matches the HTML elements whose text a browser does not show in the page. Go regular
+// expressions have no back references, so a closing tag of another of these elements also ends a
+// match, which only shortens the page text.
+var htmlHidden = regexp.MustCompile(`(?is)<(head|script|style)\b.*?</(?:head|script|style)\s*>`)
+
+// htmlTag matches an HTML tag or comment.
+var htmlTag = regexp.MustCompile(`(?s)<!--.*?-->|<[^>]*>`)
+
+// htmlText returns the text of an HTML error page, as some SCEP servers send, with white space
+// collapsed. It is the text of the page body, or of the whole page when the body has none.
+func htmlText(body []byte) string {
+	text := func(page string) string {
+		return strings.Join(strings.Fields(html.UnescapeString(htmlTag.ReplaceAllString(page, " "))), " ")
+	}
+	visible := text(htmlHidden.ReplaceAllString(string(body), " "))
+	if visible == "" {
+		visible = text(string(body))
+	}
+	return errorText([]byte(visible))
 }
 
 // capabilityKeywords splits a GetCACaps answer into its keywords. RFC 8894 section 3.5.2 separates
