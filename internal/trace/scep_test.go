@@ -179,6 +179,11 @@ func TestRecorderSCEPResponses(t *testing.T) {
 			problem: "HTTP 200 OK with text/html instead of a SCEP answer"},
 		{name: "redirect", operation: "GetCACert", status: 302, problem: "HTTP 302 Found"},
 		{name: "refused", operation: "GetCACert", status: 400, contentType: "text/plain", body: "unknown CA", text: "unknown CA"},
+		{name: "html error page", operation: "PKIOperation", status: 400, contentType: "text/html;charset=UTF-8",
+			body: "<html><head><title>Error</title><style>p{}</style></head><body><p>No password\n in &quot;request&quot;.</p></body></html>",
+			text: `No password in "request".`},
+		{name: "html title only", operation: "GetCACert", status: 500, contentType: "text/html",
+			body: "<html><head><title>Internal error</title></head><body></body></html>", text: "Internal error"},
 	}
 	for _, tt := range tests {
 		h := http.Header{}
