@@ -41,7 +41,9 @@ certrally inspect run.jsonl --ca-cert ca.pem
 
 For EST it shows the HTTP exchange from a capture and the PKCS#10 request, the certificates or the CSR attributes. It also reads PKCS#10 requests, PKCS#7 certificate files and CSR attributes saved as files.
 
-For SCEP it reads capture files only. It shows the HTTP exchange, the capabilities and certificates of the answers and, for a pkiMessage, the message type, transaction ID, nonces, status, digest and cipher. The encrypted content is listed with its recipient and size, because only the recipient can decrypt it. The certificates the pkiMessage carries are listed with the signer marked. `inspect` does not check SCEP signatures.
+For SCEP it reads capture files only. It shows the HTTP exchange, the capabilities and certificates of the answers and, for a pkiMessage, the message type, transaction ID, nonces, status, digest and cipher. The encrypted content is listed with its recipient and size, because only the recipient can decrypt it. The certificates the pkiMessage carries are listed with the signer marked.
+
+`inspect` checks the signature of every pkiMessage and GetNextCACert answer. Some servers send a CertRep without the signer certificate, so certrally also looks for it in `--ca-cert` and in the GetCACert and GetCACertChain answers of the files it reads. Without it the signature stays unchecked. A signature whose signing time lies outside the validity of the signer certificate is invalid.
 
 certrally checks a signature with the certificates in the message and in `--ca-cert`, even when the signer certificate has expired. When `senderKID` names none of them, a certificate that verifies the signature still counts as the signer. With `--ca-cert` it also checks that the signer chains to those certificates. It checks the chain at the time the capture recorded the message. For other files it uses the current time. It checks a MAC with the shared secret from `--secret`, `--secret-file` or `CERTRALLY_SECRET` and leaves it unchecked without one.
 

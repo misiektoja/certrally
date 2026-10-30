@@ -97,6 +97,7 @@ Tested over HTTP with the `generic` SCEP endpoint of the OpenXPKI sample configu
 * A pending request gets a PENDING CertRep with HTTP `202 Accepted`. certrally treats it as any PENDING answer and saves the state file. `scep poll --once` gets PENDING with HTTP 202 again.
 * A PKCSReq with a wrong challenge password is kept pending as well, not refused, so `scep enroll` polls until `--timeout`.
 * A RenewalReq gets a FAILURE CertRep with `badCertId` and HTTP `400 Bad Request`, although the server lists Renewal. certrally exits with status 3.
+* `inspect` verifies the signatures of the requests and of the CertReps, which the RA certificate signs.
 * GetCACertChain gets `400 Bad Request` "Unknown operation" and GetNextCACert gets `500 Internal Server Error`. `scep chain` and `scep nextca` exit with status 3.
 
 ### micromdm/scep 2.3.0
