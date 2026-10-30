@@ -3,9 +3,14 @@ package cli
 import (
 	"bytes"
 	"context"
+	"crypto"
 	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha1" //nolint:gosec // G505: SCEP fingerprints may be SHA-1.
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"maps"
@@ -265,6 +270,44 @@ func TestSCEPEnroll(t *testing.T) {
 			t.Errorf("exit %d, error %v", code, doc["error"])
 		}
 	})
+}
+
+// TestSCEPCSRDigest checks that --hash also selects the digest of the PKCS#10 signature, with and
+// without a challenge password. MD5, which crypto/x509 does not sign with, keeps the default.
+func TestSCEPCSRDigest(t *testing.T) {
+	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p384, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name      string
+		key       crypto.Signer
+		digest    crypto.Hash
+		challenge string
+		want      x509.SignatureAlgorithm
+	}{
+		{"RSA SHA-1", rsaKey, crypto.SHA1, "pw", x509.SHA1WithRSA},
+		{"RSA SHA-1 without challenge", rsaKey, crypto.SHA1, "", x509.SHA1WithRSA},
+		{"ECDSA SHA-1", p384, crypto.SHA1, "pw", x509.ECDSAWithSHA1},
+		{"RSA SHA-512", rsaKey, crypto.SHA512, "pw", x509.SHA512WithRSA},
+		{"RSA MD5", rsaKey, crypto.MD5, "pw", x509.SHA256WithRSA},
+		{"ECDSA P-384 default", p384, 0, "pw", x509.ECDSAWithSHA384},
+	}
+	o := &scepEnrollOptions{subject: "CN=device"}
+	for _, tt := range tests {
+		csr, err := o.createCSR(tt.key, nil, tt.challenge, tt.digest)
+		if err != nil {
+			t.Errorf("%s: %v", tt.name, err)
+			continue
+		}
+		if csr.SignatureAlgorithm != tt.want || csr.CheckSignature() != nil {
+			t.Errorf("%s: signed with %s, want %s, check %v", tt.name, csr.SignatureAlgorithm, tt.want, csr.CheckSignature())
+		}
+	}
 }
 
 // TestSCEPRenewAndQueries checks RenewalReq, GetCert and GetCRL with a certificate the CA issued.
