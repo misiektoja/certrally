@@ -11,6 +11,7 @@ import (
 	"crypto/sha1" //nolint:gosec // G505: SCEP fingerprints may be SHA-1.
 	"crypto/sha256"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/hex"
 	"encoding/json"
 	"maps"
@@ -715,6 +716,122 @@ func TestSCEPCaptureInspectAndLint(t *testing.T) {
 	if code != exitProfile || !strings.Contains(text(get(doc, "error.message")), "RFC 8894") ||
 		!strings.Contains(text(get(doc, "result.findings.0.text")), "NUL byte") {
 		t.Errorf("lint: exit %d, result %v, error %v", code, doc["result"], doc["error"])
+	}
+}
+
+// TestSCEPInspectSignature checks the signatures of a captured SCEP enrollment, the trust in their
+// signers with --ca-cert and a signature that no longer matches.
+func TestSCEPInspectSignature(t *testing.T) {
+	useChallenge(t, scepTestChallenge)
+	srv := startSCEPServer(t, scepca.Options{}, scepserver.Options{}, nil)
+	dir := t.TempDir()
+	capture := filepath.Join(dir, "run.jsonl")
+	code, doc := runJSON(t, srv.args("enroll", "--ca", "Issuing", "--subject", "CN=sig", "--capture", capture,
+		"--cert-out", filepath.Join(dir, "sig.pem"), "--key-out", filepath.Join(dir, "sig.key"))...)
+	if code != exitOK {
+		t.Fatalf("enroll exited with %d: %v", code, doc["error"])
+	}
+
+	code, doc = runJSON(t, "inspect", capture)
+	messages, _ := get(doc, "result.messages").([]any)
+	if code != exitOK || len(messages) != 6 {
+		t.Fatalf("inspect: exit %d, %d messages", code, len(messages))
+	}
+	req, resp := messages[4], messages[5]
+	if get(req, "protection.check") != checkValid || get(req, "protection.signer") != get(req, "certificates.0.subject") ||
+		get(req, "protection.algorithm") == nil || get(req, "protection.trusted") != nil {
+		t.Errorf("request protection: %v", get(req, "protection"))
+	}
+	if get(resp, "protection.check") != checkValid || get(resp, "protection.signer") != "CN=certrally SCEP Mock CA" {
+		t.Errorf("response protection: %v", get(resp, "protection"))
+	}
+
+	code, doc = runJSON(t, "inspect", "--ca-cert", srv.caFile, capture)
+	req, resp = get(doc, "result.messages.4"), get(doc, "result.messages.5")
+	if code != exitOK || get(req, "protection.trusted") != false || get(resp, "protection.trusted") != true {
+		t.Errorf("exit %d, request %v, response %v", code, get(req, "protection"), get(resp, "protection"))
+	}
+
+	// The signature value ends the request, so changing its last byte breaks the signature.
+	lines := bytes.Split(bytes.TrimSpace(readFile(t, capture)), []byte("\n"))
+	for i, line := range lines {
+		var rec map[string]any
+		if err := json.Unmarshal(line, &rec); err != nil {
+			t.Fatal(err)
+		}
+		if rec["messageType"] != "PKCSReq" {
+			continue
+		}
+		var der []byte
+		if err := json.Unmarshal([]byte(`"`+text(rec["der"])+`"`), &der); err != nil {
+			t.Fatal(err)
+		}
+		der[len(der)-1] ^= 0xff
+		rec["der"] = der
+		var err error
+		if lines[i], err = json.Marshal(rec); err != nil {
+			t.Fatal(err)
+		}
+	}
+	changed := filepath.Join(dir, "changed.jsonl")
+	writeFile(t, changed, append(bytes.Join(lines, []byte("\n")), '\n'))
+	code, doc = runJSON(t, "inspect", changed)
+	if p := get(doc, "result.messages.4.protection"); code != exitOK || get(p, "check") != checkInvalid || get(p, "problem") == nil {
+		t.Errorf("changed request: exit %d, protection %v", code, p)
+	}
+}
+
+// TestSCEPInspectSignerElsewhere checks a CertRep that does not carry its signer certificate. inspect
+// finds the signer among the GetCACert answers of its inputs and the --ca-cert certificates.
+func TestSCEPInspectSignerElsewhere(t *testing.T) {
+	now := time.Now()
+	key, cert := testCertificate(t, &x509.Certificate{
+		Subject:   pkix.Name{CommonName: "SCEP RA"},
+		NotBefore: now.Add(-time.Hour),
+		NotAfter:  now.Add(time.Hour),
+	}, nil, nil)
+	sd, err := pkcs7.NewSignedData(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sd.AddSigner(cert, key, pkcs7.SignerInfoConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	sd.RemoveCertificates()
+	der, err := sd.Finish()
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := func(v map[string]any) string {
+		b, err := json.Marshal(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b) + "\n"
+	}
+	start := line(map[string]any{"kind": "start", "format": 1, "protocol": protocolSCEP, "server": "http://scep.example/scep", "time": now})
+	caCert := line(map[string]any{"kind": "response", "time": now, "httpStatus": 200, "operation": trace.SCEPGetCACert, "der": cert.Raw})
+	certRep := line(map[string]any{
+		"kind": "response", "time": now, "httpStatus": 200, "operation": trace.SCEPPKIOperation,
+		"messageType": "CertRep", "status": "FAILURE", "der": der,
+	})
+	dir := t.TempDir()
+	alone, withCACert, raFile := filepath.Join(dir, "alone.jsonl"), filepath.Join(dir, "with-cacert.jsonl"), filepath.Join(dir, "ra.pem")
+	writeFile(t, alone, []byte(start+certRep))
+	writeFile(t, withCACert, []byte(start+caCert+certRep))
+	writeFile(t, raFile, pemfile.EncodeCertificates([]*x509.Certificate{cert}))
+
+	code, doc := runJSON(t, "inspect", alone)
+	if p := get(doc, "result.messages.0.protection"); code != exitOK || get(p, "check") != checkUnchecked || get(p, "problem") == nil {
+		t.Errorf("without the signer: exit %d, protection %v", code, p)
+	}
+	code, doc = runJSON(t, "inspect", withCACert)
+	if p := get(doc, "result.messages.1.protection"); code != exitOK || get(p, "check") != checkValid || get(p, "signer") != "CN=SCEP RA" || get(p, "trusted") != nil {
+		t.Errorf("with a GetCACert answer: exit %d, protection %v", code, p)
+	}
+	code, doc = runJSON(t, "inspect", "--ca-cert", raFile, alone)
+	if p := get(doc, "result.messages.0.protection"); code != exitOK || get(p, "check") != checkValid || get(p, "trusted") != true {
+		t.Errorf("with --ca-cert: exit %d, protection %v", code, p)
 	}
 }
 
