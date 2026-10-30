@@ -355,6 +355,67 @@ func TestSCEPRenewAndQueries(t *testing.T) {
 	}
 }
 
+// noRenewalCaps answers GetCACaps without the Renewal capability, as servers that renew through a
+// PKCSReq do.
+func noRenewalCaps(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("operation") != "GetCACaps" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte("POSTPKIOperation\nSHA-256\nAES\n"))
+	})
+}
+
+// TestSCEPRenewPKCSReq checks scep renew --pkcsreq: a PKCSReq signed with the current certificate, no
+// warning about a missing Renewal capability and a PENDING answer that scep poll collects.
+func TestSCEPRenewPKCSReq(t *testing.T) {
+	useChallenge(t, scepTestChallenge)
+	srv := startSCEPServer(t, scepca.Options{Challenge: []byte(scepTestChallenge)}, scepserver.Options{}, noRenewalCaps)
+	dir := t.TempDir()
+	certOut, keyOut := filepath.Join(dir, "cert.pem"), filepath.Join(dir, "key.pem")
+	if code, doc := runJSON(t, srv.trusted("enroll", "--subject", "CN=dev", "--san", "dns:dev.example.com",
+		"--cert-out", certOut, "--key-out", keyOut)...); code != exitOK {
+		t.Fatalf("enroll exited with %d: %v", code, doc["error"])
+	}
+	cert := readCert(t, certOut)
+
+	renewed, capture := filepath.Join(dir, "renewed.pem"), filepath.Join(dir, "renew.jsonl")
+	code, doc := runJSON(t, srv.trusted("renew", "--pkcsreq", "--cert", certOut, "--key", keyOut, "--cert-out", renewed,
+		"--key-out", filepath.Join(dir, "renewed.key"), "--capture", capture)...)
+	if code != exitOK || get(doc, "result.messageType") != "PKCSReq" || scepRequests(doc) != "GetCACaps PKCSReq" ||
+		hasWarning(doc, "Renewal") {
+		t.Fatalf("renew --pkcsreq: exit %d, requests %q, warnings %v, error %v", code, scepRequests(doc), doc["warnings"], doc["error"])
+	}
+	if r := readCert(t, renewed); !bytes.Equal(r.RawSubject, cert.RawSubject) || len(r.DNSNames) != 1 ||
+		bytes.Equal(r.RawSubjectPublicKeyInfo, cert.RawSubjectPublicKeyInfo) {
+		t.Errorf("renewed %s with %v", r.Subject, r.DNSNames)
+	}
+	code, doc = runJSON(t, "inspect", capture)
+	req := get(doc, "result.messages.2")
+	if code != exitOK || get(req, "scep.messageType") != "PKCSReq" || get(req, "protection.check") != checkValid ||
+		get(req, "certificates.0.serial") != certificateResult(cert).Serial {
+		t.Errorf("inspect: exit %d, request %v", code, req)
+	}
+
+	pending := startSCEPServer(t, scepca.Options{Challenge: []byte(scepTestChallenge), PendingPolls: 1}, scepserver.Options{}, nil)
+	later := filepath.Join(dir, "later.pem")
+	code, doc = runJSON(t, pending.trusted("renew", "--pkcsreq", "--poll-later", "--cert", certOut, "--key", keyOut,
+		"--cert-out", later, "--key-out", filepath.Join(dir, "later.key"))...)
+	if code != exitOK || get(doc, "result.status") != "PENDING" {
+		t.Fatalf("renew --pkcsreq --poll-later: exit %d, result %v, error %v", code, doc["result"], doc["error"])
+	}
+	useChallenge(t, "")
+	code, stdout, stderr := run(t, "scep", "poll", "--state", later+".state", "--poll-interval", "10ms")
+	if code != exitOK || !strings.Contains(stdout+stderr, titleCertificateRenewed) {
+		t.Errorf("poll: exit %d, output %s%s", code, stdout, stderr)
+	}
+	if r := readCert(t, later); !bytes.Equal(r.RawSubject, cert.RawSubject) {
+		t.Errorf("collected %s", r.Subject)
+	}
+}
+
 // TestSCEPPending checks --poll-later, the state file, scep poll and polling within --timeout.
 func TestSCEPPending(t *testing.T) {
 	useChallenge(t, scepTestChallenge)
@@ -629,7 +690,7 @@ func TestSCEPCertRepWithErrorStatus(t *testing.T) {
 // failed message.
 func TestSCEPBadCertIDHint(t *testing.T) {
 	tests := []struct{ messageType, want, not string }{
-		{"RenewalReq", "--cert", "--serial"},
+		{"RenewalReq", "--pkcsreq", "--serial"},
 		{"GetCert", "--serial", ""},
 		{"GetCRL", "--cert", ""},
 		{"CertPoll", "pending request", "--serial"},
