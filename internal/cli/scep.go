@@ -589,8 +589,8 @@ const (
 
 // scepBadCertIDHints suggests what to check when the CA finds no certificate for a message type.
 var scepBadCertIDHints = map[string]string{
-	scepRenewalReq: "The CA does not renew the certificate in --cert. It may not have issued it, or it may renew " +
-		"only through a new enrollment.",
+	scepRenewalReq: "The CA does not renew the certificate in --cert. It may not have issued it, or it may expect " +
+		"a PKCSReq signed with --cert, which --pkcsreq sends.",
 	scepGetCert:  "The CA knows no certificate with this --serial and issuer. Check --serial and --issuer.",
 	scepGetCRL:   "The CA has no CRL for this certificate. Check --cert, or --serial and --issuer.",
 	scepCertPoll: "The CA has no pending request with this transaction ID. Check --server and --ca.",

@@ -119,7 +119,7 @@ func runSCEPPoll(cmd *cobra.Command, o *scepPollOptions, p *printer) error {
 		format:   format,
 	}
 	title := titleCertificateIssued
-	if req.messageType == scep.RenewalReq {
+	if req.renewal {
 		title = titleCertificateRenewed
 	}
 	return out.report(s, req, w, title)
@@ -147,12 +147,12 @@ func readSCEPState(path string) (*scepState, error) {
 // request rebuilds the pending request and returns it with the CA certificates it was sent to. The
 // password of an encrypted signer key file may be prompted for on stdin.
 func (st *scepState) request(kp *keyPassword, stdin io.Reader, prompt io.Writer) (*scepRequest, []*x509.Certificate, error) {
-	req := &scepRequest{transactionID: scep.TransactionID(st.TransactionID)}
+	req := &scepRequest{transactionID: scep.TransactionID(st.TransactionID), renewal: st.Renewal}
 	switch st.MessageType {
 	case scepPKCSReq:
 		req.messageType = scep.PKCSReq
 	case scepRenewalReq:
-		req.messageType = scep.RenewalReq
+		req.messageType, req.renewal = scep.RenewalReq, true
 	default:
 		return nil, nil, fmt.Errorf("unknown message type %q", st.MessageType)
 	}

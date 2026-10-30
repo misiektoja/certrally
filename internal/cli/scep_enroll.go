@@ -135,6 +135,9 @@ type scepEnrollOptions struct {
 	// request.
 	certFile string
 	keyFile  string
+	// pkcsReq makes scep renew send a PKCSReq instead of a RenewalReq, as servers that follow the
+	// drafts before RFC 8894 expect.
+	pkcsReq  bool
 	certOut  string
 	keyOut   string
 	chainOut string
@@ -196,6 +199,8 @@ func newSCEPRenewCommand() *cobra.Command {
 			"request repeats the subject and subjectAltName of that certificate and is signed with it and --key, " +
 			"which must be RSA. A new key is generated unless --new-key or --csr supplies one. Pass the current key " +
 			"with --new-key to keep it. The server must list Renewal in its capabilities.\n\n" +
+			"With --pkcsreq certrally sends a PKCSReq signed the same way instead, which servers that follow the " +
+			"drafts before RFC 8894 expect for a renewal. They need not list Renewal.\n\n" +
 			"PENDING answers are polled as in certrally scep enroll.\n\n" + scepExitStatusHelp,
 		Example: "  certrally scep renew --server http://scep.example.com/scep --ca 'Issuing CA' \\\n" +
 			"    --cert device.pem --key device.key --cert-out device-new.pem --key-out device-new.key",
@@ -208,6 +213,7 @@ func newSCEPRenewCommand() *cobra.Command {
 	f := cmd.Flags()
 	f.StringVar(&o.certFile, "cert", "", "the certificate to renew, which signs the request")
 	f.StringVar(&o.keyFile, "key", "", "the RSA private key of --cert")
+	f.BoolVar(&o.pkcsReq, "pkcsreq", false, "send a PKCSReq signed with --cert instead of a RenewalReq")
 	_ = cmd.MarkFlagRequired("cert")
 	_ = cmd.MarkFlagRequired("key")
 	return cmd
@@ -315,7 +321,9 @@ func (o *scepEnrollOptions) statePath() string {
 // scepRequest is an enrollment ready to send.
 type scepRequest struct {
 	messageType scep.MessageType
-	csr         *x509.CertificateRequest
+	// renewal is set for scep renew, which can also send a PKCSReq.
+	renewal bool
+	csr     *x509.CertificateRequest
 	// key is the key the request certifies. It is nil for --csr. generated is set when certrally
 	// generated it, so that it goes to --key-out.
 	key       crypto.Signer
@@ -379,7 +387,7 @@ func runSCEPEnroll(ctx context.Context, o *scepEnrollOptions, p *printer, stdin 
 		} else if err != nil {
 			return err
 		}
-		if o.op == scepRenew && !caps.Has("Renewal") {
+		if req.messageType == scep.RenewalReq && !caps.Has("Renewal") {
 			s.warnAfterLadder("The server does not list Renewal in its capabilities, so it may refuse the RenewalReq.")
 		}
 		ca, err := s.caCertificates(ctx, pinned, fp)
@@ -412,7 +420,10 @@ func (o *scepEnrollOptions) prepareRequest(challenge string, stdin io.Reader, pr
 	}
 	var renewed *x509.Certificate
 	if o.op == scepRenew {
-		req.messageType = scep.RenewalReq
+		req.renewal = true
+		if !o.pkcsReq {
+			req.messageType = scep.RenewalReq
+		}
 		chain, err := pemfile.ReadCertificates(o.certFile)
 		if err != nil {
 			return nil, err
@@ -687,6 +698,8 @@ type scepState struct {
 	CACertificates    string `json:"caCertificates"`
 	CSR               string `json:"csr"`
 	SignerCertificate string `json:"signerCertificate"`
+	// Renewal is set for scep renew, which can also send a PKCSReq.
+	Renewal bool `json:"renewal,omitempty"`
 	// SignerKey is the PEM of a temporary RSA key that signs the requests. SignerKeyFile names the
 	// file of the signer key instead when the key exists elsewhere.
 	SignerKey     string    `json:"signerKey,omitempty"`
@@ -724,6 +737,7 @@ func newSCEPState(s *scepSession, req *scepRequest, res *scepclient.Result, cert
 		Server:            s.conn.server,
 		CAName:            s.conn.caName,
 		MessageType:       scepMessageTypeName(req.messageType),
+		Renewal:           req.renewal,
 		TransactionID:     string(res.TransactionID),
 		Digest:            scepRequestDigest(s, req.digest),
 		Cipher:            scepRequestCipher(s, req.cipher),
