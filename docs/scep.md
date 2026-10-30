@@ -6,7 +6,7 @@ The [README](../README.md#enroll-over-scep) introduces the `certrally scep` comm
 
 `--server` is the SCEP URL of the server, such as `http://scep.example.com/scep`. certrally adds the `operation` and `message` query parameters of RFC 8894 section 4.1.
 
-A server that serves several CAs needs the name of the CA in `--ca`, which certrally sends as the `message` parameter of GetCACert, GetCACertChain, GetNextCACert and GetCACaps. Some servers answer GetCACert without content when the name is missing or unknown. certrally then exits with status 2 and suggests `--ca`. A `404 Not Found` usually means a wrong path in `--server`, but some servers also answer it for a CA name they do not serve.
+A server that serves several CAs needs the name of the CA in `--ca`, which certrally sends as the `message` parameter of GetCACert, GetCACertChain, GetNextCACert and GetCACaps. Some servers answer GetCACert without content when the name is missing or unknown. certrally then exits with status 2 and suggests `--ca`. A `404 Not Found` usually means a wrong path in `--server`, but some servers also answer it for a CA name they do not serve. Some answer it to GetNextCACert when they have no next CA certificate.
 
 ## Trusting the CA
 
@@ -81,7 +81,9 @@ certrally scep renew --server http://scep.example.com/scep --pkcsreq \
 
 Both requests are signed with `--cert` and `--key`, which servers usually require to be a certificate the CA issued, or else with a temporary self-signed certificate. Some servers answer these message types or RenewalReq without content when they do not support them. certrally then exits with status 2 and says so.
 
-`scep nextca` sends GetNextCACert and shows the CA and RA certificates that will replace the current ones. The answer must be signed by the current CA or RA. Many servers have no next CA certificate, or answer without content when they lack the operation.
+`scep nextca` sends GetNextCACert and shows the CA and RA certificates that will replace the current ones. The answer must be signed by the current CA or RA.
+
+Many servers have no next CA certificate until a CA key rollover is prepared. RFC 8894 does not say how a server answers then. certrally reports no next CA certificate and exits with status 0 when the server answers without content or answers `404 Not Found` while GetCACert works at the same address. Servers built on go-pki-scep answer 404. With `--ca-cert` certrally sends GetCACert after the 404, so a wrong path or CA name still exits with status 2. Other servers refuse the request with `403 Forbidden` or `500 Internal Server Error` or lack the operation. certrally exits with status 3 for those, as [interop.md](interop.md#scep) lists.
 
 ## Busy servers
 
