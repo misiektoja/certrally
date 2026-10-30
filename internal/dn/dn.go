@@ -29,7 +29,12 @@ var keywords = map[string]asn1.ObjectIdentifier{
 	"OU":           {2, 5, 4, 11},
 	"POSTALCODE":   {2, 5, 4, 17},
 	"UID":          {0, 9, 2342, 19200300, 100, 1, 1},
+	"DC":           oidDomainComponent,
 }
+
+// oidDomainComponent identifies the domainComponent attribute, whose values are IA5Strings
+// (RFC 4519 section 2.4).
+var oidDomainComponent = asn1.ObjectIdentifier{0, 9, 2342, 19200300, 100, 1, 25}
 
 // keywordNames maps the dotted OID of each keyword attribute type to its keyword.
 var keywordNames = func() map[string]string {
@@ -108,13 +113,33 @@ func writeAttribute(b *strings.Builder, atv pkix.AttributeTypeAndValue) {
 		b.WriteString(oid)
 	}
 	b.WriteByte('=')
-	if _, ok := atv.Value.(string); !ok {
+	value, ok := attributeString(atv.Value)
+	if !ok {
 		if der, err := asn1.Marshal(atv.Value); err == nil {
 			b.WriteString("#" + strings.ToUpper(hex.EncodeToString(der)))
 			return
 		}
+		value = fmt.Sprint(atv.Value)
 	}
-	escapeValue(b, fmt.Sprint(atv.Value))
+	escapeValue(b, value)
+}
+
+// attributeString returns an attribute value that is a string, including one that ParseName keeps
+// as an encoded IA5String, PrintableString or UTF8String.
+func attributeString(value any) (string, bool) {
+	switch v := value.(type) {
+	case string:
+		return v, true
+	case asn1.RawValue:
+		if v.Class != asn1.ClassUniversal || v.IsCompound {
+			return "", false
+		}
+		switch v.Tag {
+		case asn1.TagIA5String, asn1.TagPrintableString, asn1.TagUTF8String:
+			return string(v.Bytes), utf8.Valid(v.Bytes)
+		}
+	}
+	return "", false
 }
 
 // escapeValue writes s with the escapes of RFC 4514 section 2.4. Control characters are written as
@@ -151,6 +176,13 @@ func parseAttribute(s string) (pkix.AttributeTypeAndValue, error) {
 	if v == "" {
 		return pkix.AttributeTypeAndValue{}, fmt.Errorf("empty value for %s", key)
 	}
+	if oid.Equal(oidDomainComponent) {
+		if !isASCII(v) {
+			return pkix.AttributeTypeAndValue{}, fmt.Errorf("value of %s: a domainComponent must be ASCII", key)
+		}
+		// encoding/asn1 would pick PrintableString or UTF8String for a string value.
+		return pkix.AttributeTypeAndValue{Type: oid, Value: asn1.RawValue{Tag: asn1.TagIA5String, Bytes: []byte(v)}}, nil
+	}
 	return pkix.AttributeTypeAndValue{Type: oid, Value: v}, nil
 }
 
@@ -167,7 +199,7 @@ func attributeType(key string) (asn1.ObjectIdentifier, error) {
 		return oid, nil
 	}
 	return nil, fmt.Errorf("unknown attribute type %q, "+
-		"use one of CN, O, OU, C, L, ST, STREET, POSTALCODE, SERIALNUMBER, UID or a dotted OID", key)
+		"use one of CN, O, OU, C, L, ST, STREET, POSTALCODE, SERIALNUMBER, UID, DC or a dotted OID", key)
 }
 
 // ParseOID parses a dotted object identifier, such as 1.3.6.1.4.1.36878.3.3.1.1. It checks the
