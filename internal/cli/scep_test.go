@@ -75,9 +75,16 @@ func startSCEPServer(t *testing.T, opts scepca.Options, handlerOpts scepserver.O
 	if wrap != nil {
 		handler = wrap(h)
 	}
+	return serveSCEP(t, ca, opts.Name, handler)
+}
+
+// serveSCEP serves handler, which is the SCEP handler of ca. It saves the GetCACert certificates for
+// the CA name for --ca-cert.
+func serveSCEP(t *testing.T, ca *scepca.CA, name string, handler http.Handler) *scepTestServer {
+	t.Helper()
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
-	certs, err := ca.CACertificates(context.Background(), opts.Name)
+	certs, err := ca.CACertificates(context.Background(), name)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,6 +211,78 @@ func TestSCEPChainAndNextCA(t *testing.T) {
 	code, doc = runJSON(t, empty.trusted("nextca")...)
 	if code != exitOK || len(get(doc, "result.certificates").([]any)) != 0 {
 		t.Errorf("nextca with an empty answer: exit %d, result %v, error %v", code, doc["result"], doc["error"])
+	}
+}
+
+// noNextCA is a test CA that offers GetNextCACert but has no CA key rollover prepared.
+type noNextCA struct {
+	*scepca.CA
+}
+
+// NextCACertificates reports that the CA has no next CA certificate, which go-pki-scep answers with
+// HTTP 404.
+func (noNextCA) NextCACertificates(context.Context, string) ([]*x509.Certificate, *scepserver.Responder, error) {
+	return nil, nil, scepserver.ErrNotFound
+}
+
+// TestSCEPNextCANotFound checks that a 404 answer to GetNextCACert counts as no next CA certificate
+// once GetCACert works at the same address. Otherwise it counts as a wrong path or CA name. Servers
+// built on go-pki-scep answer 404 while no CA key rollover is prepared.
+func TestSCEPNextCANotFound(t *testing.T) {
+	useChallenge(t, "")
+	ca, err := scepca.New(scepca.Options{Name: "Issuing"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := scepserver.NewHandler(noNextCA{ca}, scepserver.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := serveSCEP(t, ca, "Issuing", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/scep" {
+			http.NotFound(w, r)
+			return
+		}
+		h.ServeHTTP(w, r)
+	}))
+	code, doc := runJSON(t, srv.args("caps", "--ca", "Issuing")...)
+	if code != exitOK || get(doc, "result.nextCACert") != true {
+		t.Fatalf("caps: exit %d, result %v, error %v", code, doc["result"], doc["error"])
+	}
+
+	tests := []struct {
+		name     string
+		args     []string
+		code     int
+		requests string
+		hint     string
+	}{
+		{name: "from GetCACert", args: srv.args("nextca", "--ca", "Issuing"), code: exitOK,
+			requests: "GetCACert GetNextCACert"},
+		{name: "with --ca-cert", args: srv.trusted("nextca", "--ca", "Issuing"), code: exitOK,
+			requests: "GetNextCACert GetCACert"},
+		{name: "unknown CA name", args: srv.trusted("nextca", "--ca", "Other"), code: exitTransport,
+			requests: "GetNextCACert GetCACert", hint: "the name of the CA in --ca"},
+		{name: "wrong path", args: append([]string{"scep", "nextca", "--server", srv.url + "x", "--ca-cert", srv.caFile},
+			"--ca", "Issuing"), code: exitTransport, requests: "GetNextCACert GetCACert", hint: "Check the path in --server"},
+		{name: "wrong path without --ca-cert", args: []string{"scep", "nextca", "--server", srv.url + "x", "--ca", "Issuing"},
+			code: exitTransport, requests: "GetCACert", hint: "Check the path in --server"},
+	}
+	for _, tt := range tests {
+		code, doc := runJSON(t, tt.args...)
+		if code != tt.code || scepRequests(doc) != tt.requests || !strings.Contains(text(get(doc, "error.hint")), tt.hint) {
+			t.Errorf("%s: exit %d, requests %q, result %v, error %v", tt.name, code, scepRequests(doc), doc["result"], doc["error"])
+			continue
+		}
+		if tt.code == exitOK && (len(get(doc, "result.certificates").([]any)) != 0 || len(get(doc, "result.saved").([]any)) != 0) {
+			t.Errorf("%s: result %v, want no certificates", tt.name, doc["result"])
+		}
+	}
+
+	code, out, _ := run(t, srv.trusted("nextca", "--ca", "Issuing")...)
+	if code != exitOK || !strings.Contains(out, "The server announces no next CA certificate") ||
+		!strings.Contains(out, "404 Not Found") {
+		t.Errorf("nextca text output: exit %d\n%s", code, out)
 	}
 }
 
