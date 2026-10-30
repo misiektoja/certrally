@@ -44,6 +44,8 @@ Before a PKIOperation certrally sends GetCACaps and picks the algorithms from th
 
 A server that lists SCEPStandard gets SHA-256, AES-128-CBC and POST. `scep caps` shows the capabilities and these choices.
 
+`--hash` also sets the signature digest of the PKCS#10 request that `scep enroll` and `scep renew` create. Without `--hash` or with `md5`, which Go does not sign requests with, the request is signed with SHA-256 for an RSA key and with the digest that matches the curve for an ECDSA key. A request from `--csr` is sent as it is.
+
 certrally signs a PKCSReq with a self-signed certificate for the request key, or for a temporary RSA key when the request key is not RSA, because SCEP encrypts answers to the signer key. The transaction ID is the SHA-1 hash of the public key in uppercase hex, so a request for the same key always has the same ID.
 
 certrally decrypts answers encrypted with AES or DES-EDE3-CBC and always with the cipher of its request. Some servers encrypt their answers with single DES whatever the request used. certrally then exits with status 4 and suggests `--allow-des`, which accepts them. Single DES offers no real protection for the certificate, but the certificate is public.
