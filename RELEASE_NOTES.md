@@ -2,7 +2,7 @@
 
 Notable changes to certrally. Versions follow the `vMAJOR.MINOR.PATCH` tags published in this repository.
 
-## v0.4.0 - TBD
+## v0.4.0 - 30 Oct 2026
 
 This release adds SCEP (RFC 8894) under `certrally scep`: enrollment, renewal, pending requests, CA certificates, queries and a SCEP test CA. `inspect` checks the signatures of SCEP messages. Names show domainComponent attributes as `DC`.
 
