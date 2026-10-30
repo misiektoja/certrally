@@ -481,6 +481,19 @@ func (s *scepSession) fail(err error) error {
 // failure describes a failed exchange.
 func (s *scepSession) failure(err error) *failure {
 	code := scepExitCode(err, s.recorder)
+	// A request can fail this way before anything is sent, so the hint does not depend on the code.
+	if errors.Is(err, scepclient.ErrNoRSARecipient) {
+		f := &failure{
+			code:    code,
+			Title:   "No RSA certificate to encrypt the request for",
+			Message: err.Error(),
+			Hint:    "SCEP encrypts requests with RSA, so the CA needs an RSA RA certificate.",
+		}
+		if s.pinned {
+			f.Hint = "SCEP encrypts requests with RSA. Pass the RSA RA certificate of the CA in --ca-cert."
+		}
+		return f
+	}
 	switch code {
 	case exitRejected:
 		return s.refusal(err)
