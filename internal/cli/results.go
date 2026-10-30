@@ -211,24 +211,25 @@ type inspectJSON struct {
 	Messages []messageJSON `json:"messages"`
 }
 
-// messageJSON describes one CMP or EST message. Body, header and protection describe a CMP message
-// and est an EST message. The members after them appear only for the body types and EST contents
-// that carry them.
+// messageJSON describes one CMP, EST or SCEP message. Body, header and protection describe a CMP
+// message, est an EST message and scep a SCEP message. The members after them appear only for the
+// body types and EST contents that carry them.
 type messageJSON struct {
 	// Source locates the message, such as "run.jsonl:4" for line 4 of a capture file.
 	Source string `json:"source"`
-	// Protocol is "cmp" or "est".
+	// Protocol is "cmp", "est" or "scep".
 	Protocol string `json:"protocol"`
 	// Direction is "request" or "response".
 	Direction string `json:"direction"`
 	// Time and Server come from a capture file.
-	Time       *time.Time      `json:"time,omitempty"`
-	Server     string          `json:"server,omitempty"`
-	Size       int             `json:"size"`
-	Body       string          `json:"body,omitempty"`
-	Header     *headerJSON     `json:"header,omitempty"`
-	Protection *protectionJSON `json:"protection,omitempty"`
-	EST        *estMessageJSON `json:"est,omitempty"`
+	Time       *time.Time       `json:"time,omitempty"`
+	Server     string           `json:"server,omitempty"`
+	Size       int              `json:"size"`
+	Body       string           `json:"body,omitempty"`
+	Header     *headerJSON      `json:"header,omitempty"`
+	Protection *protectionJSON  `json:"protection,omitempty"`
+	EST        *estMessageJSON  `json:"est,omitempty"`
+	SCEP       *scepMessageJSON `json:"scep,omitempty"`
 	// Requests are the certificate requests of ir, cr, kur, p10cr and an EST PKCS#10 request.
 	Requests []certRequestJSON `json:"requests,omitempty"`
 	// Responses are the certificate responses of ip, cp and kup.
@@ -248,7 +249,8 @@ type messageJSON struct {
 	// Nested lists the body types of the messages in a nested body.
 	Nested     []string           `json:"nested,omitempty"`
 	ExtraCerts []*certificateJSON `json:"extraCerts,omitempty"`
-	// Certificates are those of an EST certs-only message or serverkeygen response.
+	// Certificates are those of an EST certs-only message or serverkeygen response, or those a SCEP
+	// message carries.
 	Certificates []*certificateJSON `json:"certificates,omitempty"`
 	// Attributes are the EST CSR attributes.
 	Attributes []csrAttrJSON `json:"attributes,omitempty"`
@@ -272,6 +274,30 @@ type estMessageJSON struct {
 	Text string `json:"text,omitempty"`
 }
 
+// scepMessageJSON describes the HTTP exchange and the attributes of a captured SCEP message.
+type scepMessageJSON struct {
+	Operation   string `json:"operation,omitempty"`
+	Method      string `json:"method,omitempty"`
+	HTTPStatus  int    `json:"httpStatus,omitempty"`
+	ContentType string `json:"contentType,omitempty"`
+	CAName      string `json:"caName,omitempty"`
+	// MessageType, TransactionID, the nonces in hex, Status and FailInfo are the attributes of a
+	// pkiMessage.
+	MessageType    string `json:"messageType,omitempty"`
+	TransactionID  string `json:"transactionId,omitempty"`
+	SenderNonce    string `json:"senderNonce,omitempty"`
+	RecipientNonce string `json:"recipientNonce,omitempty"`
+	Status         string `json:"status,omitempty"`
+	FailInfo       string `json:"failInfo,omitempty"`
+	// Digest and Cipher name the signature digest and the content cipher of a pkiMessage.
+	Digest       string   `json:"digest,omitempty"`
+	Cipher       string   `json:"cipher,omitempty"`
+	Capabilities []string `json:"capabilities,omitempty"`
+	RetryAfter   *int     `json:"retryAfter,omitempty"`
+	// Text is the text of an error response.
+	Text string `json:"text,omitempty"`
+}
+
 // headerJSON describes a PKIHeader.
 type headerJSON struct {
 	PVNO          int        `json:"pvno"`
@@ -289,7 +315,7 @@ type headerJSON struct {
 	CertProfile string   `json:"certProfile,omitempty"`
 }
 
-// protectionJSON describes the protection of a message.
+// protectionJSON describes the protection of a CMP message or the signature of a SCEP message.
 type protectionJSON struct {
 	// Algorithm is the protection algorithm. It is "none" for an unprotected message.
 	Algorithm string `json:"algorithm"`
@@ -432,4 +458,64 @@ type csrAttrJSON struct {
 	OID    string   `json:"oid"`
 	Name   string   `json:"name,omitempty"`
 	Values []string `json:"values,omitempty"`
+}
+
+// scepCapsJSON is the result of scep caps.
+type scepCapsJSON struct {
+	Capabilities []string `json:"capabilities"`
+	// Digest, Cipher and Method are what certrally sends when the command line names none.
+	Digest     string `json:"digest"`
+	Cipher     string `json:"cipher"`
+	Method     string `json:"method"`
+	Renewal    bool   `json:"renewal"`
+	NextCACert bool   `json:"nextCACert"`
+}
+
+// scepCertJSON describes a certificate of a SCEP answer.
+type scepCertJSON struct {
+	*certificateJSON
+	SHA1 string `json:"sha1"`
+	// Roles names what the certificate does in a GetCACert or GetNextCACert answer: "issuing CA",
+	// "RA encryption", "RA signature" or "other". It is absent for a chain.
+	Roles []string `json:"roles,omitempty"`
+}
+
+// scepCertsJSON is the result of scep cacert, scep chain and scep nextca.
+type scepCertsJSON struct {
+	Certificates []*scepCertJSON `json:"certificates"`
+	// CA is the issuing CA of a GetCACert or GetNextCACert answer.
+	CA    *certificateJSON `json:"ca,omitempty"`
+	Saved []string         `json:"saved"`
+	// Verified says how the certificates were checked: "tls", "fingerprint", "signed" or "none".
+	Verified string `json:"verified"`
+	// Unverified lists the certificates that a fingerprint check did not cover and that were
+	// therefore not saved.
+	Unverified []*scepCertJSON `json:"unverified,omitempty"`
+}
+
+// scepEnrollJSON is the result of scep enroll, scep renew and scep poll.
+type scepEnrollJSON struct {
+	// Status is "SUCCESS" or "PENDING".
+	Status string `json:"status"`
+	// MessageType is "PKCSReq" or "RenewalReq".
+	MessageType   string `json:"messageType"`
+	TransactionID string `json:"transactionId"`
+	// Digest and Cipher are the --hash and --cipher values the request used.
+	Digest      string             `json:"digest,omitempty"`
+	Cipher      string             `json:"cipher,omitempty"`
+	Certificate *certificateJSON   `json:"certificate,omitempty"`
+	Chain       []*certificateJSON `json:"chain"`
+	// Key names the type of the new key. It is absent when the command certified a key it was given.
+	Key string `json:"key,omitempty"`
+	// State is the file that keeps a pending request for scep poll.
+	State string `json:"state,omitempty"`
+	// Polls counts the CertPoll requests sent.
+	Polls int      `json:"polls"`
+	Saved []string `json:"saved"`
+}
+
+// scepGetCertJSON is the result of scep getcert.
+type scepGetCertJSON struct {
+	Certificates []*certificateJSON `json:"certificates"`
+	Saved        []string           `json:"saved"`
 }

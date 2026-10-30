@@ -1,4 +1,4 @@
-// Package trace records the CMP or EST messages a client exchanges over HTTP, for the ladder view
+// Package trace records the CMP, EST or SCEP messages a client exchanges over HTTP, for the ladder view
 // and for telling transport failures apart from protocol failures.
 package trace
 
@@ -54,10 +54,13 @@ type Event struct {
 	// EST summarizes an EST request or response. DER then holds the decoded message instead of the
 	// body.
 	EST *ESTSummary
+	// SCEP summarizes a SCEP request or response. DER then holds the pkiMessage of a request and the
+	// body of a response.
+	SCEP *SCEPSummary
 	// TLS describes the connection of a Connect event.
 	TLS *TLSInfo
-	// Transport is set when Kind is Failure or when a response cannot carry CMP or EST, such as a
-	// 404 page.
+	// Transport is set when Kind is Failure or when a response cannot carry CMP, EST or SCEP, such
+	// as a 404 page.
 	Transport error
 }
 
@@ -128,10 +131,19 @@ type Record struct {
 	RetryAfter   *int   `json:"retryAfter,omitempty"`
 	Parts        []Part `json:"parts,omitempty"`
 	Text         string `json:"text,omitempty"`
+	// The following fields describe SCEP requests and responses. TransactionID, Status and FailInfo
+	// then hold the printable strings and names of the pkiMessage attributes.
+	CAName         string   `json:"caName,omitempty"`
+	MessageType    string   `json:"messageType,omitempty"`
+	SenderNonce    string   `json:"senderNonce,omitempty"`
+	RecipientNonce string   `json:"recipientNonce,omitempty"`
+	Digest         string   `json:"digest,omitempty"`
+	Cipher         string   `json:"cipher,omitempty"`
+	Capabilities   []string `json:"capabilities,omitempty"`
 	// TLS describes the connection of a connect record.
 	TLS *TLSInfo `json:"tls,omitempty"`
-	// Problem says why a response cannot be a CMP or EST answer, why its EST message does not decode
-	// or why a request got no response.
+	// Problem says why a response cannot be a CMP, EST or SCEP answer, why its EST or SCEP message
+	// does not decode or why a request got no response.
 	Problem string `json:"problem,omitempty"`
 	// DER is the body, encoded as base64. Capture files include it and JSON output leaves it out.
 	DER []byte `json:"der,omitempty"`
@@ -166,6 +178,18 @@ func (ev Event) Record(withDER bool) Record {
 		rec.Method, rec.Path, rec.Operation, rec.Content = e.Method, e.Path, e.Operation, e.Content
 		rec.Subject, rec.Certificates, rec.RetryAfter = e.Subject, e.Certificates, e.RetryAfter
 		rec.Parts, rec.Text = e.Parts, e.Text
+		if rec.Problem == "" {
+			rec.Problem = e.Problem
+		}
+	}
+	if e := ev.SCEP; e != nil {
+		rec.Method, rec.Operation, rec.CAName, rec.MessageType = e.Method, e.Operation, e.CAName, e.MessageType
+		rec.TransactionID, rec.Status, rec.Digest, rec.Cipher = e.TransactionID, e.Status, e.Digest, e.Cipher
+		rec.SenderNonce, rec.RecipientNonce = hex.EncodeToString(e.SenderNonce), hex.EncodeToString(e.RecipientNonce)
+		rec.Capabilities, rec.Certificates, rec.RetryAfter, rec.Text = e.Capabilities, e.Certificates, e.RetryAfter, e.Text
+		if e.FailInfo != "" {
+			rec.FailInfo = []string{e.FailInfo}
+		}
 		if rec.Problem == "" {
 			rec.Problem = e.Problem
 		}
@@ -205,6 +229,8 @@ const (
 	CMP Protocol = iota
 	// EST reads the base64 bodies of EST operations (RFC 7030).
 	EST
+	// SCEP reads the operations and pkiMessages of SCEP (RFC 8894).
+	SCEP
 )
 
 // Recorder is an http.RoundTripper that records every exchange before passing the response on.
@@ -216,7 +242,7 @@ type Recorder struct {
 	// OnEvent, when set, is called with each event as it is recorded.
 	OnEvent func(Event)
 	// Inspect, when set, is called with each request and its response after both are recorded, if
-	// the response holds a CMP message or is an EST answer. An error stops the response from
+	// the response holds a CMP message or is an EST or SCEP answer. An error stops the response from
 	// reaching the client.
 	Inspect func(request, response Event) error
 
@@ -256,9 +282,12 @@ func (r *Recorder) roundTrip(next http.RoundTripper, req *http.Request) (*http.R
 	}
 	start := time.Now()
 	reqEvent := Event{Kind: Request, Time: start, Size: len(reqBody)}
-	if r.Protocol == EST {
+	switch r.Protocol {
+	case EST:
 		reqEvent.EST, reqEvent.DER = SummarizeESTRequest(req, reqBody)
-	} else {
+	case SCEP:
+		reqEvent.SCEP, reqEvent.DER = SummarizeSCEPRequest(req, reqBody)
+	default:
 		reqEvent.DER, reqEvent.Message = reqBody, Summarize(reqBody)
 	}
 	r.add(reqEvent)
@@ -290,13 +319,16 @@ func (r *Recorder) roundTrip(next http.RoundTripper, req *http.Request) (*http.R
 	case r.Protocol == EST:
 		ev.EST, ev.DER = SummarizeESTResponse(reqEvent.EST.Operation, resp, body)
 		ev.Transport = estProblem(reqEvent.EST.Operation, resp.StatusCode, ev.ContentType)
+	case r.Protocol == SCEP:
+		ev.SCEP, ev.DER = SummarizeSCEPResponse(reqEvent.SCEP.Operation, resp, body)
+		ev.Transport = scepProblem(reqEvent.SCEP.Operation, resp.StatusCode, ev.ContentType, len(body))
 	default:
 		ev.DER = body
 		ev.Transport = transportProblem(resp.StatusCode, ev.ContentType, len(body))
 		ev.Message = Summarize(body)
 	}
 	r.add(ev)
-	if r.Inspect != nil && ev.Transport == nil && (ev.Message != nil || ev.EST != nil) {
+	if r.Inspect != nil && ev.Transport == nil && (ev.Message != nil || ev.EST != nil || ev.SCEP != nil) {
 		if err := r.Inspect(reqEvent, ev); err != nil {
 			_ = resp.Body.Close()
 			return nil, err
@@ -362,7 +394,7 @@ func (r *Recorder) Events() []Event {
 }
 
 // TransportError returns the transport problem of the last event. It returns nil if the last
-// exchange delivered a CMP message or an EST answer or nothing was sent.
+// exchange delivered a CMP message or an EST or SCEP answer or nothing was sent.
 func (r *Recorder) TransportError() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

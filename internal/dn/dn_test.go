@@ -28,7 +28,8 @@ func TestParseName(t *testing.T) {
 		{"CN=  trimmed  ", "CN=trimmed"},
 		{"CN=Zo\\C3\\AB", "CN=Zoë"},
 		{"2.5.4.3=by-oid", "CN=by-oid"},
-		{"UID=u1,DC=x", ""},
+		{"UID=u1,FOO=x", ""},
+		{"DC=zoë", ""},
 	}
 	for _, tt := range tests {
 		name, err := ParseName(tt.in)
@@ -45,6 +46,25 @@ func TestParseName(t *testing.T) {
 		if got := name.String(); got != tt.want {
 			t.Errorf("ParseName(%q) = %q, want %q", tt.in, got, tt.want)
 		}
+	}
+}
+
+// TestParseNameDomainComponent checks that a domainComponent is encoded as an IA5String, as RFC 4519
+// section 2.4 requires, and shown by its keyword.
+func TestParseNameDomainComponent(t *testing.T) {
+	name, err := ParseName("CN=host,DC=example,DC=org")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rdns := name.ToRDNSequence()
+	for _, rdn := range rdns[:2] {
+		der, err := asn1.Marshal(rdn[0].Value)
+		if err != nil || len(der) == 0 || der[0] != asn1.TagIA5String {
+			t.Errorf("domainComponent %v encodes as % x, want an IA5String", rdn[0].Value, der)
+		}
+	}
+	if got := String(rdns); got != "CN=host,DC=example,DC=org" {
+		t.Errorf("String = %q", got)
 	}
 }
 
@@ -70,7 +90,14 @@ var (
 	oidO   = asn1.ObjectIdentifier{2, 5, 4, 10}
 	oidUID = asn1.ObjectIdentifier{0, 9, 2342, 19200300, 100, 1, 1}
 	oidDC  = asn1.ObjectIdentifier{0, 9, 2342, 19200300, 100, 1, 25}
+	// oidPseudonym stands for an attribute type that has no keyword.
+	oidPseudonym = asn1.ObjectIdentifier{2, 5, 4, 65}
 )
+
+// ia5 returns an IA5String value, as a certificate encodes a domainComponent.
+func ia5(s string) asn1.RawValue {
+	return asn1.RawValue{Class: asn1.ClassUniversal, Tag: asn1.TagIA5String, Bytes: []byte(s)}
+}
 
 // atv returns an attribute with the given type and value.
 func atv(oid asn1.ObjectIdentifier, value any) pkix.AttributeTypeAndValue {
@@ -83,7 +110,7 @@ func TestParseNameRoundTrip(t *testing.T) {
 		{atv(oidUID, "u-1")},
 		{atv(oidCN, ` a+b,"c";<d>\e `)},
 		{atv(oidO, "#Zoë\tx")},
-		{atv(oidDC, "example")},
+		{atv(oidDC, ia5("example"))},
 	}
 	name, err := ParseName(String(rdns))
 	if err != nil {
@@ -107,8 +134,9 @@ func TestString(t *testing.T) {
 		{"empty", nil, ""},
 		{"encoded order", pkix.RDNSequence{{atv(oidUID, "u-1")}, {atv(oidCN, "CA")}, {atv(oidO, "Org")}}, "O=Org,CN=CA,UID=u-1"},
 		{"multi-valued RDN", pkix.RDNSequence{{atv(oidO, "Org")}, {atv(oidCN, "a"), atv(oidUID, "b")}}, "CN=a+UID=b,O=Org"},
-		{"dotted OID", pkix.RDNSequence{{atv(oidDC, "example")}}, "0.9.2342.19200300.100.1.25=example"},
-		{"not a string", pkix.RDNSequence{{atv(oidDC, 5)}}, "0.9.2342.19200300.100.1.25=#020105"},
+		{"dotted OID", pkix.RDNSequence{{atv(oidPseudonym, "example")}}, "2.5.4.65=example"},
+		{"not a string", pkix.RDNSequence{{atv(oidPseudonym, 5)}}, "2.5.4.65=#020105"},
+		{"domainComponent", pkix.RDNSequence{{atv(oidDC, "org")}, {atv(oidDC, ia5("example"))}}, "DC=example,DC=org"},
 		{"escapes", pkix.RDNSequence{{atv(oidCN, ` a+b,"c";<d>\e `)}}, `CN=\ a\+b\,\"c\"\;\<d\>\\e\ `},
 		{"leading hash", pkix.RDNSequence{{atv(oidCN, "#1#")}}, `CN=\#1#`},
 		{"control characters", pkix.RDNSequence{{atv(oidCN, "a\nb\x00\x7f")}}, `CN=a\0Ab\00\7F`},

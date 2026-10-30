@@ -132,7 +132,7 @@ scan-image: ## Build the container image for SCAN_PLATFORM and scan it for known
 
 ##@ Integration tests
 
-# The integration tests run the binary that make build writes against real CMP and EST servers.
+# The integration tests run the binary that make build writes against real CMP, EST and SCEP servers.
 INTEGRATION_TEST = CERTRALLY_BIN="$(LOCALBIN)/certrally" go test -v -count=1 -tags integration
 # EJBCA_HTTP_PORT is the host port of the EJBCA CMP endpoint.
 EJBCA_HTTP_PORT ?= 8080
@@ -140,9 +140,12 @@ export EJBCA_HTTP_PORT
 # LIBEST_IMAGE names the image of the libest example server that test-integration-libest builds.
 LIBEST_IMAGE ?= certrally-libest
 export LIBEST_IMAGE
+# MICROMDM_IMAGE names the image of the micromdm/scep server that test-integration-micromdm builds.
+MICROMDM_IMAGE ?= certrally-micromdm-scep
+export MICROMDM_IMAGE
 
 .PHONY: test-integration
-test-integration: test-integration-openssl test-integration-ejbca test-integration-libest ## Run every integration test. Needs OpenSSL 3.5 or newer and Docker.
+test-integration: test-integration-openssl test-integration-ejbca test-integration-libest test-integration-micromdm test-integration-scep-mock ## Run every integration test. Needs OpenSSL 3.5 or newer and Docker.
 
 .PHONY: test-integration-openssl
 test-integration-openssl: build ## Run the CMP tests against the openssl cmp mock server. Needs OpenSSL 3.5 or newer on PATH.
@@ -164,6 +167,15 @@ teardown-ejbca: ## Stop EJBCA and delete its container and data.
 test-integration-libest: build ## Build the Cisco libest example server image and run the EST tests against it.
 	docker build -t "$(LIBEST_IMAGE)" test/integration/libest
 	$(INTEGRATION_TEST) ./test/integration/libest
+
+.PHONY: test-integration-micromdm
+test-integration-micromdm: build ## Build the micromdm/scep server image and run the SCEP tests against it.
+	docker build -t "$(MICROMDM_IMAGE)" test/integration/micromdm
+	$(INTEGRATION_TEST) ./test/integration/micromdm
+
+.PHONY: test-integration-scep-mock
+test-integration-scep-mock: build ## Run the SCEP tests against certrally scep mock.
+	$(INTEGRATION_TEST) ./test/integration/scepmock
 
 ##@ Release
 

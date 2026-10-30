@@ -1,6 +1,6 @@
 # Tested servers
 
-certrally has been run against the CMP and EST servers below. Each section lists where the server differs from the RFCs or needs a particular setting, and what certrally shows in that case.
+certrally has been run against the CMP, EST and SCEP servers below. Each section lists where the server differs from the RFCs or needs a particular setting. It also says what certrally shows in that case.
 
 ## CMP
 
@@ -63,3 +63,48 @@ Tested with the `estserver` example of libest 3.2.0 on OpenSSL 1.1.1, with a pas
 * With `-h` the server asks for HTTP Digest authentication. certrally signs in with Basic only and gets HTTP 401.
 * With `-m` the server answers `202 Accepted` with `Retry-After: 3600`. certrally exits with status 2 unless `--timeout` covers the hour.
 * `est serverkeygen` exits with status 4. The server declares a `Content-Length` shorter than its multipart response, so the response ends before its last part. certrally also warns that the response has no `smime-type=certs-only` parameter, because the certificate part is cut off.
+
+## SCEP
+
+### EJBCA Community Edition 9.6.3
+
+Tested over HTTP with the CA name in `--ca`. No end entity was registered for the requests, so no certificate was issued.
+
+* EJBCA lists POSTPKIOperation, Renewal, SHA-512, SHA-256, SHA-1, DES3, AES and SCEPStandard. `scep caps`, `scep cacert` and `scep chain` work. GetCACert returns the issuing CA and its root. GetCACertChain returns the CA followed by its root. `lint` found no deviation.
+* GetNextCACert gets `403 Forbidden` with an HTML page when the CA has no rollover certificate. `scep nextca` exits with status 3 and shows the text of the page.
+* A PKCSReq without a challenge password gets `400 Bad Request` and one for a subject without an end entity gets `403 Forbidden`, each with an HTML page instead of a FAILURE answer. certrally exits with status 3, shows the text of the page and suggests checking the challenge password, `--subject` and `--ca`.
+
+### Nokia NCM 26.7
+
+Tested over HTTP with two NCM installations, with a SCEP CA that issues requests without operator approval and with one that waits for it.
+
+* `scep caps`, `scep cacert`, `scep chain`, `scep nextca` and `scep enroll` work. `scep enroll` was tested with RSA 2048 and ECDSA P-256 keys, with the default SHA-256 and AES-128-CBC and with `--hash sha1 --cipher des3`.
+* NCM needs `--ca`. Without it, GetCACert and GetCACertChain get HTTP 200 with an empty body. certrally then exits with status 2 and suggests `--ca`.
+* NCM lists AES, SHA-1, SHA-256, SHA-512 and POSTPKIOperation and ends the list with a NUL byte. certrally warns about RFC 8894 section 3.5.2. `--profile strict` stops `scep caps` and every command that sends a PKIOperation, because they read the list first.
+* `scep chain` returns the CA certificate followed by its root.
+* GetNextCACert gets HTTP 200 with an empty body, which `scep nextca` reports as no next CA certificate.
+* NCM signs its CertRep with SHA-1 whatever the request used, adds no senderNonce and no certificates. certrally verifies it with the certificate from GetCACert or `--ca-cert` and warns about RFC 8894 section 3.2.1.
+* A CA that issues without approval also accepts a PKCSReq whose challenge password it does not know.
+* A CA that waits for approval answers PENDING with HTTP 200. `scep enroll --poll-later` saved the request, `scep poll --once` got PENDING and `scep poll` collected the certificate after approval. `scep enroll` without `--poll-later` polled until the request was approved.
+* RenewalReq, GetCert and GetCRL get HTTP 200 with an empty body. NCM does not list Renewal. certrally exits with status 2 and says that the server may not support the message type.
+
+### OpenXPKI 3.34
+
+Tested over HTTP with the `generic` SCEP endpoint of the OpenXPKI sample configuration. In this setup the server issued a certificate for a name in its test domain at once and kept a request for another name pending. Approval of a pending request was not tested.
+
+* OpenXPKI lists Renewal, POSTPKIOperation, SHA-512, SHA-384, SHA-256, SHA-224, SHA-1, DES3 and AES. `scep caps`, `scep cacert`, `scep enroll` and `scep poll` work. `lint` found no deviation.
+* GetCACert returns the RA certificate and the root CA but not the issuing CA, so `scep cacert` shows the root as the issuing CA.
+* A pending request gets a PENDING CertRep with HTTP `202 Accepted`. certrally treats it as any PENDING answer and saves the state file. `scep poll --once` gets PENDING with HTTP 202 again.
+* A PKCSReq with a wrong challenge password is kept pending as well, not refused, so `scep enroll` polls until `--timeout`.
+* A RenewalReq gets a FAILURE CertRep with `badCertId` and HTTP `400 Bad Request`, although the server lists Renewal. certrally exits with status 3 and suggests `--pkcsreq`. `scep renew --pkcsreq` works without a challenge password. In this setup the new certificate kept the end date of the old one.
+* `inspect` verifies the signatures of the requests and of the CertReps, which the RA certificate signs.
+* GetCACertChain gets `400 Bad Request` "Unknown operation" and GetNextCACert gets `500 Internal Server Error`. `scep chain` and `scep nextca` exit with status 3.
+
+### micromdm/scep 2.3.0
+
+Tested with the `scepserver` of micromdm/scep 2.3.0 with a challenge password and `-allowrenew 0`.
+
+* `scep caps`, `scep cacert`, `scep enroll` and `scep renew` work. `scep enroll` was tested with RSA 2048 and ECDSA P-256 keys, with the default SHA-256 and AES-128-CBC and with `--hash sha1 --cipher des3`. `lint` found no deviation.
+* The server encrypts every CertRep with single DES, whatever the request used. Without `--allow-des` certrally exits with status 4 and suggests the flag.
+* The server checks the challenge password in a RenewalReq as well, so `scep renew` needs `--challenge` or `--challenge-file`. Without it the renewal gets FAILURE with `badRequest`.
+* GetCACertChain, GetNextCACert, GetCert and GetCRL get HTTP 500 "not implemented", so `scep chain`, `scep nextca`, `scep getcert` and `scep getcrl` exit with status 3.

@@ -15,8 +15,9 @@ import (
 
 // Protocols as named in capture files and the inspect result.
 const (
-	protocolCMP = "cmp"
-	protocolEST = "est"
+	protocolCMP  = "cmp"
+	protocolEST  = "est"
+	protocolSCEP = "scep"
 )
 
 // recording is what every command that talks to a server shares: the recorder of the exchange, the
@@ -69,8 +70,12 @@ func openRecording(p *printer, o recordingOptions) (*recording, error) {
 	}
 	if o.capture != "" {
 		protocol := ""
-		if o.protocol == trace.EST {
+		switch o.protocol {
+		case trace.EST:
 			protocol = protocolEST
+		case trace.SCEP:
+			protocol = protocolSCEP
+		case trace.CMP:
 		}
 		w, err := capture.Open(o.capture, capture.Start{
 			Protocol: protocol,

@@ -9,7 +9,7 @@
 [![Supply chain](https://github.com/misiektoja/certrally/actions/workflows/supply-chain.yml/badge.svg?branch=main)](https://github.com/misiektoja/certrally/actions/workflows/supply-chain.yml)
 [![OpenSSF Scorecard](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.scorecard.dev%2Fprojects%2Fgithub.com%2Fmisiektoja%2Fcertrally&query=%24.score&label=openssf%20scorecard&style=flat-square)](https://scorecard.dev/viewer/?uri=github.com/misiektoja/certrally)
 
-certrally is a command line client for certificate enrollment with the Certificate Management Protocol (CMP) and Enrollment over Secure Transport (EST).
+certrally is a command line client for certificate enrollment with the Certificate Management Protocol (CMP), Enrollment over Secure Transport (EST) and the Simple Certificate Enrolment Protocol (SCEP).
 
 ![certrally enrolls an ML-DSA-65 certificate from the test CA with a shared secret](docs/demo.gif)
 
@@ -21,6 +21,7 @@ certrally is a command line client for certificate enrollment with the Certifica
 * CA certificates, root CA updates, request templates and CRLs from the CA
 * `ping` to check a server and `mock` to run a test CA on your machine
 * Deliberately wrong messages with `enroll --fault` to test how a CA copes
+* A step-by-step `enroll` that prints the matching command for scripts
 
 **EST** (RFC 7030)
 
@@ -28,17 +29,23 @@ certrally is a command line client for certificate enrollment with the Certifica
 * Authentication with a password, a bearer token, a TLS client certificate or TLS-SRP
 * `est mock` to run a test EST CA on your machine
 
-**Both protocols**
+**SCEP** (RFC 8894)
+
+* Enrollment, renewal and polling of pending requests, also in a later run
+* CA certificates, the CA chain, the next CA certificate, certificates and CRLs from the CA
+* Digest, cipher and HTTP method chosen from the server capabilities, with old algorithms on request
+* `scep mock` to run a test SCEP CA on your machine
+
+**All protocols**
 
 * A live diagram of every message and plain explanations of failures
-* A step-by-step `enroll` that prints the matching command for scripts
-* RSA, ECDSA, Ed25519, ML-DSA, composite ML-DSA and ML-KEM keys, also offline with `keygen`
+* RSA, ECDSA, Ed25519, ML-DSA, composite ML-DSA and ML-KEM keys, also offline with `keygen`. SCEP takes RSA and ECDSA keys
 * No trust setup: certrally trusts the CA it talks to or the one in `--ca-cert`
 * Warnings about responses that break the RFCs and a strict profile that rejects them
 * JSON output, capture files and exit statuses for scripts
 * `inspect` and `lint` to decode recorded messages and check them
 
-Tested with EJBCA, Nokia NCM, Insta Certifier and the `openssl cmp` mock server over CMP and with Cisco libest over EST. See [docs/interop.md](docs/interop.md).
+Tested with EJBCA, Nokia NCM, Insta Certifier and the `openssl cmp` mock server over CMP, with Cisco libest over EST and with EJBCA, Nokia NCM, OpenXPKI and micromdm/scep over SCEP. See [docs/interop.md](docs/interop.md).
 
 ## Install
 
@@ -82,7 +89,7 @@ certrally --version
 
 `certrally completion bash|zsh|fish|powershell` prints a shell completion script. `certrally man` prints a man page.
 
-The CMP commands also run under `certrally cmp`, such as `certrally cmp enroll`. Without the prefix, `enroll`, `poll`, `revoke`, `cacerts`, `ping` and `mock` use CMP. The EST commands run under [`certrally est`](#enroll-over-est).
+The CMP commands also run under `certrally cmp`, such as `certrally cmp enroll`. Without the prefix, `enroll`, `poll`, `revoke`, `cacerts`, `ping` and `mock` use CMP. The EST commands run under [`certrally est`](#enroll-over-est) and the SCEP commands under [`certrally scep`](#enroll-over-scep).
 
 Output is coloured only on a terminal. [docs/output.md](docs/output.md) describes `--color`, `NO_COLOR`, `FORCE_COLOR` and the handling of existing output files.
 
@@ -197,9 +204,33 @@ certrally est enroll --server https://est.example.com --tls-ca-cert ca.pem \
 
 A client signs in with a password (`--user`), a bearer token (`--token`), a TLS client certificate (`--cert` and `--key`) or TLS-SRP (`--srp`). `est cacerts --bootstrap` gets the first CA certificates from a server that nothing can check yet and saves them after a fingerprint check. [docs/est.md](docs/est.md) describes the sign-in options, the bootstrap, proxies, waiting for the CA and the `est mock` test CA.
 
-### Check responses against RFC 9483 and RFC 7030
+### Enroll over SCEP
 
-certrally warns when a response breaks a rule of RFC 9483, RFC 9810 or RFC 7030 that some CAs do not follow. `--profile strict` rejects such responses instead and exits with status 6. [docs/profiles.md](docs/profiles.md) lists the rules. [docs/interop.md](docs/interop.md) describes how tested CAs behave.
+The `certrally scep` commands talk to a SCEP server, usually over plain HTTP. `--server` is the SCEP URL of the server, such as `http://scep.example.com/scep`. A server with several CAs needs the name of the CA in `--ca`.
+
+| Command | What it does |
+|---|---|
+| `scep caps` | Lists the capabilities of the server and the algorithms certrally picks from them |
+| `scep cacert` | Gets the CA and RA certificates. `--fingerprint` and `--out` save them |
+| `scep chain` | Gets the CA certificate and the certificates that issued it |
+| `scep nextca` | Gets the CA certificate that will replace the current one |
+| `scep enroll` | Requests a certificate for a new key, `--new-key` or `--csr` |
+| `scep renew` | Renews the certificate in `--cert` |
+| `scep poll` | Collects a certificate that the CA kept pending |
+| `scep getcert`, `scep getcrl` | Get a certificate by its serial number or the CRL that covers a certificate |
+| `scep mock` | Runs a SCEP test CA on your machine |
+
+```bash
+certrally scep enroll --server http://scep.example.com/scep --ca 'Issuing CA' --ca-cert ca.pem \
+  --challenge-file challenge.txt --subject CN=device-42 \
+  --cert-out device.pem --key-out device.key
+```
+
+Over plain HTTP nothing authenticates the first GetCACert answer, so save the CA certificates once with `scep cacert --fingerprint` and pass them with `--ca-cert`. The challenge password comes from `--challenge`, `--challenge-file` or `CERTRALLY_CHALLENGE`. When the CA answers PENDING, certrally keeps polling and saves the request in a state file that `scep poll` continues. [docs/scep.md](docs/scep.md) describes trust, algorithms, pending requests, renewal, queries and the `scep mock` test CA.
+
+### Check responses against the RFCs
+
+certrally warns when a response breaks a rule of RFC 9483, RFC 9810, RFC 7030 or RFC 8894 that some CAs do not follow. `--profile strict` rejects such responses instead and exits with status 6. [docs/profiles.md](docs/profiles.md) lists the rules. [docs/interop.md](docs/interop.md) describes how tested CAs behave.
 
 ### Use certrally in scripts
 
@@ -216,14 +247,14 @@ certrally cacerts --server https://ca.example.com/.well-known/cmp --ref device-4
 
 ### Inspect recorded messages
 
-`inspect` decodes recorded CMP and EST messages and checks their signatures and MACs. `lint` checks recorded responses against the [profile rules](docs/profiles.md) and exits with status 6 when a response breaks one:
+`inspect` decodes recorded CMP, EST and SCEP messages and checks their signatures and MACs. `lint` checks recorded responses against the [profile rules](docs/profiles.md) and exits with status 6 when a response breaks one:
 
 ```bash
 certrally inspect run.jsonl --ca-cert ca.pem
 certrally lint run.jsonl
 ```
 
-Both also read messages saved as DER, base64, hex or PEM. [docs/inspect.md](docs/inspect.md) shows the output and how signatures are checked.
+Both also read CMP and EST messages saved as DER, base64, hex or PEM. SCEP messages come from capture files. [docs/inspect.md](docs/inspect.md) shows the output and how signatures are checked.
 
 ### Exit status
 
@@ -231,8 +262,8 @@ Both also read messages saved as DER, base64, hex or PEM. [docs/inspect.md](docs
 |---|---|
 | 0 | Success |
 | 1 | Invalid command line or local error, such as an unreadable file |
-| 2 | The server could not be reached, did not answer in time or did not answer with CMP or EST |
-| 3 | The CA rejected the request, or the EST server refused it or the sign-in |
+| 2 | The server could not be reached, did not answer in time or did not answer with CMP, EST or SCEP |
+| 3 | The CA rejected the request, or the EST or SCEP server refused it or the sign-in |
 | 4 | The response broke the protocol or failed verification |
 | 5 | The CA issued the certificate but the confirmation failed. certrally saves the certificate. Check with the CA before retrying, because a retry can issue a second certificate |
 | 6 | A response broke a rule of `--profile strict`, or `lint` found a response that breaks a rule |
@@ -241,6 +272,7 @@ Both also read messages saved as DER, base64, hex or PEM. [docs/inspect.md](docs
 
 * [CMP details](docs/cmp.md): request options, collecting a certificate later, ML-KEM keys, keys that the CA generates, registration authorities, trust, revocation by serial number, CA information and `ping`
 * [EST details](docs/est.md): sign-in options, bootstrap, proxies, waiting, channel binding and the `est mock` test CA
+* [SCEP details](docs/scep.md): trust, the challenge password, algorithms, pending requests, renewal, queries and the `scep mock` test CA
 * [Keys and output files](docs/keys.md): key types, encrypted keys, `keygen` and DER output
 * [The CMP test CA](docs/mock.md): `certrally mock` and its fault flags
 * [Testing a CA with faulty messages](docs/faults.md): `enroll --fault` and `poll --fault`

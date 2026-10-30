@@ -28,12 +28,14 @@ User-facing behavior changes update the README or the page in `docs/` that descr
 
 ## Integration tests
 
-The integration tests run `bin/certrally` against independent CMP and EST servers. They need Docker. The OpenSSL tests also need OpenSSL 3.5 or newer on `PATH`. The [integration workflow](.github/workflows/integration.yml) runs them on every push and pull request and once a week.
+The integration tests run `bin/certrally` against independent CMP, EST and SCEP servers. They need Docker, except for the `scep mock` tests. The OpenSSL tests also need OpenSSL 3.5 or newer on `PATH`. The [integration workflow](.github/workflows/integration.yml) runs them on every push and pull request and once a week.
 
 * `make test-integration-openssl` starts the `openssl cmp` mock server and sends `ir`, `cr`, `kur`, `p10cr` and `rr` requests.
 * `make test-integration-ejbca` starts EJBCA Community Edition in Docker, creates a CA and a CMP alias and sends the same requests. The first start takes a few minutes. EJBCA keeps running afterwards, so later runs start at once. `make teardown-ejbca` removes it. Set `EJBCA_HTTP_PORT`, such as `make test-integration-ejbca EJBCA_HTTP_PORT=18080`, when port 8080 is taken.
 * `make test-integration-libest` builds the example server of Cisco libest 3.2.0 and runs the EST commands against it.
-* `make test-integration` runs all three.
+* `make test-integration-micromdm` builds the SCEP server of micromdm/scep 2.3.0 and runs the SCEP commands against it.
+* `make test-integration-scep-mock` runs the SCEP commands against `certrally scep mock`, which serves the go-pki-scep server package.
+* `make test-integration` runs all of them.
 
 The tests check the exit status of every command and the certificates and keys it writes. Some steps expect the deviations that [docs/interop.md](docs/interop.md) describes, so update that page when a test shows that a server behaves differently.
 

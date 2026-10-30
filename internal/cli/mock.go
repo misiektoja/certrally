@@ -44,6 +44,12 @@ const mockRequestLimit = 10 * 1024 * 1024
 // mockConfirmWait is the default confirmWaitTime, that of go-pki-cmp.
 const mockConfirmWait = 10 * time.Second
 
+// mockUse and flagListen are shared by the mock commands of every protocol.
+const (
+	mockUse    = "mock [flags]"
+	flagListen = "listen"
+)
+
 // mockOptions holds the mock command line.
 type mockOptions struct {
 	listen     string
@@ -113,7 +119,7 @@ var failInfoNames = func() []string {
 func newMockCommand() *cobra.Command {
 	o := &mockOptions{}
 	cmd := &cobra.Command{
-		Use:   "mock [flags]",
+		Use:   mockUse,
 		Short: "Run a local CMP test CA",
 		Long: "Run a CMP test CA on this machine, to try certrally or test scripts without a real CA. It issues, " +
 			"confirms and revokes certificates and answers the requests for CA certificates, a request template " +
@@ -138,7 +144,7 @@ func newMockCommand() *cobra.Command {
 		},
 	}
 	f := cmd.Flags()
-	f.StringVar(&o.listen, "listen", "127.0.0.1:8080", "address and port to listen on. Port 0 picks a free port")
+	f.StringVar(&o.listen, flagListen, "127.0.0.1:8080", "address and port to listen on. Port 0 picks a free port")
 	f.StringVar(&o.ref, flagRef, "demo", "reference that identifies the shared secret")
 	f.Var(&o.secret, flagSecret, secretHelp)
 	f.StringVar(&o.secretFile, "secret-file", "", "read the shared secret from a file, or - for standard input")
@@ -166,7 +172,7 @@ func newMockCommand() *cobra.Command {
 	_ = cmd.RegisterFlagCompletionFunc("accept", fixedCompletion(acceptNames))
 	_ = cmd.RegisterFlagCompletionFunc("reject", fixedCompletion(failInfoNames))
 	for _, name := range []string{
-		"listen", flagRef, flagSecret, "waiting", "check-after", "mac-iterations", "confirm-wait",
+		flagListen, flagRef, flagSecret, "waiting", "check-after", "mac-iterations", "confirm-wait",
 	} {
 		_ = cmd.RegisterFlagCompletionFunc(name, cobra.NoFileCompletions)
 	}

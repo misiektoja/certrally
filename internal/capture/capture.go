@@ -1,4 +1,4 @@
-// Package capture writes the messages of a CMP or EST exchange to a file, so that they can be
+// Package capture writes the messages of a CMP, EST or SCEP exchange to a file, so that they can be
 // inspected or replayed later.
 //
 // A capture file holds JSON Lines. Each run appends a "start" line, one line per message event in
@@ -29,7 +29,7 @@ type Start struct {
 	// Kind is always "start".
 	Kind   string `json:"kind"`
 	Format int    `json:"format"`
-	// Protocol is "est" for an EST run. It is absent for a CMP run.
+	// Protocol is "est" for an EST run and "scep" for a SCEP run. It is absent for a CMP run.
 	Protocol string    `json:"protocol,omitempty"`
 	Tool     string    `json:"tool"`
 	Version  string    `json:"version,omitempty"`

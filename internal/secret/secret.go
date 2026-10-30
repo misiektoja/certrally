@@ -27,6 +27,9 @@ const KeyPasswordEnvVar = "CERTRALLY_KEY_PASSWORD" //nolint:gosec // G101: the n
 // TokenEnvVar is the environment variable that can hold the bearer token.
 const TokenEnvVar = "CERTRALLY_TOKEN" //nolint:gosec // G101: the name of a variable, not a token.
 
+// ChallengeEnvVar names the environment variable that holds a SCEP challenge password.
+const ChallengeEnvVar = "CERTRALLY_CHALLENGE"
+
 // maxSize bounds how much is read from a secret file or standard input.
 const maxSize = 64 * 1024
 
@@ -58,6 +61,13 @@ var (
 	// Token signs in to an EST server with HTTP Bearer authentication. A bare --token selects the
 	// sign-in, so the value needs the = form.
 	Token = Kind{Name: "token", EnvVar: TokenEnvVar, Flag: "--token=TOKEN", FileFlag: "--token-file"}
+	// Challenge authorizes a SCEP enrollment as the challengePassword of the request.
+	Challenge = Kind{
+		Name:     "challenge password",
+		EnvVar:   ChallengeEnvVar,
+		Flag:     "--challenge",
+		FileFlag: "--challenge-file",
+	}
 )
 
 // Value is a flag that takes a secret on the command line. String never returns the secret, so

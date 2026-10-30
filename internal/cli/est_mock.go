@@ -59,7 +59,7 @@ type estMockOptions struct {
 func newESTMockCommand() *cobra.Command {
 	o := &estMockOptions{}
 	cmd := &cobra.Command{
-		Use:   "mock [flags]",
+		Use:   mockUse,
 		Short: "Run a local EST test CA",
 		Long: "Run an EST test CA on this machine, to try certrally or test scripts without a real CA. It " +
 			"answers cacerts, csrattrs, simpleenroll, simplereenroll and serverkeygen over HTTPS with a " +
@@ -80,7 +80,7 @@ func newESTMockCommand() *cobra.Command {
 		},
 	}
 	f := cmd.Flags()
-	f.StringVar(&o.listen, "listen", "127.0.0.1:8443", "address and port to listen on. Port 0 picks a free port")
+	f.StringVar(&o.listen, flagListen, "127.0.0.1:8443", "address and port to listen on. Port 0 picks a free port")
 	f.StringVar(&o.srpListen, "srp-listen", "", "also serve TLS-SRP on this address and port, such as 127.0.0.1:8444")
 	f.StringVar(&o.user, "user", "demo", "username that HTTP Basic authentication accepts")
 	f.Var(&o.password, flagPassword, "password of --user, which other users of this machine can see in the process list")
@@ -94,7 +94,7 @@ func newESTMockCommand() *cobra.Command {
 	f.BoolVar(&o.force, "force", false, "replace an existing --ca-out file")
 	f.IntVar(&o.retryAfter, "retry-after", 0,
 		"answer the first request for each key with 202 Accepted and this Retry-After in seconds")
-	for _, name := range []string{"listen", "srp-listen", "user", flagPassword, flagToken, "retry-after"} {
+	for _, name := range []string{flagListen, "srp-listen", "user", flagPassword, flagToken, "retry-after"} {
 		_ = cmd.RegisterFlagCompletionFunc(name, cobra.NoFileCompletions)
 	}
 	return cmd
@@ -421,7 +421,7 @@ func (o *estMockOptions) report(p *printer, urls estMockURLs, caCert *x509.Certi
 		{Name: fieldServer, Value: urls.https},
 		{Name: "TLS-SRP", Value: urls.srp},
 		{Name: "CA", Value: dn.Format(caCert.RawSubject)},
-		{Name: "SHA-256", Value: hex.EncodeToString(sum[:])},
+		{Name: fieldSHA256, Value: hex.EncodeToString(sum[:])},
 		{Name: "User", Value: o.user},
 		{Name: "Password", Value: passwordField},
 		{Name: "Token", Value: tokenField},

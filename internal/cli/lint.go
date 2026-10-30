@@ -26,7 +26,7 @@ func newLintCommand() *cobra.Command {
 	o := &lintOptions{}
 	cmd := &cobra.Command{
 		Use:   "lint FILE... [flags]",
-		Short: "Check recorded CMP and EST responses against RFC 9483 and RFC 7030",
+		Short: "Check recorded CMP, EST and SCEP responses against RFC 9483, RFC 7030 and RFC 8894",
 		Long: "Check CMP responses against the rules that the compatible profile reports as warnings, and check " +
 			"that each response carries the transactionID and recipNonce of its request.\n\n" +
 			fileArgsHelp + "\n\n" +
@@ -34,7 +34,8 @@ func newLintCommand() *cobra.Command {
 			"messages of the other files form one exchange in command line order. Without --ca-cert the " +
 			"certificates of the first response of each exchange are trusted, as during the run.\n\n" +
 			"EST responses are checked against the RFC 7030 rules of the compatible profile. Those rules " +
-			"concern the HTTP response, so only EST responses in a capture file are checked.\n\n" +
+			"concern the HTTP response, so only EST responses in a capture file are checked. SCEP responses in a " +
+			"capture file are checked against the RFC 8894 rules of the compatible profile in the same way.\n\n" +
 			"Exit status: 0 no deviations, 1 a file cannot be read or holds no response to check, " +
 			"6 a response breaks a rule.",
 		Example: "  certrally lint enroll.jsonl\n" +
@@ -89,6 +90,18 @@ func runLint(o *lintOptions, p *printer, paths []string, stdin io.Reader) error 
 	}
 	rfcs := map[string]bool{}
 	for _, m := range msgs {
+		if m.SCEP != nil {
+			switch {
+			case m.Request:
+			case m.Run == 0:
+				result.Skipped++
+			default:
+				findings := profile.CheckSCEP(scepResponse(*m.SCEP))
+				rfcs[protocolSCEP] = rfcs[protocolSCEP] || len(findings) > 0
+				report(m.Source, m.SCEP.Operation, findings)
+			}
+			continue
+		}
 		if m.EST != nil {
 			switch {
 			case m.Request:
@@ -140,9 +153,10 @@ func runLint(o *lintOptions, p *printer, paths []string, stdin io.Reader) error 
 	switch {
 	case result.Checked == 0:
 		return p.fail(&failure{
-			code:    exitLocal,
-			Title:   "No response was checked",
-			Message: "The files hold no CMP response with a request before it and no EST response in a capture file.",
+			code:  exitLocal,
+			Title: "No response was checked",
+			Message: "The files hold no CMP response with a request before it and no EST or SCEP response in a " +
+				"capture file.",
 		}, errors.New("no response to check"))
 	case len(result.Findings) > 0:
 		title := count(len(result.Findings), "deviation", "deviations") + " in " + responses
@@ -153,6 +167,9 @@ func runLint(o *lintOptions, p *printer, paths []string, stdin io.Reader) error 
 		}
 		if rfcs[protocolEST] {
 			broken = append(broken, "RFC 7030")
+		}
+		if rfcs[protocolSCEP] {
+			broken = append(broken, "RFC 8894")
 		}
 		return p.fail(&failure{
 			code:    exitProfile,

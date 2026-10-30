@@ -6,7 +6,7 @@ Do not open a public issue for a suspected vulnerability.
 
 Report it privately through [GitHub security advisories](https://github.com/misiektoja/certrally/security/advisories/new), which keeps the report visible only to the maintainer until an advisory is published. If you cannot use that, email <misiektoja-github@rm-rf.ninja>.
 
-Do not include shared secrets, private keys, full CSRs, CMP messages or packet captures from a production system, or production endpoint details in a report. Include the affected version, the impact, the preconditions to reproduce it and a sanitized proof when you have one.
+Do not include shared secrets, challenge passwords, private keys, full CSRs, CMP messages or packet captures from a production system, or production endpoint details in a report. Include the affected version, the impact, the preconditions to reproduce it and a sanitized proof when you have one.
 
 The maintainer will acknowledge the report and coordinate disclosure once a fix is available.
 

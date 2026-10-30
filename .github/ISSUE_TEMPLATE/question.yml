@@ -1,5 +1,5 @@
 name: Question
-description: Ask how to use certrally or how it behaves against a CMP or EST server
+description: Ask how to use certrally or how it behaves against a CMP, EST or SCEP server
 labels:
   - question
 body:

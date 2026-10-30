@@ -143,7 +143,7 @@ func caCertFields(cert *x509.Certificate) []ui.Field {
 		{Name: fieldIssuer, Value: issuer},
 		{Name: "Valid", Value: cert.NotBefore.UTC().Format(timeLayout) + " to " + cert.NotAfter.UTC().Format(timeLayout)},
 		{Name: fieldKey, Value: keyDesc},
-		{Name: "SHA-256", Value: hexBytes(sum[:])},
+		{Name: fieldSHA256, Value: hexBytes(sum[:])},
 	}
 }
 
@@ -491,18 +491,23 @@ func crlStatus(crlFile, issuerFile string) (pkicmp.CRLStatus, error) {
 // reportCRL saves and describes a CRL. Its signature is checked against the trusted CA certificates,
 // because the CMP protection covers only the transfer.
 func reportCRL(o *genmOptions, s *session, crl *x509.RevocationList, none string) error {
-	p := s.p
+	return reportCRLContent(s.p, crl, s.anchors, o.format, o.out, o.force, none)
+}
+
+// reportCRLContent saves crl to out and describes it. Its signature is checked against the trusted
+// certificates. A nil crl is reported with the title none.
+func reportCRLContent(p *printer, crl *x509.RevocationList, trusted []*x509.Certificate, format outFormat, out string, force bool, none string) error {
 	result := &crlJSON{Saved: []string{}}
 	if crl == nil {
 		p.result(none, nil, result)
 		return nil
 	}
-	data := o.format.block("X509 CRL", crl.Raw)
-	if o.out != "" {
-		if err := writeData(o.out, data, 0o644, o.force, p.stdout); err != nil {
+	data := format.block("X509 CRL", crl.Raw)
+	if out != "" {
+		if err := writeData(out, data, 0o644, force, p.stdout); err != nil {
 			return err
 		}
-		result.Saved = savedPaths(o.out)
+		result.Saved = savedPaths(out)
 	}
 	content := &crlContentJSON{
 		Issuer:     dn.Format(crl.RawIssuer),
@@ -519,7 +524,7 @@ func reportCRL(o *genmOptions, s *session, crl *x509.RevocationList, none string
 		content.Number = crl.Number.String()
 	}
 	signature := "not checked, the issuer certificate is unknown"
-	for _, cert := range s.anchors {
+	for _, cert := range trusted {
 		if !bytes.Equal(cert.RawSubject, crl.RawIssuer) {
 			continue
 		}

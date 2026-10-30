@@ -99,12 +99,12 @@ func (r *messageReport) estExchange(e *estMessageJSON) {
 		text = quoteText([]string{e.Text})
 	}
 	r.section("HTTP",
-		ui.Field{Name: "Request", Value: request},
+		ui.Field{Name: fieldRequest, Value: request},
 		ui.Field{Name: fieldStatus, Value: status},
 		ui.Field{Name: "Content type", Value: ui.Sanitize(e.ContentType)},
 		ui.Field{Name: "Parts", Value: strings.Join(parts, "; ")},
-		ui.Field{Name: "Retry after", Value: retry},
-		ui.Field{Name: "Server says", Value: text},
+		ui.Field{Name: fieldRetryAfter, Value: retry},
+		ui.Field{Name: fieldServerSays, Value: text},
 	)
 }
 

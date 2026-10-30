@@ -59,7 +59,7 @@ const estEnrollTimeoutHelp = "limit for the whole exchange, including the waits 
 func newESTEnrollCommand() *cobra.Command {
 	o := &estEnrollOptions{op: estEnroll}
 	cmd := &cobra.Command{
-		Use:   "enroll --server URL --cert-out FILE [flags]",
+		Use:   enrollUse,
 		Short: "Request a certificate from an EST server",
 		Long: "Request a certificate with a PKCS#10 request (RFC 7030 section 4.2.1) and save it.\n\n" +
 			"A new key is generated unless --new-key or --csr supplies one. When the server answers that the " +
@@ -265,8 +265,8 @@ func runESTEnroll(ctx context.Context, o *estEnrollOptions, p *printer, stdin io
 		return fmt.Errorf("the certificate was issued but could not be saved: %w", err)
 	}
 	title := map[string]string{
-		estEnroll:       "Certificate issued",
-		estReenroll:     "Certificate renewed",
+		estEnroll:       titleCertificateIssued,
+		estReenroll:     titleCertificateRenewed,
 		estServerKeyGen: "Certificate and key issued",
 	}[o.op]
 	fields := append(describeCertificate(result.cert), ui.Field{Name: fieldSaved, Value: strings.Join(saved, ", ")})

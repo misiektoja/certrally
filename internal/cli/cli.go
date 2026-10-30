@@ -97,17 +97,18 @@ func rootDescription(version string) string {
 	if version != "" {
 		name += " " + version
 	}
-	return name + " is a certificate enrollment client for the Certificate Management Protocol (CMP) and " +
-		"Enrollment over Secure Transport (EST).\n\n" +
+	return name + " is a certificate enrollment client for the Certificate Management Protocol (CMP), " +
+		"Enrollment over Secure Transport (EST) and the Simple Certificate Enrolment Protocol (SCEP).\n\n" +
 		"It shows each exchange as a ladder diagram and explains failures. Without a prefix, enroll, poll, " +
-		"revoke, cacerts, ping and mock use CMP. The EST commands run under certrally est."
+		"revoke, cacerts, ping and mock use CMP. The EST commands run under certrally est and the SCEP " +
+		"commands under certrally scep."
 }
 
 // newRootCommand returns the certrally command with its global flags.
 func newRootCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   programName,
-		Short: "Certificate enrollment client for CMP and EST",
+		Short: "Certificate enrollment client for CMP, EST and SCEP",
 		Long:  rootDescription(""),
 	}
 	cmd.AddCommand(
@@ -117,6 +118,7 @@ func newRootCommand() *cobra.Command {
 		newCACertsCommand("cacerts"),
 		newCMPCommand(),
 		newESTCommand(),
+		newSCEPCommand(),
 		newPingCommand(),
 		newInspectCommand(),
 		newLintCommand(),

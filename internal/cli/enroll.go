@@ -103,11 +103,20 @@ type certOutputs struct {
 	format outFormat
 }
 
+// enrollUse is the usage line of the enroll commands of every protocol.
+const enrollUse = "enroll --server URL --cert-out FILE [flags]"
+
+// Result titles of the commands that issue a certificate.
+const (
+	titleCertificateIssued  = "Certificate issued"
+	titleCertificateRenewed = "Certificate renewed"
+)
+
 // newEnrollCommand returns the enroll command.
 func newEnrollCommand() *cobra.Command {
 	o := &enrollOptions{}
 	cmd := &cobra.Command{
-		Use:   "enroll --server URL --cert-out FILE [flags]",
+		Use:   enrollUse,
 		Short: "Request a certificate from a CMP server",
 		Long: "Request a certificate from a CMP server and save it.\n\n" +
 			"With a shared secret (--ref) the request is MAC-protected, which is how a new device gets its first " +
@@ -459,7 +468,7 @@ func reportIssued(s *session, out certOutputs, result *client.EnrollResult, key 
 	}
 	status := lastStatus(s.recorder)
 	fields := certificateFields(cert, status, saved)
-	title, confirmation := "Certificate issued", confirmation(result, implicitAsked)
+	title, confirmation := titleCertificateIssued, confirmation(result, implicitAsked)
 	if rejected {
 		title = "Certificate issued and rejected"
 		confirmation = "certConf rejected it on --fault " + faultRejectCertificate + " and the CA answered pkiConf"

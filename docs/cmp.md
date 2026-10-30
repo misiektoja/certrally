@@ -1,6 +1,6 @@
 # CMP details
 
-The [README](../README.md#enroll-a-certificate) shows a first enrollment, a key update and a revocation. This page covers the other CMP options and commands. [keys.md](keys.md) describes key types, encrypted keys and DER output, which work the same for CMP and EST.
+The [README](../README.md#enroll-a-certificate) shows a first enrollment, a key update and a revocation. This page covers the other CMP options and commands. [keys.md](keys.md) describes key types, encrypted keys and DER output, which work the same for CMP, EST and SCEP.
 
 ## Protection
 

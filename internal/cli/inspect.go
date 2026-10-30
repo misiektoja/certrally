@@ -47,17 +47,21 @@ func newInspectCommand() *cobra.Command {
 	o := &inspectOptions{}
 	cmd := &cobra.Command{
 		Use:   "inspect FILE... [flags]",
-		Short: "Decode CMP and EST messages from capture or message files",
+		Short: "Decode CMP, EST and SCEP messages from capture or message files",
 		Long: "Decode CMP messages and show their header, protection, body and extra certificates. Decode EST " +
 			"requests and responses and show the HTTP exchange, the PKCS#10 request, the certificates or the " +
-			"CSR attributes.\n\n" +
+			"CSR attributes. Decode the SCEP requests and responses of a capture file and show the HTTP exchange, " +
+			"the pkiMessage attributes, the signature and the certificates. The content of a pkiMessage is encrypted for its " +
+			"recipient, so inspect does not decode it.\n\n" +
 			fileArgsHelp + "\n\n" +
 			"certrally checks a signature with the certificates the message carries and those in --ca-cert. " +
+			"It also looks for the signer of a SCEP message among the GetCACert answers in the files, because " +
+			"some servers leave it out of a CertRep. " +
 			"With --ca-cert it also checks that the signer chains to those certificates at the time the capture " +
 			"recorded the message, or at the current time for other files. It checks a MAC with " +
 			"the shared secret from --secret, --secret-file or the " + secret.EnvVar + " environment variable. " +
 			"inspect does not judge the messages. lint checks them against RFC 9483.\n\n" +
-			"Exit status: 0 success, 1 a file cannot be read or holds no CMP or EST message.",
+			"Exit status: 0 success, 1 a file cannot be read or holds no CMP, EST or SCEP message.",
 		Example: "  certrally enroll --server https://ca.example.com/.well-known/cmp --ref device-42 \\\n" +
 			"    --cert-out device.pem --key-out device.key --capture enroll.jsonl\n" +
 			"  certrally inspect enroll.jsonl",
@@ -95,6 +99,7 @@ func runInspect(o *inspectOptions, p *printer, paths []string, stdin io.Reader) 
 	if err != nil {
 		return err
 	}
+	a.scepCerts = scepCACertificates(msgs)
 	result := &inspectJSON{Messages: make([]messageJSON, 0, len(msgs))}
 	w := p.reportWriter()
 	for i, m := range msgs {
@@ -155,6 +160,9 @@ func readCACerts(paths []string) ([]*x509.Certificate, error) {
 type anchors struct {
 	// caCerts are the --ca-cert certificates.
 	caCerts []*x509.Certificate
+	// scepCerts are the certificates of the SCEP GetCACert and GetCACertChain answers among the
+	// inputs. They may hold the signer of a CertRep that does not carry it.
+	scepCerts []*x509.Certificate
 	// secret is the shared secret for MACs. It is nil when none was given.
 	secret []byte
 	// secretSource names where the secret came from, for the report.
@@ -221,10 +229,14 @@ func (r *messageReport) problem(format string, args ...any) {
 	r.json.Problems = append(r.json.Problems, fmt.Sprintf(format, args...))
 }
 
-// describeMessage describes m and checks the protection of a CMP message with a.
+// describeMessage describes m and checks the protection of a CMP message or the signature of a SCEP
+// message with a.
 func describeMessage(m cmpfile.Message, a *anchors) *messageReport {
 	if m.EST != nil {
 		return describeESTMessage(m)
+	}
+	if m.SCEP != nil {
+		return describeSCEPMessage(m, a)
 	}
 	msg := m.Msg
 	r := &messageReport{json: messageJSON{
@@ -269,7 +281,9 @@ func (r *messageReport) title() (title, details string) {
 	}
 	name := j.Body
 	parts := []string{ui.Sanitize(j.Source)}
-	if e := j.EST; e != nil {
+	switch {
+	case j.EST != nil:
+		e := j.EST
 		name = ui.Sanitize(cmp.Or(e.Operation, e.Content))
 		if e.HTTPStatus != 0 {
 			parts = append(parts, fmt.Sprintf("HTTP %d", e.HTTPStatus))
@@ -277,7 +291,16 @@ func (r *messageReport) title() (title, details string) {
 		if e.Operation != "" && e.Content != "" && e.Content != e.Operation {
 			parts = append(parts, e.Content)
 		}
-	} else {
+	case j.SCEP != nil:
+		e := j.SCEP
+		name = ui.Sanitize(cmp.Or(e.MessageType, e.Operation))
+		if e.HTTPStatus != 0 {
+			parts = append(parts, fmt.Sprintf("HTTP %d", e.HTTPStatus))
+		}
+		if e.Status != "" {
+			parts = append(parts, e.Status)
+		}
+	default:
 		parts = append(parts, j.Protection.Algorithm)
 	}
 	parts = append(parts, count(j.Size, "byte", "bytes"))
@@ -388,39 +411,56 @@ func keyID(b []byte) string {
 func (r *messageReport) protection(msg *pkicmp.PKIMessage, extra []*x509.Certificate, a *anchors, at time.Time) *x509.Certificate {
 	alg := msg.Header.ProtectionAlg
 	if alg == nil {
-		r.json.Protection = &protectionJSON{Algorithm: valueNone}
-		r.section("Protection", ui.Field{Name: "Algorithm", Value: valueNone})
+		r.protectionSection(protectionJSON{Algorithm: valueNone}, "")
 		return nil
 	}
 	j := protectionJSON{Algorithm: trace.AlgorithmName(alg.Algorithm), Check: checkUnchecked}
 	var signer *x509.Certificate
-	kind := "Signature"
+	kind := fieldSignature
 	if alg.Algorithm.Equal(oidPBM) || alg.Algorithm.Equal(oidPBMAC1) {
 		kind = "MAC"
 		j.Check, j.Problem = checkMAC(msg, a)
 	} else {
 		signer, j.Check, j.Problem = checkSignature(msg, slices.Concat(extra, a.caCerts))
 	}
-	trust := ""
 	if signer != nil {
 		j.Signer = dn.Format(signer.RawSubject)
 		if len(a.caCerts) > 0 {
 			trusted := chainsTo(msg, a.caCerts, at)
 			j.Trusted = &trusted
-			trust = "does not chain to --ca-cert"
-			if trusted {
-				trust = "chains to --ca-cert"
-			}
 		}
 	}
+	r.protectionSection(j, kind)
+	return signer
+}
+
+// Fields of the Protection section.
+const (
+	fieldAlgorithm = "Algorithm"
+	fieldSignature = "Signature"
+)
+
+// protectionSection records j and adds the Protection section. kind names the check, Signature or MAC.
+// An unprotected message shows only its algorithm, none.
+func (r *messageReport) protectionSection(j protectionJSON, kind string) {
 	r.json.Protection = &j
+	if j.Algorithm == valueNone {
+		r.section("Protection", ui.Field{Name: fieldAlgorithm, Value: valueNone})
+		return
+	}
+	trust := ""
+	if j.Trusted != nil {
+		trust = "does not chain to --ca-cert"
+		if *j.Trusted {
+			trust = "chains to --ca-cert"
+		}
+	}
 	r.section("Protection",
-		ui.Field{Name: "Algorithm", Value: j.Algorithm},
+		ui.Field{Name: fieldAlgorithm, Value: ui.Sanitize(j.Algorithm)},
 		ui.Field{Name: kind, Value: checkText(j.Check, j.Problem)},
 		ui.Field{Name: "Signer", Value: ui.Sanitize(j.Signer)},
 		ui.Field{Name: "Trust", Value: trust},
 	)
-	return signer
 }
 
 // MAC protection algorithms of RFC 9481.
@@ -956,7 +996,7 @@ func statusResult(info pkicmp.PKIStatusInfo) statusJSON {
 func statusFields(info pkicmp.PKIStatusInfo) []ui.Field {
 	return []ui.Field{
 		{Name: fieldStatus, Value: info.Status.String()},
-		{Name: "Fail info", Value: strings.Join(trace.FailureNames(info.FailInfo), ", ")},
+		{Name: fieldFailInfo, Value: strings.Join(trace.FailureNames(info.FailInfo), ", ")},
 		{Name: "Status text", Value: quoteText(info.StatusString)},
 	}
 }

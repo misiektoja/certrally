@@ -1,5 +1,6 @@
-# Runs certrally against independent CMP and EST servers: the openssl cmp mock server, EJBCA
-# Community Edition and the example server of Cisco libest.
+# Runs certrally against independent CMP, EST and SCEP servers: the openssl cmp mock server, EJBCA
+# Community Edition, the example server of Cisco libest and the SCEP server of micromdm/scep. A
+# last job runs the SCEP commands against certrally scep mock.
 name: Integration
 
 on:
@@ -130,11 +131,51 @@ jobs:
       - name: Build the libest server and run the EST tests
         run: make test-integration-libest
 
+  micromdm:
+    permissions:
+      contents: read
+    name: micromdm/scep
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Build the micromdm/scep server and run the SCEP tests
+        run: make test-integration-micromdm
+
+  scep-mock:
+    permissions:
+      contents: read
+    name: SCEP mock
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Run the SCEP tests against scep mock
+        run: make test-integration-scep-mock
+
   # One check name to require in branch rules, whatever jobs the workflow has.
   gate:
     name: Integration gate
     if: always()
-    needs: [openssl, ejbca, libest]
+    needs: [openssl, ejbca, libest, micromdm, scep-mock]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
@@ -144,6 +185,9 @@ jobs:
           OPENSSL: ${{ needs.openssl.result }}
           EJBCA: ${{ needs.ejbca.result }}
           LIBEST: ${{ needs.libest.result }}
+          MICROMDM: ${{ needs.micromdm.result }}
+          SCEP_MOCK: ${{ needs.scep-mock.result }}
         run: |
-          echo "OpenSSL: ${OPENSSL}, EJBCA: ${EJBCA}, libest: ${LIBEST}"
-          test "$OPENSSL" = success && test "$EJBCA" = success && test "$LIBEST" = success
+          echo "OpenSSL: ${OPENSSL}, EJBCA: ${EJBCA}, libest: ${LIBEST}, micromdm: ${MICROMDM}, scep mock: ${SCEP_MOCK}"
+          test "$OPENSSL" = success && test "$EJBCA" = success && test "$LIBEST" = success &&
+            test "$MICROMDM" = success && test "$SCEP_MOCK" = success

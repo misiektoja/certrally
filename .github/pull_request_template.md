@@ -11,7 +11,7 @@
 - [ ] `make actionlint`, for a workflow change
 - [ ] `make release-config-check` and `make release-snapshot`, for a release or packaging change
 - [ ] `make demo`, when the output of `enroll` or `revoke` changes
-- [ ] Exercised against a real CMP or EST server, for a protocol change
+- [ ] Exercised against a real CMP, EST or SCEP server, for a protocol change
 
 <!-- Name the server and its version, without hostnames or credentials. -->
 
