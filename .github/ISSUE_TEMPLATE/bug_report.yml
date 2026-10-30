@@ -1,5 +1,5 @@
 name: Bug report
-description: certrally fails against a CMP or EST server, or behaves differently from its documentation or an RFC
+description: certrally fails against a CMP, EST or SCEP server, or behaves differently from its documentation or an RFC
 labels:
   - bug
 body:
@@ -62,7 +62,7 @@ body:
     id: server
     attributes:
       label: Server and protocol
-      description: The CA or EST server, its version and whether you used CMP or EST.
+      description: The CA, EST or SCEP server, its version and whether you used CMP, EST or SCEP.
       placeholder: EJBCA 9.6.3 over CMP
     validations:
       required: true
