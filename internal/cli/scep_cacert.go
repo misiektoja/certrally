@@ -63,8 +63,9 @@ type scepChoice struct {
 }
 
 // scepDefaults returns the digest, cipher and HTTP method that go-scep picks from caps when the
-// command line names none: the strongest digest listed, AES-128-CBC unless only DES3 is listed and
-// POST when POSTPKIOperation or SCEPStandard is listed.
+// command line names none: SHA-256 when it is listed, when SCEPStandard is listed or when no digest
+// is listed, otherwise SHA-512 or SHA-1, AES-128-CBC unless only DES3 is listed and POST when
+// POSTPKIOperation or SCEPStandard is listed.
 func scepDefaults(caps scepclient.Capabilities) scepChoice {
 	c := scepChoice{digest: crypto.SHA256.String(), cipher: pkcs7.AES128CBC.String(), method: http.MethodGet}
 	standard := caps.Has("SCEPStandard")
