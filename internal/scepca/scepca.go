@@ -17,8 +17,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/misiektoja/go-scep"
-	"github.com/misiektoja/go-scep/scepserver"
+	scep "github.com/misiektoja/go-pki-scep"
+	"github.com/misiektoja/go-pki-scep/scepserver"
 )
 
 // validity is how long issued certificates are valid.

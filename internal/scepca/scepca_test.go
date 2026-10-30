@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/misiektoja/go-scep"
-	"github.com/misiektoja/go-scep/scepclient"
-	"github.com/misiektoja/go-scep/scepserver"
-	"github.com/misiektoja/go-scep/x509util"
+	scep "github.com/misiektoja/go-pki-scep"
+	"github.com/misiektoja/go-pki-scep/scepclient"
+	"github.com/misiektoja/go-pki-scep/scepserver"
+	"github.com/misiektoja/go-pki-scep/x509util"
 )
 
 // testClient serves ca and returns a client for it with its CA certificates. busyRetries is passed

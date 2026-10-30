@@ -27,7 +27,7 @@ import (
 	"time"
 
 	"github.com/misiektoja/go-pkcs7"
-	"github.com/misiektoja/go-scep/scepserver"
+	"github.com/misiektoja/go-pki-scep/scepserver"
 
 	"github.com/misiektoja/certrally/internal/pemfile"
 	"github.com/misiektoja/certrally/internal/scepca"
@@ -112,7 +112,7 @@ func scepRequests(doc map[string]any) string {
 	return strings.Join(ops, " ")
 }
 
-// TestSCEPCaps checks the capabilities report and the choices go-scep makes from them.
+// TestSCEPCaps checks the capabilities report and the choices go-pki-scep makes from them.
 func TestSCEPCaps(t *testing.T) {
 	useChallenge(t, "")
 	srv := startSCEPServer(t, scepca.Options{}, scepserver.Options{}, nil)

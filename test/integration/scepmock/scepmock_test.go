@@ -1,7 +1,7 @@
 //go:build integration
 
 // Package scepmock runs the SCEP commands of certrally against certrally scep mock, which serves
-// the scepserver package of go-scep.
+// the scepserver package of go-pki-scep.
 package scepmock
 
 import (

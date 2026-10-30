@@ -21,7 +21,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/misiektoja/go-scep/scepserver"
+	"github.com/misiektoja/go-pki-scep/scepserver"
 	"github.com/spf13/cobra"
 
 	"github.com/misiektoja/certrally/internal/dn"

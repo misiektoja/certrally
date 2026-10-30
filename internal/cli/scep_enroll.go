@@ -20,9 +20,9 @@ import (
 	"time"
 
 	"github.com/misiektoja/go-pkcs7"
-	"github.com/misiektoja/go-scep"
-	"github.com/misiektoja/go-scep/scepclient"
-	"github.com/misiektoja/go-scep/x509util"
+	scep "github.com/misiektoja/go-pki-scep"
+	"github.com/misiektoja/go-pki-scep/scepclient"
+	"github.com/misiektoja/go-pki-scep/x509util"
 	"github.com/spf13/cobra"
 
 	"github.com/misiektoja/certrally/internal/dn"
@@ -338,7 +338,7 @@ type scepRequest struct {
 	cipher        pkcs7.ContentEncryptionAlgorithm
 }
 
-// enrollRequest returns the request for go-scep.
+// enrollRequest returns the request for go-pki-scep.
 func (r *scepRequest) enrollRequest() scepclient.EnrollRequest {
 	return scepclient.EnrollRequest{
 		MessageType:       r.messageType,

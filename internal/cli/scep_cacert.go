@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/misiektoja/go-pkcs7"
-	"github.com/misiektoja/go-scep/scepclient"
+	"github.com/misiektoja/go-pki-scep/scepclient"
 	"github.com/spf13/cobra"
 
 	"github.com/misiektoja/certrally/internal/dn"
@@ -62,7 +62,7 @@ type scepChoice struct {
 	digest, cipher, method string
 }
 
-// scepDefaults returns the digest, cipher and HTTP method that go-scep picks from caps when the
+// scepDefaults returns the digest, cipher and HTTP method that go-pki-scep picks from caps when the
 // command line names none: SHA-256 when it is listed, when SCEPStandard is listed or when no digest
 // is listed, otherwise SHA-512 or SHA-1, AES-128-CBC unless only DES3 is listed and POST when
 // POSTPKIOperation or SCEPStandard is listed.

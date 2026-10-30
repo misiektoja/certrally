@@ -13,7 +13,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/misiektoja/go-scep"
+	scep "github.com/misiektoja/go-pki-scep"
 	"github.com/spf13/cobra"
 
 	"github.com/misiektoja/certrally/internal/keys"

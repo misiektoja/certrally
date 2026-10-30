@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/misiektoja/go-scep/scepclient"
+	"github.com/misiektoja/go-pki-scep/scepclient"
 	"github.com/spf13/cobra"
 
 	"github.com/misiektoja/certrally/internal/dn"

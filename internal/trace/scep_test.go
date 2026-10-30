@@ -18,9 +18,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/misiektoja/go-scep"
-	"github.com/misiektoja/go-scep/scepclient"
-	"github.com/misiektoja/go-scep/scepserver"
+	scep "github.com/misiektoja/go-pki-scep"
+	"github.com/misiektoja/go-pki-scep/scepclient"
+	"github.com/misiektoja/go-pki-scep/scepserver"
 
 	"github.com/misiektoja/certrally/internal/scepca"
 )

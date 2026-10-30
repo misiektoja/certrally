@@ -18,8 +18,8 @@ import (
 	"time"
 
 	"github.com/misiektoja/go-pkcs7"
-	"github.com/misiektoja/go-scep"
-	"github.com/misiektoja/go-scep/scepclient"
+	scep "github.com/misiektoja/go-pki-scep"
+	"github.com/misiektoja/go-pki-scep/scepclient"
 	"github.com/spf13/cobra"
 
 	"github.com/misiektoja/certrally/internal/dn"
@@ -74,7 +74,7 @@ const (
 	flagAllowDES    = "allow-des"
 	// scepProxyHelp describes --proxy, which also takes SOCKS5 for SCEP.
 	scepProxyHelp = "connect through this http, https or socks5 proxy instead of the one HTTP_PROXY or HTTPS_PROXY names"
-	// scepHashHelp describes --hash. The default follows the digest choice of go-scep.
+	// scepHashHelp describes --hash. The default follows the digest choice of go-pki-scep.
 	scepHashHelp = "digest of the request signature: sha256, sha384, sha512, sha1 or md5, by default sha256, or sha512 " +
 		"or sha1 when the server lists one of them and not SHA-256"
 	// scepEnrollHashHelp describes --hash of the commands that send a CSR. crypto/x509 does not sign
@@ -301,7 +301,7 @@ func (c *scepConnection) open(p *printer) (*scepSession, error) {
 	}
 	retries := c.busyRetries
 	if retries == 0 {
-		// go-scep reads zero as its default and a negative count as never.
+		// go-pki-scep reads zero as its default and a negative count as never.
 		retries = -1
 	}
 	var decrypt pkcs7.DecryptOptions
