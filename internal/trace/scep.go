@@ -346,7 +346,9 @@ func scepProblem(operation string, status int, contentType string, size int) err
 	if class != 2 && class != 4 && class != 5 {
 		return fmt.Errorf("HTTP %d %s", status, http.StatusText(status))
 	}
-	if status == http.StatusNotFound {
+	// Servers built on go-pki-scep answer GetNextCACert with 404 while no CA key rollover is prepared,
+	// so there it can come from the right path. scep nextca tells the two apart with GetCACert.
+	if status == http.StatusNotFound && operation != SCEPGetNextCACert {
 		return errors.New("HTTP 404 Not Found")
 	}
 	if status != http.StatusOK {
