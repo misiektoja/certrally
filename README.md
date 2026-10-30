@@ -21,6 +21,7 @@ certrally is a command line client for certificate enrollment with the Certifica
 * CA certificates, root CA updates, request templates and CRLs from the CA
 * `ping` to check a server and `mock` to run a test CA on your machine
 * Deliberately wrong messages with `enroll --fault` to test how a CA copes
+* A step-by-step `enroll` that prints the matching command for scripts
 
 **EST** (RFC 7030)
 
@@ -38,8 +39,7 @@ certrally is a command line client for certificate enrollment with the Certifica
 **All protocols**
 
 * A live diagram of every message and plain explanations of failures
-* A step-by-step `enroll` that prints the matching command for scripts
-* RSA, ECDSA, Ed25519, ML-DSA, composite ML-DSA and ML-KEM keys, also offline with `keygen`
+* RSA, ECDSA, Ed25519, ML-DSA, composite ML-DSA and ML-KEM keys, also offline with `keygen`. SCEP takes RSA and ECDSA keys
 * No trust setup: certrally trusts the CA it talks to or the one in `--ca-cert`
 * Warnings about responses that break the RFCs and a strict profile that rejects them
 * JSON output, capture files and exit statuses for scripts
@@ -254,7 +254,7 @@ certrally inspect run.jsonl --ca-cert ca.pem
 certrally lint run.jsonl
 ```
 
-Both also read messages saved as DER, base64, hex or PEM. [docs/inspect.md](docs/inspect.md) shows the output and how signatures are checked.
+Both also read CMP and EST messages saved as DER, base64, hex or PEM. SCEP messages come from capture files. [docs/inspect.md](docs/inspect.md) shows the output and how signatures are checked.
 
 ### Exit status
 
