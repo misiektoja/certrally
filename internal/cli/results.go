@@ -315,7 +315,7 @@ type headerJSON struct {
 	CertProfile string   `json:"certProfile,omitempty"`
 }
 
-// protectionJSON describes the protection of a message.
+// protectionJSON describes the protection of a CMP message or the signature of a SCEP message.
 type protectionJSON struct {
 	// Algorithm is the protection algorithm. It is "none" for an unprotected message.
 	Algorithm string `json:"algorithm"`
