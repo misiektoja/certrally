@@ -2,6 +2,14 @@
 
 Notable changes to certrally. Versions follow the `vMAJOR.MINOR.PATCH` tags published in this repository.
 
+## v0.4.1 - 30 Oct 2026
+
+This release fixes how `scep nextca` reports a server without a next CA certificate.
+
+### Bug fixes
+
+* **`scep nextca` reports no next CA certificate when the server answers GetNextCACert with `404 Not Found`** and GetCACert works at the same address. Servers built on go-pki-scep answer that way until a CA key rollover is prepared. The command exits with status 0 and `--json` shows an empty `certificates` list. Before, it exited with status 2 and suggested checking the path and the CA name. With `--ca-cert` certrally sends GetCACert after the 404, so a wrong path or CA name still exits with status 2.
+
 ## v0.4.0 - 30 Oct 2026
 
 This release adds SCEP (RFC 8894) under `certrally scep`: enrollment, renewal, pending requests, CA certificates, queries and a SCEP test CA. `inspect` checks the signatures of SCEP messages. Names show domainComponent attributes as `DC`.
