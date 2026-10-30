@@ -64,7 +64,14 @@ certrally scep poll --state device.pem.state
 
 ## Renewal
 
-`scep renew` sends a RenewalReq signed with the certificate in `--cert` and its key in `--key`, which must be RSA. The request repeats the subject and subjectAltName of the certificate. A new key is generated unless `--new-key` or `--csr` supplies one. The server must list Renewal in its capabilities. certrally warns when it does not. Some servers list Renewal and still answer a RenewalReq with FAILURE and `badCertId`. They may expect a PKCSReq signed with the current certificate instead, which certrally does not send.
+`scep renew` sends a RenewalReq signed with the certificate in `--cert` and its key in `--key`, which must be RSA. The request repeats the subject and subjectAltName of the certificate. A new key is generated unless `--new-key` or `--csr` supplies one. The server must list Renewal in its capabilities. certrally warns when it does not.
+
+Servers that follow the drafts before RFC 8894 renew through a PKCSReq signed with the current certificate. Some of them list Renewal and still answer a RenewalReq with FAILURE and `badCertId`. `scep renew --pkcsreq` sends such a PKCSReq, signed with `--cert` and `--key` and with the same subject and subjectAltName. The server need not list Renewal. PENDING answers and the state file work as for a RenewalReq.
+
+```bash
+certrally scep renew --server http://scep.example.com/scep --pkcsreq \
+  --cert device.pem --key device.key --cert-out device-new.pem --key-out device-new.key
+```
 
 ## Certificates and CRLs from the CA
 
