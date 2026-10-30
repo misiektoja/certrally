@@ -416,6 +416,57 @@ func TestSCEPRenewPKCSReq(t *testing.T) {
 	}
 }
 
+// ecdsaCACert answers GetCACert with cert, as a CA whose only certificate has an ECDSA key does.
+func ecdsaCACert(cert *x509.Certificate) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Query().Get("operation") != "GetCACert" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "application/x-x509-ca-cert")
+			_, _ = w.Write(cert.Raw)
+		})
+	}
+}
+
+// TestSCEPNoRSARecipient checks the hint when the CA certificates from GetCACert or --ca-cert hold no
+// RSA certificate to encrypt a request for.
+func TestSCEPNoRSARecipient(t *testing.T) {
+	useChallenge(t, scepTestChallenge)
+	now := time.Now()
+	_, cert := testCertificate(t, &x509.Certificate{
+		Subject:               pkix.Name{CommonName: "ECDSA CA"},
+		NotBefore:             now.Add(-time.Hour),
+		NotAfter:              now.Add(time.Hour),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign,
+	}, nil, nil)
+	srv := startSCEPServer(t, scepca.Options{}, scepserver.Options{}, ecdsaCACert(cert))
+	dir := t.TempDir()
+	caFile := filepath.Join(dir, "ecdsa-ca.pem")
+	writeFile(t, caFile, pemfile.EncodeCertificates([]*x509.Certificate{cert}))
+	enroll := []string{"--subject", "CN=dev", "--cert-out", filepath.Join(dir, "dev.pem"), "--key-out", filepath.Join(dir, "dev.key"), "--force"}
+	tests := []struct {
+		name string
+		args []string
+		// code is exitLocal when the request fails before anything is sent.
+		code int
+		hint string
+	}{
+		{"GetCACert", srv.args("enroll", enroll...), exitProtocol, "needs an RSA RA certificate"},
+		{"--ca-cert", srv.args("enroll", append([]string{"--ca-cert", caFile}, enroll...)...), exitProtocol, "in --ca-cert"},
+		{"getcert", srv.args("getcert", "--ca-cert", caFile, "--serial", "5"), exitLocal, "in --ca-cert"},
+	}
+	for _, tt := range tests {
+		code, doc := runJSON(t, tt.args...)
+		if code != tt.code || !strings.Contains(text(get(doc, "error.hint")), tt.hint) {
+			t.Errorf("%s: exit %d, error %v", tt.name, code, doc["error"])
+		}
+	}
+}
+
 // TestSCEPPending checks --poll-later, the state file, scep poll and polling within --timeout.
 func TestSCEPPending(t *testing.T) {
 	useChallenge(t, scepTestChallenge)
