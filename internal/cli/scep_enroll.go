@@ -235,7 +235,7 @@ func (o *scepEnrollOptions) addCommonFlags(cmd *cobra.Command) {
 		"keep a pending request in this file for certrally scep poll, by default --cert-out.state")
 	f.BoolVar(&o.force, "force", false, "replace existing output files")
 	o.format.addFlags(cmd, formatPEM, outFormatHelp)
-	f.StringVar(&o.hash, "hash", "", scepHashHelp)
+	f.StringVar(&o.hash, "hash", "", scepEnrollHashHelp)
 	f.StringVar(&o.cipher, "cipher", "", "content cipher of the request: aes128, aes192, aes256, des3 or des, by default "+
 		"aes128 unless the server lists only DES3")
 	f.BoolVar(&o.pollLater, "poll-later", false, "stop at the first PENDING answer and keep the request in --state")
@@ -454,7 +454,7 @@ func (o *scepEnrollOptions) prepareRequest(challenge string, stdin io.Reader, pr
 		req.generated = true
 	}
 	if req.key != nil {
-		if req.csr, err = o.createCSR(req.key, renewed, challenge); err != nil {
+		if req.csr, err = o.createCSR(req.key, renewed, challenge, req.digest); err != nil {
 			return nil, err
 		}
 	}
@@ -492,10 +492,12 @@ func (o *scepEnrollOptions) prepareRequest(challenge string, stdin io.Reader, pr
 	return req, nil
 }
 
-// createCSR returns the PKCS#10 request for key. renewed is the certificate scep renew renews,
-// whose subject and subjectAltName the request repeats.
-func (o *scepEnrollOptions) createCSR(key crypto.Signer, renewed *x509.Certificate, challenge string) (*x509.CertificateRequest, error) {
+// createCSR returns the PKCS#10 request for key, signed with the --hash digest when it names one.
+// crypto/x509 does not sign with MD5, so MD5 keeps its default. renewed is the certificate scep renew
+// renews, whose subject and subjectAltName the request repeats.
+func (o *scepEnrollOptions) createCSR(key crypto.Signer, renewed *x509.Certificate, challenge string, digest crypto.Hash) (*x509.CertificateRequest, error) {
 	tmpl := &x509util.CertificateRequest{ChallengePassword: challenge}
+	tmpl.SignatureAlgorithm = csrSignatureAlgorithm(key, digest)
 	if renewed != nil {
 		tmpl.RawSubject = renewed.RawSubject
 		for _, ext := range renewed.Extensions {

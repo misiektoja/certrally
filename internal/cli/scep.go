@@ -77,6 +77,9 @@ const (
 	// scepHashHelp describes --hash. The default follows the digest choice of go-scep.
 	scepHashHelp = "digest of the request signature: sha256, sha384, sha512, sha1 or md5, by default sha256, or sha512 " +
 		"or sha1 when the server lists one of them and not SHA-256"
+	// scepEnrollHashHelp describes --hash of the commands that send a CSR. crypto/x509 does not sign
+	// with MD5.
+	scepEnrollHashHelp = scepHashHelp + ", also used to sign a CSR that certrally creates unless it is md5"
 )
 
 // scepConnection holds the flags that say how to reach a SCEP server.
