@@ -48,6 +48,8 @@ A server that lists SCEPStandard gets SHA-256, AES-128-CBC and POST. `scep caps`
 
 certrally signs a PKCSReq with a self-signed certificate for the request key, or for a temporary RSA key when the request key is not RSA, because SCEP encrypts answers to the signer key. The transaction ID is the SHA-1 hash of the public key in uppercase hex, so a request for the same key always has the same ID.
 
+Requests are encrypted with RSA for the RA certificates, or for the CA certificate when the CA has no RA. When one of them has another key type, certrally stops before it sends the request and says that the CA needs an RSA RA certificate.
+
 certrally decrypts answers encrypted with AES or DES-EDE3-CBC and always with the cipher of its request. Some servers encrypt their answers with single DES whatever the request used. certrally then exits with status 4 and suggests `--allow-des`, which accepts them. Single DES offers no real protection for the certificate, but the certificate is public.
 
 ## Waiting for the CA
