@@ -170,6 +170,8 @@ func TestRecorderSCEPResponses(t *testing.T) {
 		{name: "empty chain", operation: "GetCACertChain", status: 200, problem: "HTTP 200 OK with an empty body"},
 		{name: "empty PKIOperation", operation: "PKIOperation", status: 200, problem: "HTTP 200 OK with an empty body"},
 		{name: "no next CA", operation: "GetNextCACert", status: 200},
+		{name: "no next CA, not found", operation: "GetNextCACert", status: 404, contentType: "text/plain",
+			body: "no next CA certificate", text: "no next CA certificate"},
 		{name: "busy without Retry-After", operation: "PKIOperation", status: 503, contentType: "text/plain",
 			body: "busy", text: "busy"},
 		{name: "busy with Retry-After", operation: "PKIOperation", status: 503, retryAfter: "10", retry: true},

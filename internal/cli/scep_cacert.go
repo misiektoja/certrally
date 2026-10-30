@@ -246,8 +246,11 @@ func newSCEPNextCACommand() *cobra.Command {
 		Short: "Get the CA certificate that will replace the current one",
 		Long: "Send GetNextCACert (RFC 8894 section 4.7) and show the CA and RA certificates that will replace the " +
 			"current ones when the CA changes its key. The answer must be signed by the current CA or RA, which " +
-			"come from --ca-cert or a GetCACert request. Many servers have no next CA certificate, or answer " +
-			"without content when they lack the operation.\n\n" + scepExitStatusHelp,
+			"come from --ca-cert or a GetCACert request.\n\n" +
+			"Many servers have no next CA certificate until a CA key rollover is prepared. certrally then reports " +
+			"none and exits with status 0 when the server answers without content or answers 404 Not Found while " +
+			"GetCACert works at the same address. After a 404 with --ca-cert, certrally sends GetCACert to tell a " +
+			"missing next CA certificate from a wrong path or CA name.\n\n" + scepExitStatusHelp,
 		Example: "  certrally scep nextca --server http://scep.example.com/scep --ca 'Issuing CA' --ca-cert ca.pem",
 		Args:    cobra.NoArgs,
 		RunE: runWith(&o.outputOptions, func(cmd *cobra.Command, _ []string, p *printer) error {
@@ -259,6 +262,8 @@ func newSCEPNextCACommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// none explains an answer without a next CA certificate.
+			var none string
 			next, s, err := scepRun(cmd.Context(), &o.scepConnection, p,
 				func(ctx context.Context, s *scepSession) (*scepclient.CACertificates, error) {
 					current, err := s.caCertificates(ctx, pinned, fp)
@@ -267,6 +272,15 @@ func newSCEPNextCACommand() *cobra.Command {
 					}
 					next, err := s.client.GetNextCACert(ctx, current)
 					if errors.Is(err, scepclient.ErrEmptyResponse) {
+						none = "It answered without content, which some servers do when they lack GetNextCACert."
+						return nil, nil
+					}
+					if httpErr, ok := errors.AsType[*scepclient.HTTPError](err); ok && httpErr.StatusCode == http.StatusNotFound {
+						if err := s.confirmAddress(ctx); err != nil {
+							return nil, err
+						}
+						none = "It answered 404 Not Found while GetCACert works at the same address, which servers do " +
+							"until a CA key rollover is prepared."
 						return nil, nil
 					}
 					return next, err
@@ -275,10 +289,8 @@ func newSCEPNextCACommand() *cobra.Command {
 				return err
 			}
 			if next == nil {
-				p.result("The server announces no next CA certificate", []ui.Field{{
-					Name:  fieldNote,
-					Value: "It answered without content, which some servers do when they lack GetNextCACert.",
-				}}, &scepCertsJSON{Certificates: []*scepCertJSON{}, Saved: []string{}, Verified: verifiedSigned})
+				p.result("The server announces no next CA certificate", []ui.Field{{Name: fieldNote, Value: none}},
+					&scepCertsJSON{Certificates: []*scepCertJSON{}, Saved: []string{}, Verified: verifiedSigned})
 				return nil
 			}
 			o.fingerprint = ""
@@ -288,6 +300,17 @@ func newSCEPNextCACommand() *cobra.Command {
 	}
 	o.addFlags(cmd, true)
 	return cmd
+}
+
+// confirmAddress checks that the server serves the CA at --server and --ca, so that a 404 answer to
+// GetNextCACert means no next CA certificate rather than a wrong path or CA name. A session that
+// trusted a GetCACert answer has shown that already. With --ca-cert it sends GetCACert.
+func (s *scepSession) confirmAddress(ctx context.Context) error {
+	if !s.pinned {
+		return nil
+	}
+	_, err := s.client.GetCACert(ctx)
+	return err
 }
 
 // verifiedSigned says that the current CA signed the next CA certificates, as in the JSON result.
