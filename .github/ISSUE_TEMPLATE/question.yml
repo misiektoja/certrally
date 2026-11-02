@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Check the [README](https://github.com/misiektoja/certrally/blob/main/README.md) and [SUPPORT.md](https://github.com/misiektoja/certrally/blob/main/SUPPORT.md) first.
+        Check the [documentation](https://misiektoja.github.io/certrally/) and [SUPPORT.md](https://github.com/misiektoja/certrally/blob/main/SUPPORT.md) first.
 
         Never paste shared secrets, passwords, private keys or capture files from a production system into an issue.
 
