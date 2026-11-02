@@ -5,15 +5,23 @@
          <lastmod>2026-11-02</lastmod>
     </url>
     <url>
+         <loc>https://misiektoja.github.io/certrally/cmp-faults/</loc>
+         <lastmod>2026-11-02</lastmod>
+    </url>
+    <url>
+         <loc>https://misiektoja.github.io/certrally/cmp-test-ca/</loc>
+         <lastmod>2026-11-02</lastmod>
+    </url>
+    <url>
          <loc>https://misiektoja.github.io/certrally/cmp/</loc>
          <lastmod>2026-11-02</lastmod>
     </url>
     <url>
-         <loc>https://misiektoja.github.io/certrally/est/</loc>
+         <loc>https://misiektoja.github.io/certrally/est-test-ca/</loc>
          <lastmod>2026-11-02</lastmod>
     </url>
     <url>
-         <loc>https://misiektoja.github.io/certrally/faults/</loc>
+         <loc>https://misiektoja.github.io/certrally/est/</loc>
          <lastmod>2026-11-02</lastmod>
     </url>
     <url>
@@ -41,15 +49,15 @@
          <lastmod>2026-11-02</lastmod>
     </url>
     <url>
-         <loc>https://misiektoja.github.io/certrally/mock/</loc>
-         <lastmod>2026-11-02</lastmod>
-    </url>
-    <url>
          <loc>https://misiektoja.github.io/certrally/output/</loc>
          <lastmod>2026-11-02</lastmod>
     </url>
     <url>
-         <loc>https://misiektoja.github.io/certrally/profiles/</loc>
+         <loc>https://misiektoja.github.io/certrally/rfc-checks/</loc>
+         <lastmod>2026-11-02</lastmod>
+    </url>
+    <url>
+         <loc>https://misiektoja.github.io/certrally/scep-test-ca/</loc>
          <lastmod>2026-11-02</lastmod>
     </url>
     <url>
