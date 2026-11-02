@@ -8,14 +8,13 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	compositemldsa "github.com/misiektoja/go-composite-mldsa"
-
-	"github.com/misiektoja/certrally/internal/secret"
 )
 
 // syncBuffer is a bytes.Buffer that a running command and a test can share.
@@ -160,27 +159,124 @@ func TestMock(t *testing.T) {
 	}
 }
 
-// TestMockGeneratedSecret checks that the mock CA makes up a secret and that the printed command uses it.
-func TestMockGeneratedSecret(t *testing.T) {
-	useSecret(t, "")
-	t.Chdir(t.TempDir())
-	m := startMock(t, "--listen", "127.0.0.1:0", "--ca-out", "ca.pem")
-	match := regexp.MustCompile(`(?m)^  (` + regexp.QuoteMeta(secret.EnvVar) + `=(\S+)) certrally (enroll .*)$`).FindStringSubmatch(m.stdout.String())
-	if match == nil {
-		t.Fatalf("startup report lacks an enroll command with the generated secret:\n%s", m.stdout)
+// TestMockPrintedCommand checks the enroll command in the startup report of the mock CA for each
+// source of the shared secret.
+func TestMockPrintedCommand(t *testing.T) {
+	checkPrintedCommands(t, startMock, useSecret, "certrally enroll", "--secret", []printedCase{
+		{name: "generated", generated: true},
+		{name: "flag", args: []string{"--secret", "demo's secret"}, want: "demo's secret"},
+		{name: "environment", env: "env-secret"},
+	})
+}
+
+// printedCase is one way to give a test CA its secret.
+type printedCase struct {
+	name string
+	// args are flags of the test CA and env is the value of its environment variable.
+	args []string
+	env  string
+	// want is the value of the secret flag in the printed command, or empty for no secret flag.
+	// generated asks for the value that the startup report shows as generated instead.
+	want      string
+	generated bool
+}
+
+// checkPrintedCommands starts a test CA with start for each case and runs the command that begins
+// with prefix in its startup report as printed. flag is the secret flag of that command and setEnv
+// sets the environment variable that both read.
+func checkPrintedCommands(t *testing.T, start func(*testing.T, ...string) *mockRun, setEnv func(*testing.T, string), prefix, flag string, cases []printedCase) {
+	t.Helper()
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			setEnv(t, tt.env)
+			t.Chdir(t.TempDir())
+			report := start(t, append([]string{"--listen", "127.0.0.1:0", "--ca-out", "ca.pem"}, tt.args...)...).stdout.String()
+			args := reportedCommand(t, report, prefix)
+			value, ok := flagValue(args, flag)
+			switch {
+			case tt.generated:
+				if !ok || !strings.Contains(report, value+" (generated)") {
+					t.Errorf("printed command does not give the generated secret with %s:\n%s", flag, report)
+				}
+			case tt.want != "":
+				if value != tt.want {
+					t.Errorf("printed command gives %s %q, want %q:\n%s", flag, value, tt.want, report)
+				}
+			case ok || strings.Contains(report, tt.env):
+				t.Errorf("startup report shows the secret from the environment:\n%s", report)
+			}
+			if code, _, errOut := run(t, args...); code != exitOK {
+				t.Fatalf("the printed command exited with %d:\n%s", code, errOut)
+			}
+			for _, file := range []string{"device.pem", "device.key"} {
+				if _, err := os.Stat(file); err != nil {
+					t.Error(err)
+				}
+			}
+		})
 	}
-	if !strings.Contains(m.stdout.String(), match[2]+" (generated)") {
-		t.Errorf("startup report does not show the generated secret:\n%s", m.stdout)
-	}
-	useSecret(t, match[2])
-	if code, _, errOut := run(t, strings.Fields(match[3])...); code != exitOK {
-		t.Fatalf("the printed command exited with %d:\n%s", code, errOut)
-	}
-	for _, file := range []string{"device.pem", "device.key"} {
-		if _, err := os.Stat(file); err != nil {
-			t.Error(err)
+}
+
+// reportedCommand returns the arguments of the first command line in report that begins with prefix,
+// without the program name.
+func reportedCommand(t *testing.T, report, prefix string) []string {
+	t.Helper()
+	for line := range strings.Lines(report) {
+		if strings.HasPrefix(line, "  "+prefix+" ") {
+			return shellFields(t, strings.TrimSpace(line))[1:]
 		}
 	}
+	t.Fatalf("startup report lacks a command that begins with %q:\n%s", prefix, report)
+	return nil
+}
+
+// shellFields splits a command line into words as a POSIX shell does, for the quoting that
+// shellQuote produces.
+func shellFields(t *testing.T, line string) []string {
+	t.Helper()
+	var words []string
+	var word strings.Builder
+	inWord, quoted, escaped := false, false, false
+	for _, r := range line {
+		switch {
+		case escaped:
+			word.WriteRune(r)
+			escaped = false
+		case quoted && r == '\'':
+			quoted = false
+		case quoted:
+			word.WriteRune(r)
+		case r == '\'':
+			quoted, inWord = true, true
+		case r == '\\':
+			escaped, inWord = true, true
+		case r == ' ':
+			if inWord {
+				words = append(words, word.String())
+				word.Reset()
+				inWord = false
+			}
+		default:
+			word.WriteRune(r)
+			inWord = true
+		}
+	}
+	if quoted || escaped {
+		t.Fatalf("unfinished quoting in %q", line)
+	}
+	if inWord {
+		words = append(words, word.String())
+	}
+	return words
+}
+
+// flagValue returns the value that follows the flag name in args and whether the flag is there.
+func flagValue(args []string, name string) (string, bool) {
+	i := slices.Index(args, name)
+	if i < 0 || i+1 >= len(args) {
+		return "", false
+	}
+	return args[i+1], true
 }
 
 // TestMockErrors checks that the mock CA refuses to start on a bad command line.

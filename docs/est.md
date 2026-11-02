@@ -1,6 +1,24 @@
-# EST details
+# Enroll over EST
 
-The [README](../README.md#enroll-over-est) introduces the `certrally est` commands. This page covers how they sign in and the less common options. Key files, encrypted keys and `--out-format der` work as for CMP, see [keys.md](keys.md).
+The `certrally est` commands talk to an EST server over HTTPS. `--server` is the address of the server, such as `https://est.example.com`. Add `/.well-known/est/LABEL` to choose a CA on a server that offers several.
+
+| Command | What it does |
+|---|---|
+| `est cacerts` | Gets the CA certificates. `--out` saves them |
+| `est csrattrs` | Shows the attributes, extensions and key types the CA wants in a request |
+| `est enroll` | Requests a certificate for a new key, `--new-key` or `--csr` |
+| `est reenroll` | Renews the certificate in `--cert`, with the same subject and subjectAltName |
+| `est serverkeygen` | Requests a certificate and a key that the server generates |
+| `est mock` | Runs an EST test CA on your machine |
+
+```bash
+certrally est enroll --server https://est.example.com --tls-ca-cert ca.pem \
+  --user device-42 --password-file password.txt \
+  --subject CN=device-42 --san device-42.example.com \
+  --cert-out device.pem --key-out device.key
+```
+
+A client signs in with a password (`--user`), a bearer token (`--token`), a TLS client certificate (`--cert` and `--key`) or TLS-SRP (`--srp`). `est cacerts --bootstrap` gets the first CA certificates from a server that nothing can check yet and saves them after a fingerprint check. The sections below describe the sign-in options, the bootstrap, proxies, waiting for the CA and the `est mock` test CA. Key files, encrypted keys and `--out-format der` work as for CMP, see [keys.md](keys.md).
 
 ## Signing in
 
@@ -42,4 +60,4 @@ When the server answers that a request is pending, `est enroll`, `est reenroll` 
 
 ## Test CA
 
-`certrally est mock` runs an EST test CA on `127.0.0.1:8443` and prints commands that work against it. It accepts the password of `--user` (default `demo`) and certificates it issued. `--srp-listen 127.0.0.1:8444` also serves TLS-SRP for the same user. `--retry-after` answers the first request for each key with `202 Accepted`, to test waiting. It generates a password unless `--password`, `--password-file` or `CERTRALLY_PASSWORD` gives one. With `--token`, `--token-file` or `CERTRALLY_TOKEN` it also accepts that bearer token with `est enroll --token`.
+`certrally est mock` runs an EST test CA on `127.0.0.1:8443` and prints commands that work against it. It accepts the password of `--user` (default `demo`) and certificates it issued. `--srp-listen 127.0.0.1:8444` also serves TLS-SRP for the same user. `--retry-after` answers the first request for each key with `202 Accepted`, to test waiting. It generates a password unless `--password`, `--password-file` or `CERTRALLY_PASSWORD` gives one. The printed commands give the password with `--password` and the token with `--token`, name the files of `--password-file` and `--token-file` and leave out values from the environment. With `--token`, `--token-file` or `CERTRALLY_TOKEN` it also accepts that bearer token with `est enroll --token`.

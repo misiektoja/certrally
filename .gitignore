@@ -35,6 +35,7 @@ go.work.sum
 # Tool binaries, build output and caches
 bin/
 dist/
+site/
 .cache/
 
 # Dependency directories

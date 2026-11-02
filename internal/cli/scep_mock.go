@@ -257,18 +257,17 @@ func (o *scepMockOptions) report(p *printer, url string, caCert *x509.Certificat
 	}
 	args := append([]string{programName, scepCommand, scepEnroll}, server...)
 	args = append(args, "--"+flagCACert, shellQuote(caFile))
-	if o.challengeFile != "" && o.challengeFile != stdoutPath {
-		args = append(args, "--challenge-file", shellQuote(o.challengeFile))
-	}
-	args = append(args, enrollOutputs...)
-	enroll := strings.Join(args, " ")
 	switch {
 	case o.anyChallenge:
-		enroll = secret.ChallengeEnvVar + "=anything " + enroll
-	case challenge.generated:
-		enroll = secret.ChallengeEnvVar + "=" + string(challenge.value) + " " + enroll
+		args = append(args, "--challenge", "anything")
+	case o.challengeFile != "" && o.challengeFile != stdoutPath:
+		args = append(args, "--challenge-file", shellQuote(o.challengeFile))
+	case challenge.generated || o.challenge.Bytes() != nil:
+		// The challenge is already in the report or on the command line of the test CA.
+		args = append(args, "--challenge", shellQuote(string(challenge.value)))
 	}
-	lines = append(lines, enroll)
+	args = append(args, enrollOutputs...)
+	lines = append(lines, strings.Join(args, " "))
 	p.line("\nEnroll a certificate from another terminal:\n  " + strings.Join(lines, "\n  ") +
 		"\n\nPress Ctrl-C to stop.\n")
 }

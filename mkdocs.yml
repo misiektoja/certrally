@@ -1,0 +1,71 @@
+site_name: certrally
+site_description: A command line client for certificate enrollment over CMP, EST and SCEP, with test CAs, RFC conformance checks and post-quantum ML-DSA keys
+site_url: https://misiektoja.github.io/certrally/
+repo_url: https://github.com/misiektoja/certrally
+repo_name: misiektoja/certrally
+copyright: Copyright the certrally Authors, licensed under Apache-2.0
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+  palette:
+    - scheme: default
+      primary: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+# The pip requirements live next to the pages for Dependabot and the VHS script records demo.gif.
+# Neither is a page.
+exclude_docs: |
+  requirements.in
+  requirements.txt
+  demo.tape
+
+# The documentation build runs with --strict so every one of these findings fails the build.
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+markdown_extensions:
+  - admonition
+  # The install page includes the README install section, so the two cannot drift.
+  - pymdownx.snippets:
+      base_path: [.]
+      check_paths: true
+  - toc:
+      permalink: true
+  - pymdownx.superfences
+
+nav:
+  - Overview: index.md
+  - Install: install.md
+  - Getting started: getting-started.md
+  - Protocols:
+      - CMP details: cmp.md
+      - Enroll over EST: est.md
+      - Enroll over SCEP: scep.md
+  - Guides:
+      - Keys and output files: keys.md
+      - Scripts and exit status: scripts.md
+      - JSON output and capture files: json.md
+      - Response profiles: profiles.md
+      - Inspect and lint recorded messages: inspect.md
+      - Output and colour: output.md
+  - Testing CAs:
+      - The CMP test CA: mock.md
+      - Testing a CA with faulty messages: faults.md
+  - Interoperability:
+      - Tested servers: interop.md
+  - Security:
+      - Verify a download: verify.md

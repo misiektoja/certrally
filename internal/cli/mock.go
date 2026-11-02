@@ -448,15 +448,15 @@ func (o *mockOptions) report(p *printer, url string, caCert *x509.Certificate, s
 	if o.caOut != "" {
 		args = append(args, "--ca-cert", shellQuote(o.caOut))
 	}
-	if o.secretFile != "" && o.secretFile != "-" {
+	switch {
+	case o.secretFile != "" && o.secretFile != "-":
 		args = append(args, "--secret-file", shellQuote(o.secretFile))
+	case sec.generated || o.secret.Bytes() != nil:
+		// The secret is already in the report or on the command line of the mock CA.
+		args = append(args, "--"+flagSecret, shellQuote(string(sec.value)))
 	}
 	args = append(args, "--cert-out", "device.pem", "--key-out", "device.key")
-	command := strings.Join(args, " ")
-	if sec.generated {
-		command = secret.EnvVar + "=" + string(sec.value) + " " + command
-	}
-	p.line("\nEnroll a certificate from another terminal:\n  " + command + "\n\nPress Ctrl-C to stop.\n")
+	p.line("\nEnroll a certificate from another terminal:\n  " + strings.Join(args, " ") + "\n\nPress Ctrl-C to stop.\n")
 }
 
 // faultFields describes the fault flags in use, for the startup report.

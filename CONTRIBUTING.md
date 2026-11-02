@@ -24,7 +24,20 @@ make build
 
 Run `make actionlint` when a workflow changes, `make govulncheck` when a dependency changes and `make gitleaks` before pushing. `make scan-image` builds the container image and scans it with Trivy. It needs Docker. `make go-patch-check` reports whether a newer Go patch release is out. `make help` lists every target.
 
-User-facing behavior changes update the README or the page in `docs/` that describes them and add an entry to [RELEASE_NOTES.md](RELEASE_NOTES.md). When the output of `enroll` or `revoke` changes, run `make demo` to record `docs/demo.gif` again. It needs [VHS](https://github.com/charmbracelet/vhs), ttyd and ffmpeg. Port 8080 must be free.
+User-facing behavior changes update the page in `docs/` that describes them and add an entry to [RELEASE_NOTES.md](RELEASE_NOTES.md). Update the README too when it lists the behavior. When the output of `enroll` or `revoke` changes, run `make demo` to record `docs/demo.gif` again. It needs [VHS](https://github.com/charmbracelet/vhs), ttyd and ffmpeg. Port 8080 must be free.
+
+## Documentation site
+
+The site at [misiektoja.github.io/certrally](https://misiektoja.github.io/certrally/) is built with MkDocs and the Material theme from `docs/` and `mkdocs.yml`. Its install page and overview include the install and feature sections of the README between the `--8<--` markers, so edit those sections in the README. Set `PYTHON` when the MkDocs toolchain lives in a virtual environment:
+
+```bash
+make docs-deps PYTHON=.venv/bin/python
+make docs-serve PYTHON=.venv/bin/python
+```
+
+`make docs-build` runs with `--strict`, so a broken link, a missing anchor or a page absent from the navigation fails the build. The [documentation workflow](.github/workflows/docs.yml) runs the same build on every change to the documentation and publishes the site from `main` to the `gh-pages` branch. The site therefore describes the latest release plus any fixes merged since.
+
+The toolchain is pinned with hashes in `docs/requirements.txt`, which `make docs-deps` installs in hash-checking mode. The direct dependencies live in `docs/requirements.in`. To change a version, edit that file and run `make docs-requirements`, which needs pip-tools in the `PYTHON` environment.
 
 ## Integration tests
 

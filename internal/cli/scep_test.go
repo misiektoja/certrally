@@ -1108,6 +1108,17 @@ func TestSCEPMock(t *testing.T) {
 	}
 }
 
+// TestSCEPMockPrintedCommand checks the enroll command in the startup report of scep mock for each
+// source of the challenge password.
+func TestSCEPMockPrintedCommand(t *testing.T) {
+	checkPrintedCommands(t, startSCEPMock, useChallenge, "certrally scep enroll", "--challenge", []printedCase{
+		{name: "generated", generated: true},
+		{name: "flag", args: []string{"--challenge", "demo challenge"}, want: "demo challenge"},
+		{name: "any challenge", args: []string{"--any-challenge"}, want: "anything"},
+		{name: "environment", env: "env-challenge"},
+	})
+}
+
 // TestSCEPMockErrors checks that scep mock refuses bad settings and leaves no CA file behind.
 func TestSCEPMockErrors(t *testing.T) {
 	useChallenge(t, "")

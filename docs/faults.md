@@ -15,7 +15,7 @@ certrally enroll --server http://127.0.0.1:8080/.well-known/cmp --ref demo \
   Faults  wrong-cert-hash (certConf)
 ```
 
-A refusal by the CA is the expected outcome. The exit status follows the usual [rules](../README.md#exit-status): 3 when the CA rejects a request or a `pollReq`, 4 when its answer breaks the protocol or fails verification and 5 when it refuses the `certConf` of an issued certificate. certrally saves the certificate in every case it receives one. The `Faults` field of the report names each fault and the messages it changed. A fault that found no message to change, such as a `certConf` fault after the CA granted implicit confirmation, shows `(not sent)`. With `--json` the document holds the same list in [`faults`](json.md#document).
+A refusal by the CA is the expected outcome. The exit status follows the usual [rules](scripts.md#exit-status): 3 when the CA rejects a request or a `pollReq`, 4 when its answer breaks the protocol or fails verification and 5 when it refuses the `certConf` of an issued certificate. certrally saves the certificate in every case it receives one. The `Faults` field of the report names each fault and the messages it changed. A fault that found no message to change, such as a `certConf` fault after the CA granted implicit confirmation, shows `(not sent)`. With `--json` the document holds the same list in [`faults`](json.md#document).
 
 ## Faults
 

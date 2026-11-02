@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        The [README](https://github.com/misiektoja/certrally/blob/main/README.md) lists the commands and what each one covers.
+        The [documentation](https://misiektoja.github.io/certrally/) describes the commands and what each one covers.
 
   - type: textarea
     id: problem
