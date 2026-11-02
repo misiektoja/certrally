@@ -2,6 +2,14 @@
 
 Notable changes to certrally. Versions follow the `vMAJOR.MINOR.PATCH` tags published in this repository.
 
+## v0.4.2 - TBD
+
+This release adds a documentation site.
+
+### Documentation
+
+* **The documentation site** at [misiektoja.github.io/certrally](https://misiektoja.github.io/certrally/) has an install page, a getting started guide for CMP, pages for EST and SCEP, guides for keys, scripts, JSON output, response profiles and recorded messages, the test CAs and the tested servers. The README now gives an overview and links to the site.
+
 ## v0.4.1 - 30 Oct 2026
 
 This release fixes how `scep nextca` reports a server without a next CA certificate.
