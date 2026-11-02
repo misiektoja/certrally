@@ -85,17 +85,16 @@ Releases are signed with cosign and carry GitHub build provenance and SBOMs. [Ve
 
 ## Quick start
 
-`certrally mock` runs a CMP test CA on your machine. Save a shared secret for it and start it in one terminal:
+`certrally mock` runs a CMP test CA on your machine. Start it in one terminal:
 
 ```bash
-echo demo-secret > secret.txt
-certrally mock --secret-file secret.txt --ca-out ca.pem
+certrally mock --secret demo-secret --ca-out ca.pem
 ```
 
 Request a certificate from another terminal in the same directory:
 
 ```bash
-certrally enroll --server http://127.0.0.1:8080/.well-known/cmp --ref demo --ca-cert ca.pem --secret-file secret.txt --cert-out device.pem --key-out device.key
+certrally enroll --server http://127.0.0.1:8080/.well-known/cmp --ref demo --ca-cert ca.pem --secret demo-secret --cert-out device.pem --key-out device.key
 ```
 
 The test CA prints the same command when it starts. certrally draws each message as it is sent and received, then describes the certificate:
@@ -123,6 +122,18 @@ The test CA prints the same command when it starts. certrally draws each message
 ```
 
 [Getting started](https://misiektoja.github.io/certrally/getting-started/) continues with a real CA, key updates, step-by-step enrollment, revocation and trust. [Enroll over EST](https://misiektoja.github.io/certrally/est/) and [Enroll over SCEP](https://misiektoja.github.io/certrally/scep/) cover the other protocols.
+
+## Usage
+
+<!-- --8<-- [start:usage] -->
+```bash
+certrally --help
+certrally enroll --help
+certrally --version
+```
+
+`enroll`, `poll`, `revoke`, `cacerts`, `ping` and `mock` use CMP and also run under `certrally cmp`. The EST and SCEP commands run under `certrally est` and `certrally scep`. `certrally completion bash|zsh|fish|powershell` prints a shell completion script and `certrally man` prints a man page.
+<!-- --8<-- [end:usage] -->
 
 ## Documentation
 

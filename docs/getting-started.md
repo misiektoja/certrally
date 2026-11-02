@@ -4,34 +4,25 @@ This page enrolls a first certificate over CMP, renews it and revokes it. [Enrol
 
 ## Commands and help
 
-```bash
-certrally --help
-certrally enroll --help
-certrally --version
-```
-
-`certrally completion bash|zsh|fish|powershell` prints a shell completion script. `certrally man` prints a man page.
-
-The CMP commands also run under `certrally cmp`, such as `certrally cmp enroll`. Without the prefix, `enroll`, `poll`, `revoke`, `cacerts`, `ping` and `mock` use CMP. The EST commands run under [`certrally est`](est.md) and the SCEP commands under [`certrally scep`](scep.md).
+--8<-- "README.md:usage"
 
 Output is coloured only on a terminal. [Output and colour](output.md) describes `--color`, `NO_COLOR`, `FORCE_COLOR` and the handling of existing output files.
 
 ## Try it with a test CA
 
-`certrally mock` runs a CMP test CA on your machine. Save a shared secret for it and start it in one terminal:
+`certrally mock` runs a CMP test CA on your machine. Start it in one terminal:
 
 ```bash
-echo demo-secret > secret.txt
-certrally mock --secret-file secret.txt --ca-out ca.pem
+certrally mock --secret demo-secret --ca-out ca.pem
 ```
 
 Request a certificate from another terminal in the same directory:
 
 ```bash
-certrally enroll --server http://127.0.0.1:8080/.well-known/cmp --ref demo --ca-cert ca.pem --secret-file secret.txt --cert-out device.pem --key-out device.key
+certrally enroll --server http://127.0.0.1:8080/.well-known/cmp --ref demo --ca-cert ca.pem --secret demo-secret --cert-out device.pem --key-out device.key
 ```
 
-The test CA prints the same command when it starts. Without `--secret-file` it generates a secret and prints the command with that secret in `CERTRALLY_SECRET`. Running `certrally enroll` without flags asks for every setting instead. The test CA keeps everything in memory, so every run starts empty. Its fault flags make it delay, reject or relax its checks, to test how a client copes. [The CMP test CA](mock.md) describes them.
+The test CA prints the same command when it starts. Without a secret it generates one and puts it in that command. Running `certrally enroll` without flags asks for every setting instead. The test CA keeps everything in memory, so every run starts empty. Its fault flags make it delay, reject or relax its checks, to test how a client copes. [The CMP test CA](mock.md) describes them.
 
 ## Enroll a certificate
 

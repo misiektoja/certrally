@@ -115,7 +115,7 @@ A server under load may answer HTTP 503. certrally sends the request again up to
 
 ## Test CA
 
-`certrally scep mock` runs a SCEP test CA on `127.0.0.1:8090` and prints commands that work against it. It answers GetCACaps, GetCACert, GetCACertChain and PKIOperation with PKCSReq, RenewalReq, CertPoll, GetCert and GetCRL over plain HTTP. Everything it issues lives in memory.
+`certrally scep mock` runs a SCEP test CA on `127.0.0.1:8090` and prints commands that work against it. The printed `scep enroll` command gives the challenge password with `--challenge`, names the file of `--challenge-file` and leaves out a challenge from `CERTRALLY_CHALLENGE`. It answers GetCACaps, GetCACert, GetCACertChain and PKIOperation with PKCSReq, RenewalReq, CertPoll, GetCert and GetCRL over plain HTTP. Everything it issues lives in memory.
 
 | Flag | Effect |
 |---|---|
