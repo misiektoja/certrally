@@ -18,17 +18,24 @@ Output is coloured only on a terminal. [Output and colour](output.md) describes 
 
 ## Try it with a test CA
 
-`certrally mock` runs a CMP test CA on your machine and prints an `enroll` command that works against it:
+`certrally mock` runs a CMP test CA on your machine. Save a shared secret for it and start it in one terminal:
 
 ```bash
-certrally mock --ca-out ca.pem
+echo demo-secret > secret.txt
+certrally mock --secret-file secret.txt --ca-out ca.pem
 ```
 
-Run the printed command in another terminal. Running `certrally enroll` without flags there asks for the settings instead. The test CA keeps everything in memory, so every run starts empty. Its fault flags make it delay, reject or relax its checks, to test how a client copes. [The CMP test CA](mock.md) describes them.
+Request a certificate from another terminal in the same directory:
+
+```bash
+certrally enroll --server http://127.0.0.1:8080/.well-known/cmp --ref demo --ca-cert ca.pem --secret-file secret.txt --cert-out device.pem --key-out device.key
+```
+
+The test CA prints the same command when it starts. Without `--secret-file` it generates a secret and prints the command with that secret in `CERTRALLY_SECRET`. Running `certrally enroll` without flags asks for every setting instead. The test CA keeps everything in memory, so every run starts empty. Its fault flags make it delay, reject or relax its checks, to test how a client copes. [The CMP test CA](mock.md) describes them.
 
 ## Enroll a certificate
 
-A device that has a shared secret from its CA requests its first certificate with an initialization request (`ir`). `--ref` names the secret to the CA:
+With a real CA, a device that has a shared secret from the CA requests its first certificate with an initialization request (`ir`). `--ref` names the secret to the CA:
 
 ```bash
 certrally enroll --server https://ca.example.com/.well-known/cmp \

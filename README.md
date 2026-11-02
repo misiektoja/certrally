@@ -85,47 +85,44 @@ Releases are signed with cosign and carry GitHub build provenance and SBOMs. [Ve
 
 ## Quick start
 
-`certrally mock` runs a CMP test CA on your machine and prints an `enroll` command that works against it:
+`certrally mock` runs a CMP test CA on your machine. Save a shared secret for it and start it in one terminal:
 
 ```bash
-certrally mock --ca-out ca.pem
+echo demo-secret > secret.txt
+certrally mock --secret-file secret.txt --ca-out ca.pem
 ```
 
-Run the printed command in another terminal. Against a real CA, a device that has a shared secret from the CA requests its first certificate like this:
+Request a certificate from another terminal in the same directory:
 
 ```bash
-certrally enroll --server https://ca.example.com/.well-known/cmp \
-  --ref device-42 --secret-file secret.txt \
-  --subject CN=device-42,O=Example --san device-42.example.com \
-  --cert-out device.pem --key-out device.key
+certrally enroll --server http://127.0.0.1:8080/.well-known/cmp --ref demo --ca-cert ca.pem --secret-file secret.txt --cert-out device.pem --key-out device.key
 ```
 
-certrally draws each message as it is sent and received, then describes the certificate:
+The test CA prints the same command when it starts. certrally draws each message as it is sent and received, then describes the certificate:
 
 ```text
-  certrally                                           ca.example.com
+  certrally                                           127.0.0.1:8080
   │                                                                │
-  │ ir  PBMAC1  506 B                                              │
+  │ ir  PBMAC1  432 B                                              │
   │ ─────────────────────────────────────────────────────────────▶ │
-  │                            ip  accepted  PBMAC1  1.5 KiB  9 ms │
+  │                            ip  accepted  PBMAC1  1.4 KiB  8 ms │
   │ ◀───────────────────────────────────────────────────────────── │
-  │ certConf  PBMAC1  291 B                                        │
+  │ certConf  PBMAC1  281 B                                        │
   │ ─────────────────────────────────────────────────────────────▶ │
-  │                                   pkiconf  PBMAC1  637 B  2 ms │
+  │                                   pkiconf  PBMAC1  629 B  2 ms │
   │ ◀───────────────────────────────────────────────────────────── │
 
 ✓ Certificate issued
-  Subject    CN=device-42,O=Example
-  Alt names  device-42.example.com
-  Issuer     CN=Example CA
-  Serial     94:01:1D:E4:EA:C9:F1:25:59:06:0B:13:86:06:94:7D
-  Valid      2026-10-13 00:20 UTC to 2027-10-13 00:21 UTC
-  Key        ECDSA P-256
-  Status     accepted
-  Saved      device.key, device.pem
+  Subject  CN=demo
+  Issuer   CN=Test CA
+  Serial   93:AC:6F:24:1A:B9:81:D1:62:EA:8A:C0:2A:6A:DD:FC
+  Valid    2026-11-02 17:35 UTC to 2027-11-02 17:36 UTC
+  Key      ECDSA P-256
+  Status   accepted
+  Saved    device.key, device.pem
 ```
 
-[Getting started](https://misiektoja.github.io/certrally/getting-started/) continues with key updates, step-by-step enrollment, revocation and trust. [Enroll over EST](https://misiektoja.github.io/certrally/est/) and [Enroll over SCEP](https://misiektoja.github.io/certrally/scep/) cover the other protocols.
+[Getting started](https://misiektoja.github.io/certrally/getting-started/) continues with a real CA, key updates, step-by-step enrollment, revocation and trust. [Enroll over EST](https://misiektoja.github.io/certrally/est/) and [Enroll over SCEP](https://misiektoja.github.io/certrally/scep/) cover the other protocols.
 
 ## Documentation
 
