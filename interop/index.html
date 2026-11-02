@@ -1,0 +1,1555 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A command line client for certificate enrollment over CMP, EST and SCEP, with test CAs, RFC conformance checks and post-quantum ML-DSA keys">
+      
+      
+      
+        <link rel="canonical" href="https://misiektoja.github.io/certrally/interop/">
+      
+      
+        <link rel="prev" href="../faults/">
+      
+      
+        <link rel="next" href="../verify/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Tested servers - certrally</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#tested-servers" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="certrally" class="md-header__button md-logo" aria-label="certrally" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            certrally
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Tested servers
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/misiektoja/certrally" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    misiektoja/certrally
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="certrally" class="md-nav__button md-logo" aria-label="certrally" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    certrally
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/misiektoja/certrally" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    misiektoja/certrally
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Protocols
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Protocols
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cmp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CMP details
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../est/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Enroll over EST
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scep/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Enroll over SCEP
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../keys/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys and output files
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scripts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scripts and exit status
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../json/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JSON output and capture files
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../profiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Response profiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../inspect/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Inspect and lint recorded messages
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../output/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Output and colour
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing CAs
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Testing CAs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mock/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The CMP test CA
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../faults/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing a CA with faulty messages
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interoperability
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Interoperability
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tested servers
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tested servers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#cmp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CMP
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="CMP">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#ejbca-community-edition-963" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EJBCA Community Edition 9.6.3
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#nokia-ncm-267" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Nokia NCM 26.7
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#insta-certifier-1000" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Insta Certifier 10.0.0
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#openssl-403-openssl-cmp-mock-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OpenSSL 4.0.3 openssl cmp mock server
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#est" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EST
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="EST">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cisco-libest-320-example-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cisco libest 3.2.0 example server
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scep" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SCEP
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="SCEP">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#ejbca-community-edition-963_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EJBCA Community Edition 9.6.3
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#nokia-ncm-267_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Nokia NCM 26.7
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#openxpki-334" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OpenXPKI 3.34
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#micromdmscep-230" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        micromdm/scep 2.3.0
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Security
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../verify/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Verify a download
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#cmp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CMP
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="CMP">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#ejbca-community-edition-963" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EJBCA Community Edition 9.6.3
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#nokia-ncm-267" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Nokia NCM 26.7
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#insta-certifier-1000" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Insta Certifier 10.0.0
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#openssl-403-openssl-cmp-mock-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OpenSSL 4.0.3 openssl cmp mock server
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#est" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EST
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="EST">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cisco-libest-320-example-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cisco libest 3.2.0 example server
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#scep" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SCEP
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="SCEP">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#ejbca-community-edition-963_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EJBCA Community Edition 9.6.3
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#nokia-ncm-267_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Nokia NCM 26.7
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#openxpki-334" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OpenXPKI 3.34
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#micromdmscep-230" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        micromdm/scep 2.3.0
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="tested-servers">Tested servers<a class="headerlink" href="#tested-servers" title="Permanent link">&para;</a></h1>
+<p>certrally has been run against the CMP, EST and SCEP servers below. Each section lists where the server differs from the RFCs or needs a particular setting. It also says what certrally shows in that case.</p>
+<h2 id="cmp">CMP<a class="headerlink" href="#cmp" title="Permanent link">&para;</a></h2>
+<h3 id="ejbca-community-edition-963">EJBCA Community Edition 9.6.3<a class="headerlink" href="#ejbca-community-edition-963" title="Permanent link">&para;</a></h3>
+<p>Tested with a CMP alias in client mode that accepts the end entity password as the shared secret and end entity certificates for signed requests.</p>
+<ul>
+<li><code>ir</code>, <code>cr</code>, <code>kur</code>, <code>p10cr</code> and <code>rr</code> work. <code>ir</code> was tested with ECDSA, RSA, Ed25519 and ML-DSA-65 keys. PBMAC1 and PasswordBasedMac both work.</li>
+<li>EJBCA signs its responses to MAC-protected requests, even with the alias response protection set to <code>pbe</code>. RFC 9483 section 3.2 asks for the same kind of protection in every message of an operation, so certrally warns and <code>--profile strict</code> stops the enrollment.</li>
+<li><code>lint</code> found no other deviation in recorded <code>ir</code>, <code>p10cr</code>, <code>kur</code> and <code>rr</code> exchanges or in rejections.</li>
+<li>Error messages are unprotected. certrally shows the reason and marks the answer as not authenticated.</li>
+<li>General messages are rejected with <code>badRequest</code> "Can not handle message type '21'", so <code>cacerts</code> and <code>cmp genm</code> fail. <code>ping</code> still reports a CMP answer, but with <code>--ca-cert</code> it cannot check the unprotected answer and exits with status 4.</li>
+<li>In the tested setup EJBCA signed revocation responses with its ManagementCA instead of the CA that issued the certificate. With only the issuing CA in <code>--ca-cert</code>, <code>revoke</code> exits with status 4 although EJBCA has revoked the certificate. Put both CA certificates in <code>--ca-cert</code>.</li>
+<li>A <code>cr</code> signed with an end entity certificate is rejected with "Status NEW, FAILED or INPROCESS required" once the end entity has a certificate. Reset the end entity status in EJBCA first.</li>
+<li>Composite ML-DSA keys were rejected with "Illegal key algorithm, not authorized by certificate profile", even with the composite algorithms listed in the certificate profile.</li>
+</ul>
+<h3 id="nokia-ncm-267">Nokia NCM 26.7<a class="headerlink" href="#nokia-ncm-267" title="Permanent link">&para;</a></h3>
+<p>Tested over HTTP with a shared secret and with certificates that NCM issued.</p>
+<ul>
+<li><code>ir</code>, <code>cr</code>, <code>p10cr</code>, <code>kur</code> and <code>rr</code> work, with and without <code>--ca-cert</code>. <code>ir</code> was tested with ECDSA P-256, P-384 and P-521 and RSA 2048 and 3072 keys.</li>
+<li>NCM accepts only PasswordBasedMac. It answers a PBMAC1-protected request with <code>badMessageCheck</code> "unsupported cmp header protection method". certrally then suggests <code>--mac pbm</code>.</li>
+<li>Ed25519, ML-DSA-65 and composite ML-DSA keys were rejected with <code>badPOP</code> "invalid PoP".</li>
+<li>NCM needs <code>--recipient</code> to choose the CA and answers <code>wrongAuthority</code> without it. It copies the recipient of the request into the sender of its responses. Give the CA name in the order certrally prints it, such as <code>--recipient 'CN=Issuing CA,O=Example,C=DE'</code>. With the names in another order, signed responses fail with "sender does not match protection certificate subject" and exit status 4.</li>
+<li>Responses to MAC-protected enrollment requests are MAC-protected, so <code>--profile strict</code> accepts them.</li>
+<li>Signed responses carry no senderKID, although the CA certificate has a subject key identifier. certrally warns about RFC 9483 section 3.1 and <code>--profile strict</code> stops a signed enrollment with exit status 6.</li>
+<li>Error messages are signed, so <code>ping --ca-cert</code> can check the answer.</li>
+<li>NCM answers every general message with the same <code>signKeyPairTypes</code>, <code>encKeyPairTypes</code> and <code>preferredSymmAlg</code> items instead of the requested one, so <code>cacerts</code> and <code>cmp genm</code> exit with status 3. The answer is signed even for a MAC-protected request and its extraCerts do not start with the signer certificate. certrally warns about RFC 9483 sections 3.2 and 3.3.</li>
+<li>With a rate limit configured, NCM answers requests that come too fast with HTTP 503 and no CMP message. certrally exits with status 2. Wait a few seconds between requests.</li>
+</ul>
+<h3 id="insta-certifier-1000">Insta Certifier 10.0.0<a class="headerlink" href="#insta-certifier-1000" title="Permanent link">&para;</a></h3>
+<p>Tested over HTTPS and HTTP with a shared secret and with certificates that Certifier issued.</p>
+<ul>
+<li><code>ir</code>, <code>cr</code>, <code>p10cr</code>, <code>kur</code> and <code>rr</code> work. <code>ir</code> was tested with ECDSA P-256 and RSA 2048 keys.</li>
+<li>Certifier accepts only PasswordBasedMac. It answers a PBMAC1-protected request with an unprotected <code>notAuthorized</code> "authentication failed", so certrally cannot suggest <code>--mac pbm</code>.</li>
+<li>Signed responses copy the senderKID of the request instead of naming the key of the CA certificate. certrally warns about RFC 9483 section 3.1 and verifies the response with the CA certificate. <code>--profile strict</code> stops the enrollment with exit status 6.</li>
+<li>A <code>kup</code> carries no extraCerts. Without <code>--ca-cert</code> certrally cannot find its signer and exits with status 4 with a hint to pass the CA certificate. With <code>--ca-cert</code> the key update works and certrally warns about RFC 9483 section 3.3.</li>
+<li>Only certificates issued by <code>ir</code> authenticate a revocation request. An <code>rr</code> signed with a certificate that <code>cr</code> issued gets an unprotected <code>notAuthorized</code> "authentication failed".</li>
+<li>General messages are not supported. Each gets a signed error with <code>notAuthorized</code> "operation not supported", so <code>cacerts</code> and <code>cmp genm</code> exit with status 3.</li>
+<li>Unprotected requests get unprotected errors, so <code>ping --ca-cert</code> cannot check the answer and exits with status 4.</li>
+</ul>
+<h3 id="openssl-403-openssl-cmp-mock-server">OpenSSL 4.0.3 <code>openssl cmp</code> mock server<a class="headerlink" href="#openssl-403-openssl-cmp-mock-server" title="Permanent link">&para;</a></h3>
+<ul>
+<li>The server accepts only PasswordBasedMac. It answers a PBMAC1-protected request with <code>badRequest</code> "no suitable sender cert", and certrally suggests <code>--mac pbm</code>.</li>
+<li>Its <code>kup</code> carries only the server certificate. Without <code>--ca-cert</code>, certrally cannot verify the new certificate and asks for the issuing CA certificate.</li>
+<li>The server process exits on <code>cmp genm template</code> and <code>cmp genm rootupdate</code> unless it is started with the options for them, <code>-ref_cert</code> and <code>-rsp_newwithnew</code>.</li>
+</ul>
+<h2 id="est">EST<a class="headerlink" href="#est" title="Permanent link">&para;</a></h2>
+<h3 id="cisco-libest-320-example-server">Cisco libest 3.2.0 example server<a class="headerlink" href="#cisco-libest-320-example-server" title="Permanent link">&para;</a></h3>
+<p>Tested with the <code>estserver</code> example of libest 3.2.0 on OpenSSL 1.1.1, with a password, a client certificate and TLS-SRP.</p>
+<ul>
+<li><code>est cacerts</code>, <code>est cacerts --bootstrap</code>, <code>est csrattrs</code>, <code>est enroll</code> and <code>est reenroll</code> work. <code>est cacerts</code> and <code>est enroll</code> also pass <code>--profile strict</code>.</li>
+<li><code>est enroll</code> was tested with ECDSA P-256 and P-384, RSA 2048 and Ed25519 keys and with a PKCS#10 request from <code>--csr</code>. ML-DSA and composite ML-DSA requests get HTTP 400 "Invalid or corrupted pkcs10 request", because OpenSSL 1.1.1 does not support these algorithms.</li>
+<li><code>est reenroll</code> works with the client certificate alone when the server runs with <code>-o</code>. Without <code>-o</code> the server also wants a password: a certificate alone gets HTTP 401 and certrally suggests <code>--user</code>. With <code>--cert</code>, <code>--key</code> and <code>--user</code> the renewal works.</li>
+<li>TLS-SRP works with <code>--srp</code> when the verifier uses a group of at least 2048 bits. The <code>passwd.srpv</code> that comes with libest holds <code>srpuser</code> with a 1536-bit group, which certrally refuses with "server chose the 1536 bit SRP group, below the minimum of 2048 bits".</li>
+<li>With <code>-t</code> the server requires the tls-unique binding. <code>--tls-unique</code> works. Without it the server answers HTTP 401 "Proof of Possession Mismatch".</li>
+<li>With <code>-h</code> the server asks for HTTP Digest authentication. certrally signs in with Basic only and gets HTTP 401.</li>
+<li>With <code>-m</code> the server answers <code>202 Accepted</code> with <code>Retry-After: 3600</code>. certrally exits with status 2 unless <code>--timeout</code> covers the hour.</li>
+<li><code>est serverkeygen</code> exits with status 4. The server declares a <code>Content-Length</code> shorter than its multipart response, so the response ends before its last part. certrally also warns that the response has no <code>smime-type=certs-only</code> parameter, because the certificate part is cut off.</li>
+</ul>
+<h2 id="scep">SCEP<a class="headerlink" href="#scep" title="Permanent link">&para;</a></h2>
+<h3 id="ejbca-community-edition-963_1">EJBCA Community Edition 9.6.3<a class="headerlink" href="#ejbca-community-edition-963_1" title="Permanent link">&para;</a></h3>
+<p>Tested over HTTP with the CA name in <code>--ca</code>. No end entity was registered for the requests, so no certificate was issued.</p>
+<ul>
+<li>EJBCA lists POSTPKIOperation, Renewal, SHA-512, SHA-256, SHA-1, DES3, AES and SCEPStandard. <code>scep caps</code>, <code>scep cacert</code> and <code>scep chain</code> work. GetCACert returns the issuing CA and its root. GetCACertChain returns the CA followed by its root. <code>lint</code> found no deviation.</li>
+<li>GetNextCACert gets <code>403 Forbidden</code> with an HTML page when the CA has no rollover certificate. <code>scep nextca</code> exits with status 3 and shows the text of the page.</li>
+<li>A PKCSReq without a challenge password gets <code>400 Bad Request</code> and one for a subject without an end entity gets <code>403 Forbidden</code>, each with an HTML page instead of a FAILURE answer. certrally exits with status 3, shows the text of the page and suggests checking the challenge password, <code>--subject</code> and <code>--ca</code>.</li>
+</ul>
+<h3 id="nokia-ncm-267_1">Nokia NCM 26.7<a class="headerlink" href="#nokia-ncm-267_1" title="Permanent link">&para;</a></h3>
+<p>Tested over HTTP with two NCM installations, with a SCEP CA that issues requests without operator approval and with one that waits for it.</p>
+<ul>
+<li><code>scep caps</code>, <code>scep cacert</code>, <code>scep chain</code>, <code>scep nextca</code> and <code>scep enroll</code> work. <code>scep enroll</code> was tested with RSA 2048 and ECDSA P-256 keys, with the default SHA-256 and AES-128-CBC and with <code>--hash sha1 --cipher des3</code>.</li>
+<li>NCM needs <code>--ca</code>. Without it, GetCACert and GetCACertChain get HTTP 200 with an empty body. certrally then exits with status 2 and suggests <code>--ca</code>.</li>
+<li>NCM lists AES, SHA-1, SHA-256, SHA-512 and POSTPKIOperation and ends the list with a NUL byte. certrally warns about RFC 8894 section 3.5.2. <code>--profile strict</code> stops <code>scep caps</code> and every command that sends a PKIOperation, because they read the list first.</li>
+<li><code>scep chain</code> returns the CA certificate followed by its root.</li>
+<li>GetNextCACert gets HTTP 200 with an empty body, which <code>scep nextca</code> reports as no next CA certificate.</li>
+<li>NCM signs its CertRep with SHA-1 whatever the request used, adds no senderNonce and no certificates. certrally verifies it with the certificate from GetCACert or <code>--ca-cert</code> and warns about RFC 8894 section 3.2.1.</li>
+<li>A CA that issues without approval also accepts a PKCSReq whose challenge password it does not know.</li>
+<li>A CA that waits for approval answers PENDING with HTTP 200. <code>scep enroll --poll-later</code> saved the request, <code>scep poll --once</code> got PENDING and <code>scep poll</code> collected the certificate after approval. <code>scep enroll</code> without <code>--poll-later</code> polled until the request was approved.</li>
+<li>RenewalReq, GetCert and GetCRL get HTTP 200 with an empty body. NCM does not list Renewal. certrally exits with status 2 and says that the server may not support the message type.</li>
+</ul>
+<h3 id="openxpki-334">OpenXPKI 3.34<a class="headerlink" href="#openxpki-334" title="Permanent link">&para;</a></h3>
+<p>Tested over HTTP with the <code>generic</code> SCEP endpoint of the OpenXPKI sample configuration. In this setup the server issued a certificate for a name in its test domain at once and kept a request for another name pending. Approval of a pending request was not tested.</p>
+<ul>
+<li>OpenXPKI lists Renewal, POSTPKIOperation, SHA-512, SHA-384, SHA-256, SHA-224, SHA-1, DES3 and AES. <code>scep caps</code>, <code>scep cacert</code>, <code>scep enroll</code> and <code>scep poll</code> work. <code>lint</code> found no deviation.</li>
+<li>GetCACert returns the RA certificate and the root CA but not the issuing CA, so <code>scep cacert</code> shows the root as the issuing CA.</li>
+<li>A pending request gets a PENDING CertRep with HTTP <code>202 Accepted</code>. certrally treats it as any PENDING answer and saves the state file. <code>scep poll --once</code> gets PENDING with HTTP 202 again.</li>
+<li>A PKCSReq with a wrong challenge password is kept pending as well, not refused, so <code>scep enroll</code> polls until <code>--timeout</code>.</li>
+<li>A RenewalReq gets a FAILURE CertRep with <code>badCertId</code> and HTTP <code>400 Bad Request</code>, although the server lists Renewal. certrally exits with status 3 and suggests <code>--pkcsreq</code>. <code>scep renew --pkcsreq</code> works without a challenge password. In this setup the new certificate kept the end date of the old one.</li>
+<li><code>inspect</code> verifies the signatures of the requests and of the CertReps, which the RA certificate signs.</li>
+<li>GetCACertChain gets <code>400 Bad Request</code> "Unknown operation" and GetNextCACert gets <code>500 Internal Server Error</code>. <code>scep chain</code> and <code>scep nextca</code> exit with status 3.</li>
+</ul>
+<h3 id="micromdmscep-230">micromdm/scep 2.3.0<a class="headerlink" href="#micromdmscep-230" title="Permanent link">&para;</a></h3>
+<p>Tested with the <code>scepserver</code> of micromdm/scep 2.3.0 with a challenge password and <code>-allowrenew 0</code>.</p>
+<ul>
+<li><code>scep caps</code>, <code>scep cacert</code>, <code>scep enroll</code> and <code>scep renew</code> work. <code>scep enroll</code> was tested with RSA 2048 and ECDSA P-256 keys, with the default SHA-256 and AES-128-CBC and with <code>--hash sha1 --cipher des3</code>. <code>lint</code> found no deviation.</li>
+<li>The server encrypts every CertRep with single DES, whatever the request used. Without <code>--allow-des</code> certrally exits with status 4 and suggests the flag.</li>
+<li>The server checks the challenge password in a RenewalReq as well, so <code>scep renew</code> needs <code>--challenge</code> or <code>--challenge-file</code>. Without it the renewal gets FAILURE with <code>badRequest</code>.</li>
+<li>GetCACertChain, GetNextCACert, GetCert and GetCRL get HTTP 500 "not implemented", so <code>scep chain</code>, <code>scep nextca</code>, <code>scep getcert</code> and <code>scep getcrl</code> exit with status 3.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright the certrally Authors, licensed under Apache-2.0
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.top", "content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

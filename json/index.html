@@ -1,0 +1,1822 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A command line client for certificate enrollment over CMP, EST and SCEP, with test CAs, RFC conformance checks and post-quantum ML-DSA keys">
+      
+      
+      
+        <link rel="canonical" href="https://misiektoja.github.io/certrally/json/">
+      
+      
+        <link rel="prev" href="../scripts/">
+      
+      
+        <link rel="next" href="../profiles/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>JSON output and capture files - certrally</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#json-output-and-capture-files" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="certrally" class="md-header__button md-logo" aria-label="certrally" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            certrally
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              JSON output and capture files
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/misiektoja/certrally" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    misiektoja/certrally
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="certrally" class="md-nav__button md-logo" aria-label="certrally" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    certrally
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/misiektoja/certrally" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    misiektoja/certrally
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Protocols
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Protocols
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cmp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CMP details
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../est/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Enroll over EST
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scep/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Enroll over SCEP
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../keys/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keys and output files
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scripts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scripts and exit status
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JSON output and capture files
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JSON output and capture files
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#conventions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Conventions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#json-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JSON output
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="JSON output">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#document" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Document
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#message-records" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Message records
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Errors
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#results" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Results
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inspected-messages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inspected messages
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#capture-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Capture files
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../profiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Response profiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../inspect/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Inspect and lint recorded messages
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../output/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Output and colour
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing CAs
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Testing CAs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mock/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The CMP test CA
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../faults/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing a CA with faulty messages
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interoperability
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Interoperability
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../interop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tested servers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Security
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../verify/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Verify a download
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#conventions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Conventions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#json-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JSON output
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="JSON output">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#document" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Document
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#message-records" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Message records
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#errors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Errors
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#results" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Results
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inspected-messages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inspected messages
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#capture-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Capture files
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="json-output-and-capture-files">JSON output and capture files<a class="headerlink" href="#json-output-and-capture-files" title="Permanent link">&para;</a></h1>
+<p>certrally can describe its work in JSON for scripts. It can also record the CMP, EST and SCEP messages of a run for later inspection.</p>
+<ul>
+<li><code>--json</code> prints the outcome of one command as a JSON document on standard output.</li>
+<li><code>--capture FILE</code> appends every message of a run, with its bytes, to a JSON Lines file.</li>
+</ul>
+<p>Later versions may add fields. Existing fields keep their names and meaning.</p>
+<h2 id="conventions">Conventions<a class="headerlink" href="#conventions" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Names are RFC 4514 strings, such as <code>CN=device-42,O=Example</code>, with the attributes in their encoded order. Attribute types other than CN, O, OU, C, L, ST, STREET, POSTALCODE, SERIALNUMBER, UID and DC appear as dotted OIDs.</li>
+<li>Times are RFC 3339 in UTC.</li>
+<li>Message bytes and info type values are base64. Transaction IDs, key identifiers, SCEP nonces and fingerprints are lower-case hex. A SCEP transaction ID is the string of the message, which certrally sends as 40 upper-case hex digits. Certificate serial numbers are upper-case hex.</li>
+<li>Certificates, CRLs, public keys and requests are PEM strings. Private keys never appear in JSON output or capture files.</li>
+<li>Text from the server, such as <code>statusText</code>, is kept as the server sent it.</li>
+</ul>
+<h2 id="json-output">JSON output<a class="headerlink" href="#json-output" title="Permanent link">&para;</a></h2>
+<p><code>--json</code> works with <code>enroll</code>, <code>poll</code>, <code>revoke</code>, <code>cacerts</code>, <code>cmp genm</code> and its subcommands, <code>ping</code>, <code>inspect</code>, <code>lint</code>, <code>keygen</code>, the <code>est</code> commands except <code>est mock</code> and the <code>scep</code> commands except <code>scep mock</code>. Standard output then holds exactly one JSON document, whatever the outcome. The ladder diagram and the text report are not printed. The exit status is the same as without <code>--json</code>.</p>
+<p>When certrally cannot parse the command line, for example because of an unknown flag or a missing required flag, the document holds the error and the error is also printed on standard error. <code>--json</code> cannot be combined with <code>--quiet</code> or with an output file of <code>-</code>.</p>
+<div class="highlight"><pre><span></span><code>certrally<span class="w"> </span>enroll<span class="w"> </span>--server<span class="w"> </span>https://ca.example.com/.well-known/cmp<span class="w"> </span>--ref<span class="w"> </span>device-42<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--cert-out<span class="w"> </span>device.pem<span class="w"> </span>--key-out<span class="w"> </span>device.key<span class="w"> </span>--json<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>-r<span class="w"> </span>.result.certificate.notAfter
+</code></pre></div>
+<h3 id="document">Document<a class="headerlink" href="#document" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>command</code></td>
+<td>string</td>
+<td>The command as it was typed, such as <code>enroll</code>, <code>cmp enroll</code>, <code>cmp genm crl</code> or <code>est enroll</code></td>
+</tr>
+<tr>
+<td><code>ok</code></td>
+<td>boolean</td>
+<td><code>true</code> when the exit status is 0</td>
+</tr>
+<tr>
+<td><code>exitStatus</code></td>
+<td>number</td>
+<td>The exit status of the process</td>
+</tr>
+<tr>
+<td><code>server</code></td>
+<td>string</td>
+<td>The <code>--server</code> URL without any password. Absent when the command does not contact a server or stops before it does</td>
+</tr>
+<tr>
+<td><code>profile</code></td>
+<td>string</td>
+<td>The <a href="../profiles/">response profile</a>, <code>compatible</code> or <code>strict</code>. Absent when <code>server</code> is absent</td>
+</tr>
+<tr>
+<td><code>exchange</code></td>
+<td>array</td>
+<td>One <a href="#message-records">message record</a> per request, response or failure, and per connection of an EST command, in order. Absent when nothing was sent</td>
+</tr>
+<tr>
+<td><code>result</code></td>
+<td>object</td>
+<td>The <a href="#results">result</a> of the command. Present on success and with some failures</td>
+</tr>
+<tr>
+<td><code>error</code></td>
+<td>object</td>
+<td>The <a href="#errors">error</a> when <code>ok</code> is <code>false</code></td>
+</tr>
+<tr>
+<td><code>faults</code></td>
+<td>array</td>
+<td>One entry per <a href="../faults/"><code>enroll</code> or <code>poll --fault</code></a> value, in the order of the help text. <code>name</code> is the fault and <code>messages</code> lists the body types it changed, such as <code>certConf</code>. An empty <code>messages</code> means the fault found no message to change. Absent without <code>--fault</code></td>
+</tr>
+<tr>
+<td><code>trustedOnFirstResponse</code></td>
+<td>array</td>
+<td>The certificates a CMP command trusted from its first response or a SCEP command from its GetCACert answer, each with the fields of a certificate in a <a href="#results">result</a>, so that <code>sha256</code> can be compared with the fingerprint the CA published. Absent with <code>--ca-cert</code> or <code>--fingerprint</code>, on the EST commands and on <code>poll</code> and <code>scep poll</code>, which keep the trust of the enrollment</td>
+</tr>
+<tr>
+<td><code>warnings</code></td>
+<td>array of strings</td>
+<td>Problems that did not fail the command, such as a CRL signature that does not verify or a response that breaks a rule of the <code>compatible</code> profile</td>
+</tr>
+</tbody>
+</table>
+<p>An enrollment produces a document like this, shortened:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"command"</span><span class="p">:</span><span class="w"> </span><span class="s2">"enroll"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"ok"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"exitStatus"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"server"</span><span class="p">:</span><span class="w"> </span><span class="s2">"https://ca.example.com/.well-known/cmp"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"profile"</span><span class="p">:</span><span class="w"> </span><span class="s2">"compatible"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"exchange"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span><span class="nt">"kind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"request"</span><span class="p">,</span><span class="w"> </span><span class="nt">"time"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-10-13T01:39:22.235769Z"</span><span class="p">,</span><span class="w"> </span><span class="nt">"size"</span><span class="p">:</span><span class="w"> </span><span class="mi">486</span><span class="p">,</span><span class="w"> </span><span class="nt">"body"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ir"</span><span class="p">,</span><span class="w"> </span><span class="nt">"protection"</span><span class="p">:</span><span class="w"> </span><span class="s2">"PBMAC1"</span><span class="p">,</span><span class="w"> </span><span class="nt">"sender"</span><span class="p">:</span><span class="w"> </span><span class="s2">"CN=device-42"</span><span class="p">,</span><span class="w"> </span><span class="nt">"transactionId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"95a9cb74b5c4c3cfd5a4040906e3756b"</span><span class="p">,</span><span class="w"> </span><span class="nt">"senderKid"</span><span class="p">:</span><span class="w"> </span><span class="s2">"6465766963652d3432"</span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="nt">"kind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"response"</span><span class="p">,</span><span class="w"> </span><span class="nt">"time"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-10-13T01:39:22.240007Z"</span><span class="p">,</span><span class="w"> </span><span class="nt">"elapsedMs"</span><span class="p">:</span><span class="w"> </span><span class="mf">4.238</span><span class="p">,</span><span class="w"> </span><span class="nt">"httpStatus"</span><span class="p">:</span><span class="w"> </span><span class="mi">200</span><span class="p">,</span><span class="w"> </span><span class="nt">"contentType"</span><span class="p">:</span><span class="w"> </span><span class="s2">"application/pkixcmp"</span><span class="p">,</span><span class="w"> </span><span class="nt">"size"</span><span class="p">:</span><span class="w"> </span><span class="mi">1481</span><span class="p">,</span><span class="w"> </span><span class="nt">"body"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ip"</span><span class="p">,</span><span class="w"> </span><span class="nt">"protection"</span><span class="p">:</span><span class="w"> </span><span class="s2">"PBMAC1"</span><span class="p">,</span><span class="w"> </span><span class="nt">"sender"</span><span class="p">:</span><span class="w"> </span><span class="s2">"CN=Example CA"</span><span class="p">,</span><span class="w"> </span><span class="nt">"status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"accepted"</span><span class="p">,</span><span class="w"> </span><span class="nt">"extraCerts"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="nt">"kind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"request"</span><span class="p">,</span><span class="w"> </span><span class="nt">"body"</span><span class="p">:</span><span class="w"> </span><span class="s2">"certConf"</span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="nt">"kind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"response"</span><span class="p">,</span><span class="w"> </span><span class="nt">"body"</span><span class="p">:</span><span class="w"> </span><span class="s2">"pkiconf"</span><span class="p">}</span>
+<span class="w">  </span><span class="p">],</span>
+<span class="w">  </span><span class="nt">"result"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"accepted"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"confirmed"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"certificate"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"subject"</span><span class="p">:</span><span class="w"> </span><span class="s2">"CN=device-42"</span><span class="p">,</span><span class="w"> </span><span class="nt">"issuer"</span><span class="p">:</span><span class="w"> </span><span class="s2">"CN=Example CA"</span><span class="p">,</span><span class="w"> </span><span class="nt">"serial"</span><span class="p">:</span><span class="w"> </span><span class="s2">"EE460F82A9CD474DAED4950B232DC3B8"</span><span class="p">,</span><span class="w"> </span><span class="nt">"notBefore"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-10-13T01:38:22Z"</span><span class="p">,</span><span class="w"> </span><span class="nt">"notAfter"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2027-10-13T01:39:22Z"</span><span class="p">,</span><span class="w"> </span><span class="nt">"key"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ECDSA P-256"</span><span class="p">,</span><span class="w"> </span><span class="nt">"sha256"</span><span class="p">:</span><span class="w"> </span><span class="s2">"a79eb735..."</span><span class="p">,</span><span class="w"> </span><span class="nt">"pem"</span><span class="p">:</span><span class="w"> </span><span class="s2">"-----BEGIN CERTIFICATE-----\n..."</span><span class="p">},</span>
+<span class="w">    </span><span class="nt">"chain"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">"subject"</span><span class="p">:</span><span class="w"> </span><span class="s2">"CN=Example CA"</span><span class="p">}],</span>
+<span class="w">    </span><span class="nt">"saved"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"device.key"</span><span class="p">,</span><span class="w"> </span><span class="s2">"device.pem"</span><span class="p">]</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>An EST enrollment records its connection, the request and the response:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">"exchange"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">  </span><span class="p">{</span><span class="nt">"kind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"connect"</span><span class="p">,</span><span class="w"> </span><span class="nt">"time"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-10-21T13:09:59.716Z"</span><span class="p">,</span><span class="w"> </span><span class="nt">"size"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="nt">"tls"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"version"</span><span class="p">:</span><span class="w"> </span><span class="s2">"TLS 1.3"</span><span class="p">,</span><span class="w"> </span><span class="nt">"cipherSuite"</span><span class="p">:</span><span class="w"> </span><span class="s2">"TLS_AES_128_GCM_SHA256"</span><span class="p">,</span><span class="w"> </span><span class="nt">"server"</span><span class="p">:</span><span class="w"> </span><span class="s2">"CN=est.example.com"</span><span class="p">}},</span>
+<span class="w">  </span><span class="p">{</span><span class="nt">"kind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"request"</span><span class="p">,</span><span class="w"> </span><span class="nt">"time"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-10-21T13:09:59.717Z"</span><span class="p">,</span><span class="w"> </span><span class="nt">"size"</span><span class="p">:</span><span class="w"> </span><span class="mi">334</span><span class="p">,</span><span class="w"> </span><span class="nt">"method"</span><span class="p">:</span><span class="w"> </span><span class="s2">"POST"</span><span class="p">,</span><span class="w"> </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/.well-known/est/simpleenroll"</span><span class="p">,</span><span class="w"> </span><span class="nt">"operation"</span><span class="p">:</span><span class="w"> </span><span class="s2">"simpleenroll"</span><span class="p">,</span><span class="w"> </span><span class="nt">"content"</span><span class="p">:</span><span class="w"> </span><span class="s2">"pkcs10"</span><span class="p">,</span><span class="w"> </span><span class="nt">"subject"</span><span class="p">:</span><span class="w"> </span><span class="s2">"CN=device-42"</span><span class="p">},</span>
+<span class="w">  </span><span class="p">{</span><span class="nt">"kind"</span><span class="p">:</span><span class="w"> </span><span class="s2">"response"</span><span class="p">,</span><span class="w"> </span><span class="nt">"time"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-10-21T13:09:59.719Z"</span><span class="p">,</span><span class="w"> </span><span class="nt">"elapsedMs"</span><span class="p">:</span><span class="w"> </span><span class="mf">1.9</span><span class="p">,</span><span class="w"> </span><span class="nt">"httpStatus"</span><span class="p">:</span><span class="w"> </span><span class="mi">200</span><span class="p">,</span><span class="w"> </span><span class="nt">"contentType"</span><span class="p">:</span><span class="w"> </span><span class="s2">"application/pkcs7-mime; smime-type=certs-only"</span><span class="p">,</span><span class="w"> </span><span class="nt">"size"</span><span class="p">:</span><span class="w"> </span><span class="mi">588</span><span class="p">,</span><span class="w"> </span><span class="nt">"operation"</span><span class="p">:</span><span class="w"> </span><span class="s2">"simpleenroll"</span><span class="p">,</span><span class="w"> </span><span class="nt">"content"</span><span class="p">:</span><span class="w"> </span><span class="s2">"certs-only"</span><span class="p">,</span><span class="w"> </span><span class="nt">"certificates"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">}</span>
+<span class="p">]</span>
+</code></pre></div>
+<h3 id="message-records">Message records<a class="headerlink" href="#message-records" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>kind</code></td>
+<td><code>request</code>, <code>response</code>, <code>failure</code> or <code>connect</code>. A failure is a request that got no HTTP response, or an EST connection that failed. A <code>connect</code> record describes a TLS connection of an EST command</td>
+</tr>
+<tr>
+<td><code>time</code></td>
+<td>When the request was sent or the response or failure arrived</td>
+</tr>
+<tr>
+<td><code>elapsedMs</code></td>
+<td>Round-trip time of a response or failure in milliseconds</td>
+</tr>
+<tr>
+<td><code>httpStatus</code>, <code>contentType</code></td>
+<td>The HTTP status and content type of a response</td>
+</tr>
+<tr>
+<td><code>size</code></td>
+<td>Body size in bytes</td>
+</tr>
+<tr>
+<td><code>body</code></td>
+<td>The PKIBody type, such as <code>ir</code>, <code>ip</code>, <code>genp</code> or <code>error</code>. Absent when the body is not a CMP message</td>
+</tr>
+<tr>
+<td><code>nested</code></td>
+<td>The body types of the messages in a <code>nested</code> body, such as <code>["ir"]</code> for a request that a registration authority forwards</td>
+</tr>
+<tr>
+<td><code>protection</code></td>
+<td>The protection algorithm, such as <code>PBMAC1</code> or <code>ML-DSA-65</code>. It is <code>none</code> for an unprotected message</td>
+</tr>
+<tr>
+<td><code>sender</code></td>
+<td>The sender name in the header</td>
+</tr>
+<tr>
+<td><code>transactionId</code>, <code>senderKid</code></td>
+<td>Header fields, as hex</td>
+</tr>
+<tr>
+<td><code>status</code>, <code>failInfo</code>, <code>statusText</code></td>
+<td>The first PKIStatusInfo of an <code>ip</code>, <code>cp</code>, <code>kup</code>, <code>rp</code> or <code>error</code> body. <code>failInfo</code> lists the failure bit names. For SCEP, the pkiStatus of a CertRep, <code>SUCCESS</code>, <code>PENDING</code> or <code>FAILURE</code>, and the failInfo name</td>
+</tr>
+<tr>
+<td><code>checkAfter</code></td>
+<td>The seconds a <code>pollRep</code> asks the client to wait</td>
+</tr>
+<tr>
+<td><code>extraCerts</code></td>
+<td>The number of certificates in <code>extraCerts</code></td>
+</tr>
+<tr>
+<td><code>method</code>, <code>path</code>, <code>operation</code></td>
+<td>The HTTP method and path of an EST request and its EST operation, such as <code>simpleenroll</code>. A SCEP request has the method and its SCEP operation, such as <code>GetCACert</code> or <code>PKIOperation</code>. Responses also carry <code>operation</code></td>
+</tr>
+<tr>
+<td><code>caName</code></td>
+<td>The CA name that a SCEP request sends in its <code>message</code> parameter</td>
+</tr>
+<tr>
+<td><code>messageType</code>, <code>senderNonce</code>, <code>recipientNonce</code></td>
+<td>The message type of a SCEP pkiMessage, such as <code>PKCSReq</code> or <code>CertRep</code>, and its nonces</td>
+</tr>
+<tr>
+<td><code>digest</code>, <code>cipher</code></td>
+<td>The signature digest and the content cipher of a SCEP pkiMessage, such as <code>SHA-256</code> and <code>AES-128-CBC</code></td>
+</tr>
+<tr>
+<td><code>capabilities</code></td>
+<td>The capabilities of a SCEP GetCACaps answer</td>
+</tr>
+<tr>
+<td><code>content</code></td>
+<td>The EST message in the body: <code>pkcs10</code>, <code>certs-only</code>, <code>csrattrs</code> or <code>serverkeygen</code>. Absent for a body that is not one of them, such as an error</td>
+</tr>
+<tr>
+<td><code>subject</code></td>
+<td>The subject of an EST PKCS#10 request</td>
+</tr>
+<tr>
+<td><code>certificates</code></td>
+<td>The number of certificates in an EST <code>certs-only</code> response, in the certificate part of a <code>serverkeygen</code> response or in a SCEP certificate answer</td>
+</tr>
+<tr>
+<td><code>retryAfter</code></td>
+<td>The seconds the <code>Retry-After</code> header of an EST or SCEP response asks for</td>
+</tr>
+<tr>
+<td><code>parts</code></td>
+<td>The parts of an EST <code>serverkeygen</code> response, each with <code>contentType</code> and <code>size</code>. The key part is never decoded or stored</td>
+</tr>
+<tr>
+<td><code>text</code></td>
+<td>The text of an EST or SCEP error response, as the server sent it. For a SCEP error page in HTML, the text of the page without its markup</td>
+</tr>
+<tr>
+<td><code>tls</code></td>
+<td>The connection of a <code>connect</code> record: <code>version</code>, <code>cipherSuite</code>, <code>server</code> with the subject of the server certificate and <code>srpUser</code> for a TLS-SRP sign-in</td>
+</tr>
+<tr>
+<td><code>problem</code></td>
+<td>Why a response cannot be a CMP, EST or SCEP answer (for example <code>HTTP 404 Not Found</code>), why its EST message does not decode or why a request failed</td>
+</tr>
+<tr>
+<td><code>der</code></td>
+<td>The message bytes. For EST, the decoded body, and for <code>serverkeygen</code> only its certificate part. For SCEP, the pkiMessage of a request, also when it travels in the URL, or the body of a response. Only capture files include them</td>
+</tr>
+</tbody>
+</table>
+<h3 id="errors">Errors<a class="headerlink" href="#errors" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>title</code></td>
+<td>One line that says what failed, as in the text report</td>
+</tr>
+<tr>
+<td><code>message</code></td>
+<td>The underlying error</td>
+</tr>
+<tr>
+<td><code>status</code>, <code>failInfo</code>, <code>statusText</code></td>
+<td>The CA status of a rejection</td>
+</tr>
+<tr>
+<td><code>httpStatus</code>, <code>retryAfter</code></td>
+<td>The HTTP status and <code>Retry-After</code> seconds of an EST or SCEP refusal. <code>statusText</code> then holds the text of the server</td>
+</tr>
+<tr>
+<td><code>unauthenticated</code></td>
+<td><code>true</code> when certrally could not verify the rejection, so any peer on the path could have sent it</td>
+</tr>
+<tr>
+<td><code>hint</code></td>
+<td>What to check or change, when certrally can tell</td>
+</tr>
+<tr>
+<td><code>note</code></td>
+<td>More context, such as advice for an issued but unconfirmed certificate</td>
+</tr>
+</tbody>
+</table>
+<h3 id="results">Results<a class="headerlink" href="#results" title="Permanent link">&para;</a></h3>
+<p>A certificate in a result has <code>subject</code>, <code>issuer</code>, <code>serial</code>, <code>notBefore</code>, <code>notAfter</code>, <code>altNames</code>, <code>key</code>, <code>sha256</code> and <code>pem</code>. A command run under <code>cmp</code>, such as <code>cmp enroll</code>, has the result of the same command without the prefix.</p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Result fields</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>enroll</code>, <code>poll</code></td>
+<td><code>status</code>, <code>confirmed</code>, <code>implicitConfirm</code>, <code>certificate</code>, <code>chain</code>, <code>saved</code>, <code>transactionId</code>. With exit status 5 the result is present and <code>confirmed</code> is <code>false</code>. <code>confirmed</code> is also <code>false</code> after <code>--fault reject-certificate</code>, which rejects the certificate. <code>implicitConfirm</code> is <code>true</code> when the CA granted implicit confirmation, so no <code>certConf</code> was sent. <code>proofOfPossession</code> is <code>encrypted-cert</code> or <code>challenge</code> for a key that cannot sign, such as an ML-KEM key, and absent otherwise. <code>centralKeyGeneration</code> is <code>true</code> and <code>keyGenerationAuthority</code> names the signer of the key when the CA generated the key with <code>--central-keygen</code>. Both are absent otherwise. <code>registrationAuthority</code> is the subject of the <code>--ra-cert</code> certificate that forwarded the requests, absent without one. When the CA keeps the request waiting, under <code>enroll --poll-later</code> or when polling ends at <code>--timeout</code> with <code>--capture</code>, <code>status</code> is <code>waiting</code>, <code>certificate</code> is <code>null</code>, <code>saved</code> lists only a new key and <code>nextPoll</code> tells when the CA asked for the next poll, if it did</td>
+</tr>
+<tr>
+<td><code>revoke</code></td>
+<td><code>certificate</code>, <code>issuer</code>, <code>serial</code>, <code>reason</code>, <code>invalidityDate</code>. <code>certificate</code> is <code>null</code> when the certificate was named with <code>--serial</code> and <code>--issuer</code>. <code>invalidityDate</code> is present when <code>--invalidity-date</code> was given</td>
+</tr>
+<tr>
+<td><code>cacerts</code>, <code>cmp genm cacerts</code></td>
+<td><code>certificates</code>, <code>saved</code></td>
+</tr>
+<tr>
+<td><code>cmp genm rootupdate</code></td>
+<td><code>update</code> with <code>newWithNew</code>, <code>newWithOld</code> and <code>oldWithNew</code>. It is <code>null</code> when no update is available. <code>saved</code></td>
+</tr>
+<tr>
+<td><code>cmp genm template</code></td>
+<td><code>template</code> with <code>subject</code>, <code>extensions</code> and <code>keyTypes</code>. It is <code>null</code> when the CA imposes nothing. An attribute without a value in <code>subject</code> is one the requester fills in. Each extension has <code>oid</code>, <code>name</code> and <code>critical</code></td>
+</tr>
+<tr>
+<td><code>cmp genm crl</code>, <code>cmp genm crlupdate</code></td>
+<td><code>crl</code> with <code>issuer</code>, <code>thisUpdate</code>, <code>nextUpdate</code>, <code>number</code>, <code>revoked</code>, <code>signature</code> and <code>pem</code>. It is <code>null</code> when there is none. <code>signature</code> is <code>valid</code>, <code>invalid</code> or <code>unchecked</code>. <code>saved</code></td>
+</tr>
+<tr>
+<td><code>cmp genm raw</code></td>
+<td><code>items</code>, each with <code>infoType</code>, <code>oid</code> and <code>value</code></td>
+</tr>
+<tr>
+<td><code>ping</code></td>
+<td><code>sent</code>, <code>answered</code>, <code>sender</code>, <code>protection</code>, <code>rttMs</code> with <code>min</code>, <code>avg</code> and <code>max</code>. With <code>--ca-cert</code>, <code>verified</code> tells whether every answer was signed by that CA</td>
+</tr>
+<tr>
+<td><code>keygen</code></td>
+<td><code>keyType</code>, <code>key</code>, <code>publicKey</code>, <code>csr</code>, <code>saved</code>. With <code>--list</code>, <code>keyTypes</code></td>
+</tr>
+<tr>
+<td><code>est cacerts</code></td>
+<td><code>certificates</code>, <code>saved</code> and <code>verified</code>, which says how the certificates were checked: <code>tls</code> by the TLS certificate of the server, <code>srp</code> by a TLS-SRP sign-in, <code>fingerprint</code> by <code>--fingerprint</code>, <code>confirmed</code> by a person at the prompt or <code>none</code> after <code>--bootstrap</code> or <code>--insecure</code>. <code>tlsIssued</code> tells whether the trusted certificates issued the TLS certificate of the server. <code>unverified</code> lists the received certificates that the fingerprint check did not cover, which are not saved, and is absent otherwise</td>
+</tr>
+<tr>
+<td><code>est csrattrs</code></td>
+<td><code>attributes</code>, each with <code>oid</code>, <code>name</code> when certrally knows one and <code>values</code> for an attribute that has them</td>
+</tr>
+<tr>
+<td><code>est enroll</code>, <code>est reenroll</code>, <code>est serverkeygen</code></td>
+<td><code>certificate</code>, <code>key</code> with the type of a new key and <code>saved</code>. <code>key</code> is absent when <code>--new-key</code> or <code>--csr</code> supplied the key</td>
+</tr>
+<tr>
+<td><code>scep caps</code></td>
+<td><code>capabilities</code>, the <code>digest</code>, <code>cipher</code> and <code>method</code> that certrally picks from them, and <code>renewal</code> and <code>nextCACert</code>, which tell whether the server lists Renewal and GetNextCACert</td>
+</tr>
+<tr>
+<td><code>scep cacert</code>, <code>scep chain</code>, <code>scep nextca</code></td>
+<td><code>certificates</code>, each also with <code>sha1</code> and, except for <code>scep chain</code>, <code>roles</code>: <code>issuing CA</code>, <code>RA encryption</code>, <code>RA signature</code> or <code>other</code>. <code>ca</code> is the issuing CA, absent for <code>scep chain</code>. <code>saved</code>, and <code>verified</code>, which says how the certificates were checked: <code>tls</code>, <code>fingerprint</code>, <code>signed</code> by the current CA for <code>scep nextca</code> or <code>none</code>. <code>unverified</code> lists the received certificates that the fingerprint check did not cover, which are not saved. <code>certificates</code> is empty when <code>scep nextca</code> finds no next CA certificate</td>
+</tr>
+<tr>
+<td><code>scep enroll</code>, <code>scep renew</code>, <code>scep poll</code></td>
+<td><code>status</code> (<code>SUCCESS</code> or <code>PENDING</code>), <code>messageType</code>, <code>transactionId</code>, <code>digest</code>, <code>cipher</code>, <code>certificate</code>, <code>chain</code>, <code>key</code> with the type of a new key, <code>state</code> with the state file of a pending request, <code>polls</code> with the number of CertPoll requests sent and <code>saved</code></td>
+</tr>
+<tr>
+<td><code>scep getcert</code></td>
+<td><code>certificates</code>, <code>saved</code></td>
+</tr>
+<tr>
+<td><code>scep getcrl</code></td>
+<td><code>crl</code> as for <code>cmp genm crl</code>, <code>saved</code></td>
+</tr>
+<tr>
+<td><code>inspect</code></td>
+<td><code>messages</code>, one <a href="#inspected-messages">inspected message</a> per message in file order</td>
+</tr>
+<tr>
+<td><code>lint</code></td>
+<td><code>checked</code> and <code>skipped</code> count the responses checked and those left unchecked: CMP responses without a request before them and EST and SCEP responses outside capture files. <code>findings</code> lists each deviation with <code>source</code>, <code>body</code> (the CMP body type or the EST or SCEP operation), <code>text</code> and <code>rule</code>. With exit status 6 the result is present</td>
+</tr>
+</tbody>
+</table>
+<p><code>saved</code> lists the files written, in the order they were written.</p>
+<h3 id="inspected-messages">Inspected messages<a class="headerlink" href="#inspected-messages" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>source</code></td>
+<td>Where the message was read, such as <code>run.jsonl:4</code> for line 4 of a capture file, <code>ip.der</code> or <code>msgs.pem#2</code> for the second PEM block</td>
+</tr>
+<tr>
+<td><code>protocol</code></td>
+<td><code>cmp</code>, <code>est</code> or <code>scep</code></td>
+</tr>
+<tr>
+<td><code>direction</code></td>
+<td><code>request</code> or <code>response</code>. A capture records it. For other files it follows from the body type, and only an EST PKCS#10 request is a request</td>
+</tr>
+<tr>
+<td><code>time</code>, <code>server</code></td>
+<td>When a capture recorded the message and the server of its run</td>
+</tr>
+<tr>
+<td><code>size</code>, <code>body</code></td>
+<td>The message size in bytes and, for CMP, the PKIBody type</td>
+</tr>
+<tr>
+<td><code>est</code></td>
+<td>The EST exchange: <code>operation</code>, <code>method</code>, <code>path</code>, <code>httpStatus</code>, <code>contentType</code>, <code>retryAfter</code>, <code>parts</code> and <code>text</code> as in <a href="#message-records">message records</a> from a capture, and <code>content</code></td>
+</tr>
+<tr>
+<td><code>scep</code></td>
+<td>The SCEP exchange from a capture: <code>operation</code>, <code>method</code>, <code>httpStatus</code>, <code>contentType</code>, <code>caName</code>, <code>messageType</code>, <code>transactionId</code>, <code>senderNonce</code>, <code>recipientNonce</code>, <code>status</code>, <code>failInfo</code>, <code>digest</code>, <code>cipher</code>, <code>capabilities</code>, <code>retryAfter</code> and <code>text</code> as in <a href="#message-records">message records</a></td>
+</tr>
+<tr>
+<td><code>header</code></td>
+<td>For CMP: <code>pvno</code>, <code>sender</code>, <code>recipient</code>, <code>messageTime</code>, <code>transactionId</code>, <code>senderNonce</code>, <code>recipNonce</code>, <code>senderKid</code>, <code>recipKid</code>, <code>freeText</code>, <code>generalInfo</code> with the info type names and <code>certProfile</code>. An empty <code>sender</code> or <code>recipient</code> is the NULL-DN</td>
+</tr>
+<tr>
+<td><code>protection</code></td>
+<td>For CMP and for a signed SCEP message: <code>algorithm</code>, such as <code>RSA SHA-256</code>, or <code>none</code> for an unprotected message. <code>check</code> is <code>valid</code>, <code>invalid</code> or <code>unchecked</code>, with the reason in <code>problem</code>. A MAC is <code>unchecked</code> without the shared secret. <code>signer</code> is the subject of the certificate whose signature verifies. With <code>--ca-cert</code>, <code>trusted</code> tells whether the signer chains to those certificates at the capture <code>time</code>, or at the time of the run for a message without one</td>
+</tr>
+<tr>
+<td><code>requests</code></td>
+<td>The requests of <code>ir</code>, <code>cr</code>, <code>kur</code>, <code>p10cr</code> and an EST PKCS#10 request: <code>certReqId</code> (absent for <code>p10cr</code> and EST), <code>subject</code>, <code>key</code>, <code>extensions</code>, <code>pop</code> (<code>signature</code>, <code>raVerified</code>, <code>keyEncipherment</code>, <code>keyAgreement</code> or <code>none</code>), <code>popSignature</code> and <code>popProblem</code> for a signature proof and <code>oldCert</code> with <code>issuer</code> and <code>serial</code> for a key update</td>
+</tr>
+<tr>
+<td><code>responses</code></td>
+<td>The responses of <code>ip</code>, <code>cp</code> and <code>kup</code>: <code>certReqId</code>, <code>status</code>, <code>failInfo</code>, <code>statusText</code>, <code>certificate</code> and <code>encrypted</code> when the certificate is encrypted</td>
+</tr>
+<tr>
+<td><code>caPubs</code>, <code>extraCerts</code></td>
+<td>Certificates</td>
+</tr>
+<tr>
+<td><code>revocations</code></td>
+<td>The entries of <code>rr</code> with <code>issuer</code>, <code>serial</code> and <code>reason</code>, or of <code>rp</code> with <code>status</code>, <code>failInfo</code>, <code>statusText</code> and, when the CA names the certificate, <code>issuer</code> and <code>serial</code></td>
+</tr>
+<tr>
+<td><code>confirmations</code></td>
+<td>The entries of <code>certConf</code>: <code>certReqId</code>, <code>certHash</code>, <code>hashAlg</code> and the status. No status means the certificate is accepted</td>
+</tr>
+<tr>
+<td><code>polls</code></td>
+<td>The entries of <code>pollReq</code> with <code>certReqId</code>, or of <code>pollRep</code> with <code>certReqId</code>, <code>checkAfter</code> and <code>reason</code></td>
+</tr>
+<tr>
+<td><code>error</code></td>
+<td>The content of an <code>error</code> body: <code>status</code>, <code>failInfo</code>, <code>statusText</code>, <code>errorCode</code> and <code>errorDetails</code></td>
+</tr>
+<tr>
+<td><code>items</code></td>
+<td>The items of <code>genm</code> and <code>genp</code>, like those of <code>cmp genm raw</code></td>
+</tr>
+<tr>
+<td><code>challenges</code></td>
+<td>The challenges of <code>popdecc</code>, which the CA sends for a key that proves possession by decryption: <code>owf</code>, <code>witness</code> and <code>encryptedRandSize</code>. Only the first challenge names the one-way function <code>owf</code></td>
+</tr>
+<tr>
+<td><code>answers</code></td>
+<td>The decrypted numbers of <code>popdecr</code> in hex, in the order of the challenges</td>
+</tr>
+<tr>
+<td><code>nested</code></td>
+<td>The body types of the messages in a <code>nested</code> body</td>
+</tr>
+<tr>
+<td><code>certificates</code></td>
+<td>The certificates of an EST <code>certs-only</code> message or <code>serverkeygen</code> response, of a SCEP certificate answer or those that a SCEP pkiMessage carries</td>
+</tr>
+<tr>
+<td><code>attributes</code></td>
+<td>The EST CSR attributes, like those of <code>est csrattrs</code></td>
+</tr>
+<tr>
+<td><code>problems</code></td>
+<td>Parts of the message that could not be decoded</td>
+</tr>
+</tbody>
+</table>
+<h2 id="capture-files">Capture files<a class="headerlink" href="#capture-files" title="Permanent link">&para;</a></h2>
+<p><code>--capture FILE</code> works with every command that talks to a server. It appends the run to <code>FILE</code> as JSON Lines, one JSON object per line:</p>
+<ol>
+<li>A <code>start</code> line with <code>format</code> (currently 1), <code>tool</code>, <code>version</code>, <code>command</code>, <code>server</code> and <code>time</code>. A run of an EST or SCEP command adds <code>protocol</code> with the value <code>est</code> or <code>scep</code>. A run with <code>--insecure</code> adds <code>insecure</code> with the value <code>true</code>, because it did not check the TLS certificate of the server.</li>
+<li>One <a href="#message-records">message record</a> per request, response, failure or EST connection, including <code>der</code>.</li>
+<li>A <code>transaction</code> line with <code>time</code>, <code>id</code>, <code>state</code> and <code>resume</code> when the run leaves a waiting transaction for <code>poll</code> (<code>state</code> is <code>waiting</code>) or <code>poll</code> ends one (<code>ended</code>). <code>id</code> is the transaction ID. <code>resume</code> holds what <code>poll</code> needs: the server, the protection settings and the names of their files, the trusted CA certificates, the output files with their format, the name of the key file when the CA encrypts the certificate for the key and the state of the CMP transaction. It holds no secret or private key. <code>poll</code> uses the last line of a transaction.</li>
+<li>An <code>end</code> line with <code>time</code> and <code>exitStatus</code>.</li>
+</ol>
+<p>Each run appends its own lines, so one file can hold several runs. Readers should skip lines of other kinds, which later versions may add. <code>--capture</code> works together with <code>--json</code> and <code>--quiet</code>. <code>certrally inspect</code> and <code>certrally lint</code> read capture files.</p>
+<p>certrally creates the file with mode 0600. Keep capture files private: anyone who has the messages of a MAC-protected exchange can try to guess the shared secret offline.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright the certrally Authors, licensed under Apache-2.0
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.top", "content.code.copy"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
