@@ -121,7 +121,7 @@ The test CA prints the same command when it starts. certrally draws each message
   Saved    device.key, device.pem
 ```
 
-[Getting started](https://misiektoja.github.io/certrally/getting-started/) continues with a real CA, key updates, step-by-step enrollment, revocation and trust. [Enroll over EST](https://misiektoja.github.io/certrally/est/) and [Enroll over SCEP](https://misiektoja.github.io/certrally/scep/) cover the other protocols.
+[Using CMP](https://misiektoja.github.io/certrally/cmp/), [Using EST](https://misiektoja.github.io/certrally/est/) and [Using SCEP](https://misiektoja.github.io/certrally/scep/) continue with a real CA.
 
 ## Usage
 
@@ -140,18 +140,24 @@ certrally --version
 The full documentation is at [misiektoja.github.io/certrally](https://misiektoja.github.io/certrally/):
 
 * [Install](https://misiektoja.github.io/certrally/install/)
-* [Getting started](https://misiektoja.github.io/certrally/getting-started/): commands, a first CMP enrollment, key updates, revocation and trust
-* [CMP details](https://misiektoja.github.io/certrally/cmp/): request options, collecting a certificate later, ML-KEM keys, keys that the CA generates, registration authorities, trust, revocation by serial number, CA information and `ping`
-* [Enroll over EST](https://misiektoja.github.io/certrally/est/): commands, sign-in options, bootstrap, proxies, waiting, channel binding and the `est mock` test CA
-* [Enroll over SCEP](https://misiektoja.github.io/certrally/scep/): commands, trust, the challenge password, algorithms, pending requests, renewal, queries and the `scep mock` test CA
-* [Keys and output files](https://misiektoja.github.io/certrally/keys/): key types, encrypted keys, `keygen` and DER output
-* [Scripts and exit status](https://misiektoja.github.io/certrally/scripts/): `--json`, capture files and exit statuses
-* [JSON output and capture files](https://misiektoja.github.io/certrally/json/)
-* [Response profiles](https://misiektoja.github.io/certrally/profiles/): the rules certrally checks
-* [Inspect and lint recorded messages](https://misiektoja.github.io/certrally/inspect/)
-* [Output and colour](https://misiektoja.github.io/certrally/output/)
-* [The CMP test CA](https://misiektoja.github.io/certrally/mock/): `certrally mock` and its fault flags
-* [Testing a CA with faulty messages](https://misiektoja.github.io/certrally/faults/): `enroll --fault` and `poll --fault`
+* [Getting started](https://misiektoja.github.io/certrally/getting-started/): the three protocols, commands, a first enrollment against a test CA and trust
+* CMP
+  * [Using CMP](https://misiektoja.github.io/certrally/cmp/): enrollment, key updates, revocation, request options, collecting a certificate later, ML-KEM keys, keys that the CA generates, registration authorities, trust, CA information and `ping`
+  * [CMP test CA](https://misiektoja.github.io/certrally/cmp-test-ca/): `certrally mock` and its fault flags
+  * [Testing a CA with faulty messages](https://misiektoja.github.io/certrally/cmp-faults/): `enroll --fault` and `poll --fault`
+* EST
+  * [Using EST](https://misiektoja.github.io/certrally/est/): commands, sign-in options, bootstrap, proxies, waiting, channel binding and server-generated keys
+  * [EST test CA](https://misiektoja.github.io/certrally/est-test-ca/): `certrally est mock`
+* SCEP
+  * [Using SCEP](https://misiektoja.github.io/certrally/scep/): commands, trust, the challenge password, algorithms, pending requests, renewal and queries
+  * [SCEP test CA](https://misiektoja.github.io/certrally/scep-test-ca/): `certrally scep mock`
+* Guides
+  * [Keys and output files](https://misiektoja.github.io/certrally/keys/): key types, encrypted keys, `keygen` and DER output
+  * [Scripts and exit status](https://misiektoja.github.io/certrally/scripts/): `--json`, capture files and exit statuses
+  * [JSON output and capture files](https://misiektoja.github.io/certrally/json/)
+  * [RFC checks](https://misiektoja.github.io/certrally/rfc-checks/): the CMP, EST and SCEP rules certrally checks and `--profile`
+  * [Inspect and lint recorded messages](https://misiektoja.github.io/certrally/inspect/)
+  * [Output and colour](https://misiektoja.github.io/certrally/output/)
 * [Tested servers](https://misiektoja.github.io/certrally/interop/)
 * [Verify a download](https://misiektoja.github.io/certrally/verify/)
 

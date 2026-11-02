@@ -34,11 +34,11 @@ certrally enroll --server https://ca.example.com/.well-known/cmp --ref device-42
 | `ok` | boolean | `true` when the exit status is 0 |
 | `exitStatus` | number | The exit status of the process |
 | `server` | string | The `--server` URL without any password. Absent when the command does not contact a server or stops before it does |
-| `profile` | string | The [response profile](profiles.md), `compatible` or `strict`. Absent when `server` is absent |
+| `profile` | string | The [response profile](rfc-checks.md), `compatible` or `strict`. Absent when `server` is absent |
 | `exchange` | array | One [message record](#message-records) per request, response or failure, and per connection of an EST command, in order. Absent when nothing was sent |
 | `result` | object | The [result](#results) of the command. Present on success and with some failures |
 | `error` | object | The [error](#errors) when `ok` is `false` |
-| `faults` | array | One entry per [`enroll` or `poll --fault`](faults.md) value, in the order of the help text. `name` is the fault and `messages` lists the body types it changed, such as `certConf`. An empty `messages` means the fault found no message to change. Absent without `--fault` |
+| `faults` | array | One entry per [`enroll` or `poll --fault`](cmp-faults.md) value, in the order of the help text. `name` is the fault and `messages` lists the body types it changed, such as `certConf`. An empty `messages` means the fault found no message to change. Absent without `--fault` |
 | `trustedOnFirstResponse` | array | The certificates a CMP command trusted from its first response or a SCEP command from its GetCACert answer, each with the fields of a certificate in a [result](#results), so that `sha256` can be compared with the fingerprint the CA published. Absent with `--ca-cert` or `--fingerprint`, on the EST commands and on `poll` and `scep poll`, which keep the trust of the enrollment |
 | `warnings` | array of strings | Problems that did not fail the command, such as a CRL signature that does not verify or a response that breaks a rule of the `compatible` profile |
 

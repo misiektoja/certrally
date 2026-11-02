@@ -1,6 +1,18 @@
-# The CMP test CA
+# CMP test CA
 
-[Getting started](getting-started.md#try-it-with-a-test-ca) introduces `certrally mock`, a CMP test CA for trying certrally and test scripts without a real CA. This page describes what it does and the fault flags that make it delay, reject or confirm requests differently and accept deviations from RFC 9483, to test how a client copes. To test a CA the other way around, `certrally enroll --fault` and `poll --fault` send deliberately wrong messages. [faults.md](faults.md) describes them and how the test CA answers each one.
+`certrally mock` runs a CMP test CA on your machine, for trying certrally and test scripts without a real CA. Start it in one terminal:
+
+```bash
+certrally mock --secret demo-secret --ca-out ca.pem
+```
+
+Request a certificate from another terminal in the same directory:
+
+```bash
+certrally enroll --server http://127.0.0.1:8080/.well-known/cmp --ref demo --ca-cert ca.pem --secret demo-secret --cert-out device.pem --key-out device.key
+```
+
+The test CA prints the same command when it starts. This page describes what it does and the fault flags that make it delay, reject or confirm requests differently and accept deviations from RFC 9483, to test how a client copes. To test a CA the other way around, `certrally enroll --fault` and `poll --fault` send deliberately wrong messages. [Testing a CA with faulty messages](cmp-faults.md) describes them and how the test CA answers each one.
 
 ## What it does
 

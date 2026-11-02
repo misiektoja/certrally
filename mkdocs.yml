@@ -51,21 +51,23 @@ nav:
   - Overview: index.md
   - Install: install.md
   - Getting started: getting-started.md
-  - Protocols:
-      - CMP details: cmp.md
-      - Enroll over EST: est.md
-      - Enroll over SCEP: scep.md
+  - CMP:
+      - Using CMP: cmp.md
+      - CMP test CA: cmp-test-ca.md
+      - Testing a CA with faulty messages: cmp-faults.md
+  - EST:
+      - Using EST: est.md
+      - EST test CA: est-test-ca.md
+  - SCEP:
+      - Using SCEP: scep.md
+      - SCEP test CA: scep-test-ca.md
   - Guides:
       - Keys and output files: keys.md
       - Scripts and exit status: scripts.md
       - JSON output and capture files: json.md
-      - Response profiles: profiles.md
+      - RFC checks: rfc-checks.md
       - Inspect and lint recorded messages: inspect.md
       - Output and colour: output.md
-  - Testing CAs:
-      - The CMP test CA: mock.md
-      - Testing a CA with faulty messages: faults.md
-  - Interoperability:
+  - Reference:
       - Tested servers: interop.md
-  - Security:
       - Verify a download: verify.md

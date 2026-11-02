@@ -1,4 +1,4 @@
-# Enroll over SCEP
+# Using SCEP
 
 The `certrally scep` commands talk to a SCEP server, usually over plain HTTP. `--server` is the SCEP URL of the server, such as `http://scep.example.com/scep`. A server with several CAs needs the name of the CA in `--ca`.
 
@@ -12,7 +12,7 @@ The `certrally scep` commands talk to a SCEP server, usually over plain HTTP. `-
 | `scep renew` | Renews the certificate in `--cert` |
 | `scep poll` | Collects a certificate that the CA kept pending |
 | `scep getcert`, `scep getcrl` | Get a certificate by its serial number or the CRL that covers a certificate |
-| `scep mock` | Runs a SCEP test CA on your machine |
+| `scep mock` | Runs a SCEP test CA on your machine, see [SCEP test CA](scep-test-ca.md) |
 
 ```bash
 certrally scep enroll --server http://scep.example.com/scep --ca 'Issuing CA' --ca-cert ca.pem \
@@ -20,7 +20,7 @@ certrally scep enroll --server http://scep.example.com/scep --ca 'Issuing CA' --
   --cert-out device.pem --key-out device.key
 ```
 
-Over plain HTTP nothing authenticates the first GetCACert answer, so save the CA certificates once with `scep cacert --fingerprint` and pass them with `--ca-cert`. The challenge password comes from `--challenge`, `--challenge-file` or `CERTRALLY_CHALLENGE`. When the CA answers PENDING, certrally keeps polling and saves the request in a state file that `scep poll` continues. The sections below describe trust, the challenge password, algorithms, pending requests, renewal, queries and the `scep mock` test CA. Key files, encrypted keys and `--out-format der` work as for CMP, see [keys.md](keys.md).
+Over plain HTTP nothing authenticates the first GetCACert answer, so save the CA certificates once with `scep cacert --fingerprint` and pass them with `--ca-cert`. The challenge password comes from `--challenge`, `--challenge-file` or `CERTRALLY_CHALLENGE`. When the CA answers PENDING, certrally keeps polling and saves the request in a state file that `scep poll` continues. The sections below describe trust, the challenge password, algorithms, pending requests, renewal, queries, busy servers and proxies. Key files, encrypted keys and `--out-format der` work as for CMP, see [keys.md](keys.md).
 
 ## Server address and CA name
 
@@ -112,21 +112,3 @@ A server under load may answer HTTP 503. certrally sends the request again up to
 ## Proxies
 
 `--proxy` takes an `http`, `https` or `socks5` URL. Without it, the `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` environment variables apply as for [CMP](cmp.md#trust-and-connections).
-
-## Test CA
-
-`certrally scep mock` runs a SCEP test CA on `127.0.0.1:8090` and prints commands that work against it. The printed `scep enroll` command gives the challenge password with `--challenge`, names the file of `--challenge-file` and leaves out a challenge from `CERTRALLY_CHALLENGE`. It answers GetCACaps, GetCACert, GetCACertChain and PKIOperation with PKCSReq, RenewalReq, CertPoll, GetCert and GetCRL over plain HTTP. Everything it issues lives in memory.
-
-| Flag | Effect |
-|---|---|
-| `--challenge`, `--challenge-file` | The challenge password a PKCSReq must carry. Without them and `CERTRALLY_CHALLENGE`, a random one is generated and printed |
-| `--any-challenge` | Issues whatever challenge password a request carries |
-| `--ca-name` | Answers GetCACert only for this CA name |
-| `--ra` | Decrypts requests and signs answers with a separate RA certificate |
-| `--next-ca` | Announces a next CA certificate through GetNextCACert |
-| `--pending-polls N` | Answers every new request with PENDING and issues the certificate at the Nth CertPoll |
-| `--busy-interval` | Answers HTTP 503 without `Retry-After` to a PKIOperation sent within this time of the previous one |
-| `--caps` | Replaces the GetCACaps answer, such as `SHA-1,DES3` for an old CA |
-| `--ca-out` | Saves the GetCACert certificates for `--ca-cert` |
-
-The mock prints a line for each request with the operation, the message type, the answer and the reason for a refusal.

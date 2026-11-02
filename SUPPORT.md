@@ -1,6 +1,6 @@
 # Getting help
 
-Start with the [documentation](https://misiektoja.github.io/certrally/). [Getting started](docs/getting-started.md) covers the main commands and the trust model and [Scripts and exit status](docs/scripts.md#exit-status) the exit statuses. [docs/json.md](docs/json.md) describes the `--json` output, [docs/profiles.md](docs/profiles.md) the RFC 9483, RFC 7030 and RFC 8894 rules certrally checks and [docs/interop.md](docs/interop.md) how the tested CA servers behave.
+Start with the [documentation](https://misiektoja.github.io/certrally/). [Getting started](docs/getting-started.md) covers the main commands and the trust model and [Scripts and exit status](docs/scripts.md#exit-status) the exit statuses. [docs/json.md](docs/json.md) describes the `--json` output, [docs/rfc-checks.md](docs/rfc-checks.md) the RFC 9483, RFC 7030 and RFC 8894 rules certrally checks and [docs/interop.md](docs/interop.md) how the tested CA servers behave.
 
 ## Check first
 

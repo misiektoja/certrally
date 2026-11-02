@@ -22,7 +22,7 @@ const (
 	flagConfirmDelay = "confirm-delay"
 )
 
-// --fault values. docs/faults.md names the RFC 9483 rule each one breaks.
+// --fault values. docs/cmp-faults.md names the RFC 9483 rule each one breaks.
 const (
 	faultRejectCertificate  = "reject-certificate"
 	faultWrongCertHash      = "wrong-cert-hash"

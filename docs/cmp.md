@@ -1,6 +1,100 @@
-# CMP details
+# Using CMP
 
-[Getting started](getting-started.md#enroll-a-certificate) shows a first enrollment, a key update and a revocation. This page covers the other CMP options and commands. [keys.md](keys.md) describes key types, encrypted keys and DER output, which work the same for CMP, EST and SCEP.
+certrally implements CMP as RFC 9810 defines it, with the Lightweight CMP Profile of RFC 9483. `--server` is the CMP URL of the CA, such as `https://ca.example.com/.well-known/cmp`. The CMP commands run without a prefix or under `certrally cmp`, such as `certrally cmp enroll`.
+
+| Command | What it does |
+|---|---|
+| `enroll` | Requests a certificate with `ir`, `cr`, `kur` or `p10cr` |
+| `poll` | Collects a certificate that the CA kept waiting |
+| `revoke` | Asks the CA to revoke a certificate |
+| `cacerts` | Gets the CA certificates |
+| `cmp genm` | Asks the CA for a root CA update, a request template or CRLs |
+| `ping` | Checks that a server answers CMP |
+| `mock` | Runs a CMP test CA on your machine, see [CMP test CA](cmp-test-ca.md) |
+
+[Keys and output files](keys.md) describes key types, encrypted keys and DER output, which work the same for CMP, EST and SCEP.
+
+## Enroll a certificate
+
+A device that has a shared secret from the CA requests its first certificate with an initialization request (`ir`). `--ref` names the secret to the CA:
+
+```bash
+certrally enroll --server https://ca.example.com/.well-known/cmp \
+  --ref device-42 --secret-file secret.txt \
+  --subject CN=device-42,O=Example --san device-42.example.com \
+  --cert-out device.pem --key-out device.key
+```
+
+`--secret VALUE` gives the secret on the command line instead. `CERTRALLY_SECRET` or a prompt also work. [Protection](#protection) lists the order and the risk of `--secret`.
+
+certrally draws each message as it is sent and received, then describes the certificate:
+
+```text
+  certrally                                           ca.example.com
+  │                                                                │
+  │ ir  PBMAC1  506 B                                              │
+  │ ─────────────────────────────────────────────────────────────▶ │
+  │                            ip  accepted  PBMAC1  1.5 KiB  9 ms │
+  │ ◀───────────────────────────────────────────────────────────── │
+  │ certConf  PBMAC1  291 B                                        │
+  │ ─────────────────────────────────────────────────────────────▶ │
+  │                                   pkiconf  PBMAC1  637 B  2 ms │
+  │ ◀───────────────────────────────────────────────────────────── │
+
+✓ Certificate issued
+  Subject    CN=device-42,O=Example
+  Alt names  device-42.example.com
+  Issuer     CN=Example CA
+  Serial     94:01:1D:E4:EA:C9:F1:25:59:06:0B:13:86:06:94:7D
+  Valid      2026-10-13 00:20 UTC to 2027-10-13 00:21 UTC
+  Key        ECDSA P-256
+  Status     accepted
+  Saved      device.key, device.pem
+```
+
+The diagram goes to standard error and the certificate summary to standard output. `--quiet` hides both.
+
+A certificate the device already has signs later requests. A key update (`kur`) replaces the certificate in `--cert` with one for a new key:
+
+```bash
+certrally enroll --server https://ca.example.com/.well-known/cmp --type kur \
+  --cert device.pem --key device.key \
+  --cert-out device-new.pem --key-out device-new.key
+```
+
+`--type cr` requests an additional certificate. `--type p10cr` sends a PKCS#10 request, either from `--csr` or built from `--subject` and `--san`. Some CAs accept only PasswordBasedMac and need `--mac pbm`.
+
+The sections below cover the other options: key usages and templates, implicit confirmation, collecting a waiting certificate later, ML-KEM keys, keys that the CA generates, forwarding as a registration authority, CA information requests and `ping`.
+
+## Enroll step by step
+
+On a terminal, `certrally enroll` without flags asks for each setting: the server, the CA to trust, the shared secret or certificate, the names, the key type and the files to write. Flags you give answer their questions. `--interactive` asks only for the rest:
+
+```bash
+certrally enroll --interactive --server https://ca.example.com/.well-known/cmp
+```
+
+Before it sends the request, certrally prints the same request as one command for scripts and asks for confirmation. The shared secret is hidden while you type it. It never appears in that command, and neither do the values of `--secret` and `--key-password`. The questions cannot be combined with `--json`. With `ACCESSIBLE=1` they are asked line by line, for example for a screen reader.
+
+## Revoke a certificate
+
+RFC 9483 signs a revocation request with the certificate being revoked:
+
+```bash
+certrally revoke --server https://ca.example.com/.well-known/cmp \
+  --cert device.pem --key device.key --reason keyCompromise
+```
+
+`--reason` takes an RFC 5280 reason name and defaults to `unspecified`. `certificateHold` suspends a certificate and `removeFromCRL` releases it, if the CA supports holds. An authority that revokes for someone else names the certificate with `--revoke-cert` or with `--serial` and `--issuer` as described in [Revoke by serial number](#revoke-by-serial-number). On a terminal certrally asks before it sends the request. `--yes` skips the question.
+
+## Revoke by serial number
+
+An authority that has no copy of the certificate names it with `--serial` and `--issuer`. `--serial` takes a decimal number, hex with `0x` or the colon-separated hex that certrally prints. `--invalidity-date` tells the CA when the key was compromised or the certificate became invalid, as RFC 3339 or `YYYY-MM-DD`, for the CRL entry:
+
+```bash
+certrally revoke --server https://ca.example.com/.well-known/cmp \
+  --ref ra-1 --serial 0x1A2B --issuer 'CN=Example CA' --reason keyCompromise --invalidity-date 2026-10-01
+```
 
 ## Protection
 
@@ -126,7 +220,7 @@ certrally enroll --server https://ca.example.com/.well-known/cmp \
 
 ## Trust and connections
 
-certrally trusts the CA certificates in the first response from the server and the CA certificates in the `--cert` file, then checks every response against them. The report lists each certificate trusted from the first response with its SHA-256 fingerprint. If a response does not carry the CA certificate that issued the new certificate, pass that certificate with `--ca-cert`.
+certrally trusts the CA certificates in the first response from the server and the CA certificates in the `--cert` file, then checks every response against them. The report lists each certificate trusted from the first response with its SHA-256 fingerprint, so you can compare it with the one the CA published. If a response does not carry the CA certificate that issued the new certificate, pass that certificate with `--ca-cert`.
 
 With `--ca-cert ca.pem` (repeatable) certrally trusts nothing the server sends. Signed responses and issued certificates must chain to a CA certificate from `--ca-cert` or `--cert`.
 
@@ -135,15 +229,6 @@ With `--ca-cert ca.pem` (repeatable) certrally trusts nothing the server sends. 
 Over HTTPS the server is checked against the system roots or against the CA certificates in `--tls-ca-cert`. `--insecure` skips that check, for a test server with a self-signed certificate. certrally then warns that anyone who intercepts the connection can pose as the server. The capture file records it. `--insecure` cannot be combined with `--tls-ca-cert`. Over plain HTTP nothing authenticates the first response, so certrally warns when it trusts one.
 
 certrally connects through the proxy that the `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` environment variables name, like other HTTP clients. `--proxy http://proxy.example.com:3128` names a proxy on the command line instead, on every command that talks to a server. An `https` proxy works too. Credentials in the URL are sent to the proxy.
-
-## Revoke by serial number
-
-An authority that has no copy of the certificate names it with `--serial` and `--issuer`. `--serial` takes a decimal number, hex with `0x` or the colon-separated hex that certrally prints. `--invalidity-date` tells the CA when the key was compromised or the certificate became invalid, as RFC 3339 or `YYYY-MM-DD`, for the CRL entry:
-
-```bash
-certrally revoke --server https://ca.example.com/.well-known/cmp \
-  --ref ra-1 --serial 0x1A2B --issuer 'CN=Example CA' --reason keyCompromise --invalidity-date 2026-10-01
-```
 
 ## Ask the CA for information
 
@@ -191,4 +276,4 @@ With `--ca-cert` the answer must also be signed by that CA. A CA that leaves its
 
 ## Test how a CA copes with faulty messages
 
-`--fault NAME` makes `enroll` and `poll` send a deliberately wrong message, such as a `certConf` with a wrong certHash or a request that reuses a nonce. Use it against a test CA or with the consent of the CA operator. [faults.md](faults.md) lists the faults, the RFC 9483 rule each one breaks and how `certrally mock` answers it.
+`--fault NAME` makes `enroll` and `poll` send a deliberately wrong message, such as a `certConf` with a wrong certHash or a request that reuses a nonce. Use it against a test CA or with the consent of the CA operator. [Testing a CA with faulty messages](cmp-faults.md) lists the faults, the RFC 9483 rule each one breaks and how `certrally mock` answers it.

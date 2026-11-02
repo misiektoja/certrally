@@ -49,7 +49,7 @@ certrally checks a signature with the certificates in the message and in `--ca-c
 
 ## lint
 
-`lint` checks recorded responses against the [profile rules](profiles.md) and exits with status 6 when a response breaks one. It reads the same files as `inspect`, but checks EST and SCEP responses only in capture files, because the rules concern the HTTP response:
+`lint` checks recorded responses against the [profile rules](rfc-checks.md) and exits with status 6 when a response breaks one. It reads the same files as `inspect`, but checks EST and SCEP responses only in capture files, because the rules concern the HTTP response:
 
 ```bash
 certrally lint run.jsonl

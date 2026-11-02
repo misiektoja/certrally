@@ -18,16 +18,16 @@ Tested with EJBCA, Nokia NCM, Insta Certifier and the `openssl cmp` mock server 
 | I want to | Page |
 | --- | --- |
 | Install certrally | [Install](install.md) |
-| Enroll a first certificate over CMP, renew it and revoke it | [Getting started](getting-started.md) |
-| Use the other CMP options and commands | [CMP details](cmp.md) |
-| Enroll over EST | [Enroll over EST](est.md) |
-| Enroll over SCEP | [Enroll over SCEP](scep.md) |
+| Pick a protocol and try a test CA | [Getting started](getting-started.md) |
+| Enroll, renew and revoke over CMP | [Using CMP](cmp.md) |
+| Enroll and renew over EST | [Using EST](est.md) |
+| Enroll and renew over SCEP | [Using SCEP](scep.md) |
 | Choose key types, encrypted keys or DER output | [Keys and output files](keys.md) |
 | Run certrally from a script | [Scripts and exit status](scripts.md) |
-| Check responses against the RFCs | [Response profiles](profiles.md) |
+| Check responses against the RFCs | [RFC checks](rfc-checks.md) |
 | Decode and check recorded messages | [Inspect and lint recorded messages](inspect.md) |
-| Run a test CA on my machine | [The CMP test CA](mock.md), [EST](est.md#test-ca) and [SCEP](scep.md#test-ca) |
-| Test how a CA copes with wrong messages | [Testing a CA with faulty messages](faults.md) |
+| Run a test CA on my machine | [CMP test CA](cmp-test-ca.md), [EST test CA](est-test-ca.md) and [SCEP test CA](scep-test-ca.md) |
+| Test how a CA copes with wrong messages | [Testing a CA with faulty messages](cmp-faults.md) |
 | Find notes for my CA server | [Tested servers](interop.md) |
 | Check a download | [Verify a download](verify.md) |
 | Ask for help or report a problem | [Support](https://github.com/misiektoja/certrally/blob/main/SUPPORT.md) |
