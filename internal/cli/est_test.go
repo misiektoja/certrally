@@ -851,6 +851,17 @@ func TestESTMock(t *testing.T) {
 	}
 }
 
+// TestESTMockPrintedCommand checks the enroll command in the startup report of est mock for each
+// source of the password.
+func TestESTMockPrintedCommand(t *testing.T) {
+	start := func(t *testing.T, args ...string) *mockRun { return startESTMock(t, args...).mockRun }
+	checkPrintedCommands(t, start, usePassword, "certrally est enroll", "--password", []printedCase{
+		{name: "generated", generated: true},
+		{name: "flag", args: []string{"--password", "demo password"}, want: "demo password"},
+		{name: "environment", env: "env-password"},
+	})
+}
+
 // TestESTMockErrors checks that est mock refuses bad settings and leaves no CA file behind.
 func TestESTMockErrors(t *testing.T) {
 	usePassword(t, "")

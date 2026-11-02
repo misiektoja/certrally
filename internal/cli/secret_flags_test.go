@@ -12,8 +12,8 @@ func TestSecretFlagCMP(t *testing.T) {
 	useSecret(t, "")
 	m := startMock(t, "--listen", "127.0.0.1:0", "--ref", testRef, "--secret", testSecret,
 		"--waiting", "1", "--check-after", "0s")
-	if report := m.stdout.String(); !strings.Contains(report, "from --secret") || strings.Contains(report, testSecret) {
-		t.Errorf("the startup report does not name --secret or shows the secret:\n%s", report)
+	if report := m.stdout.String(); !strings.Contains(report, "from --secret") || !strings.Contains(report, "--secret "+testSecret+" ") {
+		t.Errorf("the startup report does not name --secret or lacks it in the enroll command:\n%s", report)
 	}
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -94,14 +94,9 @@ func TestESTSecretFlags(t *testing.T) {
 	m := startESTMock(t, "--listen", "127.0.0.1:0", "--user", estTestUser, "--password", estTestPassword,
 		"--token", estTestToken, "--ca-out", caOut)
 	report := m.stdout.String()
-	for _, want := range []string{"from --password", "from --token"} {
+	for _, want := range []string{"from --password", "from --token", "--password " + estTestPassword + " ", "--token=" + estTestToken + " "} {
 		if !strings.Contains(report, want) {
 			t.Errorf("startup report lacks %q:\n%s", want, report)
-		}
-	}
-	for _, value := range []string{estTestPassword, estTestToken} {
-		if strings.Contains(report, value) {
-			t.Errorf("startup report shows %q:\n%s", value, report)
 		}
 	}
 
