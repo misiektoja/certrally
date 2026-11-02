@@ -206,7 +206,7 @@ func runESTMock(cmd *cobra.Command, o *estMockOptions) error {
 		urls.srp = "https://" + srpHostPort
 		remote = remote || srpRemote
 	}
-	o.report(p, urls, ca.Certificate(), password, len(token) > 0)
+	o.report(p, urls, ca.Certificate(), password, token)
 	if remote {
 		p.warn("The mock CA accepts requests from other hosts. " +
 			"Anyone who reaches it and knows the password gets certificates.")
@@ -395,9 +395,9 @@ type estMockURLs struct {
 	srp   string
 }
 
-// report prints how to reach the test CA and the commands that work against it. hasToken says
-// whether a bearer token is accepted.
-func (o *estMockOptions) report(p *printer, urls estMockURLs, caCert *x509.Certificate, password mockSecret, hasToken bool) {
+// report prints how to reach the test CA and the commands that work against it. token is the
+// bearer token it accepts, if any.
+func (o *estMockOptions) report(p *printer, urls estMockURLs, caCert *x509.Certificate, password mockSecret, token []byte) {
 	passwordField := "from " + secret.PasswordEnvVar
 	switch {
 	case password.generated:
@@ -413,7 +413,7 @@ func (o *estMockOptions) report(p *printer, urls estMockURLs, caCert *x509.Certi
 		tokenField = "from --" + flagToken
 	case o.tokenFile != "":
 		tokenField = "from " + o.tokenFile
-	case hasToken:
+	case len(token) > 0:
 		tokenField = "from " + secret.TokenEnvVar
 	}
 	sum := sha256.Sum256(caCert.Raw)
@@ -438,8 +438,8 @@ func (o *estMockOptions) report(p *printer, urls estMockURLs, caCert *x509.Certi
 		}, " "))
 	}
 	lines = append(lines, o.enrollCommand(password, "--server", urls.https, "--tls-ca-cert", shellQuote(caFile)))
-	if hasToken {
-		lines = append(lines, o.tokenCommand("--server", urls.https, "--tls-ca-cert", shellQuote(caFile)))
+	if len(token) > 0 {
+		lines = append(lines, o.tokenCommand(token, "--server", urls.https, "--tls-ca-cert", shellQuote(caFile)))
 	}
 	if urls.srp != "" {
 		lines = append(lines, o.enrollCommand(password, "--server", urls.srp, "--srp"))
@@ -453,15 +453,15 @@ func (o *estMockOptions) report(p *printer, urls estMockURLs, caCert *x509.Certi
 func (o *estMockOptions) enrollCommand(password mockSecret, server ...string) string {
 	args := append([]string{programName, estCommand, estEnroll}, server...)
 	args = append(args, "--user", shellQuote(o.user))
-	if o.passwordFile != "" && o.passwordFile != "-" {
+	switch {
+	case o.passwordFile != "" && o.passwordFile != "-":
 		args = append(args, "--password-file", shellQuote(o.passwordFile))
+	case password.generated || o.password.Bytes() != nil:
+		// The password is already in the report or on the command line of the test CA.
+		args = append(args, "--"+flagPassword, shellQuote(string(password.value)))
 	}
 	args = append(args, enrollOutputs...)
-	command := strings.Join(args, " ")
-	if password.generated {
-		command = secret.PasswordEnvVar + "=" + string(password.value) + " " + command
-	}
-	return command
+	return strings.Join(args, " ")
 }
 
 // enrollOutputs are the request and output flags of the printed enroll commands.
@@ -469,11 +469,15 @@ var enrollOutputs = []string{"--subject", "CN=device", "--cert-out", "device.pem
 
 // tokenCommand returns an est enroll command line that signs in with the bearer token. server
 // holds the flags that reach the server.
-func (o *estMockOptions) tokenCommand(server ...string) string {
+func (o *estMockOptions) tokenCommand(token []byte, server ...string) string {
 	args := append([]string{programName, estCommand, estEnroll}, server...)
-	if o.tokenFile != "" && o.tokenFile != "-" {
+	switch {
+	case o.tokenFile != "" && o.tokenFile != "-":
 		args = append(args, "--"+flagTokenFile, shellQuote(o.tokenFile))
-	} else {
+	case o.token.Bytes() != nil:
+		// The token is already on the command line of the test CA. A bare --token would ask for it.
+		args = append(args, "--"+flagToken+"="+shellQuote(string(token)))
+	default:
 		args = append(args, "--"+flagToken)
 	}
 	return strings.Join(append(args, enrollOutputs...), " ")
