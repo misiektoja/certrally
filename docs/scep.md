@@ -1,6 +1,26 @@
-# SCEP details
+# Enroll over SCEP
 
-The [README](../README.md#enroll-over-scep) introduces the `certrally scep` commands. This page covers how they trust the CA, the challenge password, algorithms, pending requests, renewal, queries and the `scep mock` test CA. Key files, encrypted keys and `--out-format der` work as for CMP, see [keys.md](keys.md).
+The `certrally scep` commands talk to a SCEP server, usually over plain HTTP. `--server` is the SCEP URL of the server, such as `http://scep.example.com/scep`. A server with several CAs needs the name of the CA in `--ca`.
+
+| Command | What it does |
+|---|---|
+| `scep caps` | Lists the capabilities of the server and the algorithms certrally picks from them |
+| `scep cacert` | Gets the CA and RA certificates. `--fingerprint` and `--out` save them |
+| `scep chain` | Gets the CA certificate and the certificates that issued it |
+| `scep nextca` | Gets the CA certificate that will replace the current one |
+| `scep enroll` | Requests a certificate for a new key, `--new-key` or `--csr` |
+| `scep renew` | Renews the certificate in `--cert` |
+| `scep poll` | Collects a certificate that the CA kept pending |
+| `scep getcert`, `scep getcrl` | Get a certificate by its serial number or the CRL that covers a certificate |
+| `scep mock` | Runs a SCEP test CA on your machine |
+
+```bash
+certrally scep enroll --server http://scep.example.com/scep --ca 'Issuing CA' --ca-cert ca.pem \
+  --challenge-file challenge.txt --subject CN=device-42 \
+  --cert-out device.pem --key-out device.key
+```
+
+Over plain HTTP nothing authenticates the first GetCACert answer, so save the CA certificates once with `scep cacert --fingerprint` and pass them with `--ca-cert`. The challenge password comes from `--challenge`, `--challenge-file` or `CERTRALLY_CHALLENGE`. When the CA answers PENDING, certrally keeps polling and saves the request in a state file that `scep poll` continues. The sections below describe trust, the challenge password, algorithms, pending requests, renewal, queries and the `scep mock` test CA. Key files, encrypted keys and `--out-format der` work as for CMP, see [keys.md](keys.md).
 
 ## Server address and CA name
 
