@@ -4,7 +4,11 @@ Notable changes to certrally. Versions follow the `vMAJOR.MINOR.PATCH` tags publ
 
 ## v0.4.2 - TBD
 
-This release adds a documentation site.
+This release adds a documentation site. The commands that the test CAs print now run as printed.
+
+### Testing and troubleshooting
+
+* **The enroll commands that the test CAs print** give the secret, password, token or challenge password on the command line when the test CA generated it or took it from `--secret`, `--password`, `--token` or `--challenge`. Copied to another terminal, they run without a prompt. Values from environment variables are still left out and values from files are named with their `-file` flag.
 
 ### Documentation
 
