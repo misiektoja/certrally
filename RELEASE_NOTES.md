@@ -2,7 +2,7 @@
 
 Notable changes to certrally. Versions follow the `vMAJOR.MINOR.PATCH` tags published in this repository.
 
-## v0.4.2 - TBD
+## v0.4.2 - 2 Nov 2026
 
 This release adds a documentation site. The commands that the test CAs print now run as printed.
 
