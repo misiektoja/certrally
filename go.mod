@@ -10,11 +10,11 @@ require (
 	github.com/misiektoja/go-composite-mldsa v0.2.2
 	github.com/misiektoja/go-pkcs7 v0.3.0
 	github.com/misiektoja/go-pki-cmp v0.8.0
-	github.com/misiektoja/go-pki-est v1.4.0
+	github.com/misiektoja/go-pki-est v1.4.1
 	github.com/misiektoja/go-pki-scep v0.1.0
 	github.com/misiektoja/go-tls-srp v0.2.1
 	github.com/spf13/cobra v1.10.2
-	github.com/spf13/pflag v1.0.10
+	github.com/spf13/pflag v1.1.0
 	go.mozilla.org/pkcs7 v0.10.0
 	golang.org/x/crypto v0.58.0
 	golang.org/x/term v0.47.0
