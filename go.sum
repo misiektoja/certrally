@@ -76,8 +76,8 @@ github.com/misiektoja/go-pkcs7 v0.3.0 h1:8+ou/XtNiV0eoRZ59DWxxQRHwcT7UvNj1Djg6+Y
 github.com/misiektoja/go-pkcs7 v0.3.0/go.mod h1:1wmKgcxbA03VQmh2T11C8NYNqmzJTlRiWYg3nh9e/6c=
 github.com/misiektoja/go-pki-cmp v0.8.0 h1:nqFETKvLBhf4/y4uQeOEyvTidgexgFbb0R5b2n1KcTQ=
 github.com/misiektoja/go-pki-cmp v0.8.0/go.mod h1:dfq/zYepohnXBUcrLoiGjXMr87Mv6/LOTKe1GhmDSbM=
-github.com/misiektoja/go-pki-est v1.4.0 h1:wLvLQenfVqRiLOsjNhaOA8ScM7wdbhdatYyxugqgR08=
-github.com/misiektoja/go-pki-est v1.4.0/go.mod h1:OUkog74BTXcG6977o+NpINL6393G1K1ZbsDK7EDYHkU=
+github.com/misiektoja/go-pki-est v1.4.1 h1:U6An2xlWQ2LL7hPSkLk3LF4Yn8FI78c8FJQehlo8JCk=
+github.com/misiektoja/go-pki-est v1.4.1/go.mod h1:URSpI2x5E0Uoxj8DUnNkO2E+FKJmhw9Cay5Y0+0bKVE=
 github.com/misiektoja/go-pki-scep v0.1.0 h1:40P1kTkMLJxrQkwCWDmxGZKsReLoa9bGHTIkkCRgx6c=
 github.com/misiektoja/go-pki-scep v0.1.0/go.mod h1:55Qn6kcvyHQvqBFbX6UwRGIX5/jX1KkYcYLnKJHTpb8=
 github.com/misiektoja/go-tls-srp v0.2.1 h1:LM0dnj62KKp168perlP5aAb607HTV7ITxWMuFxw3BFM=
@@ -103,8 +103,8 @@ github.com/smallstep/scep v0.0.0-20250318231241-a25cabb69492/go.mod h1:QQhwLqCS1
 github.com/spf13/cobra v1.10.2 h1:DMTTonx5m65Ic0GOoRY2c16WCbHxOOw6xxezuLaBpcU=
 github.com/spf13/cobra v1.10.2/go.mod h1:7C1pvHqHw5A4vrJfjNwvOdzYu0Gml16OCs2GRiTUUS4=
 github.com/spf13/pflag v1.0.9/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An2Bg=
-github.com/spf13/pflag v1.0.10 h1:4EBh2KAYBwaONj6b2Ye1GiHfwjqyROoF4RwYO+vPwFk=
-github.com/spf13/pflag v1.0.10/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An2Bg=
+github.com/spf13/pflag v1.1.0 h1:6W6MbVUrnMb8PEhjkqwsVLY7ryuzRfFHF4mQd7L94ag=
+github.com/spf13/pflag v1.1.0/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An2Bg=
 github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWDWE=
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
 github.com/tsaarni/certyaml v0.13.0 h1:QZAW7S4nRQUn2k4E6jZyErn7kzE1Nk5v3LnoiS0F+Fo=
