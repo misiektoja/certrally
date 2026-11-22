@@ -2,6 +2,18 @@
 
 Notable changes to certrally. Versions follow the `vMAJOR.MINOR.PATCH` tags published in this repository.
 
+## v0.4.3 - 22 Nov 2026
+
+This release is built with Go 1.27.4, which fixes a crash in `net/http` that the EST and SCEP test CAs could hit. The documentation site has a section for each protocol.
+
+### Bug fixes
+
+* **Release binaries and container images are built with Go 1.27.4**, which fixes [GO-2026-6859](https://pkg.go.dev/vuln/GO-2026-6859). With Go 1.27.3 a race in `net/http` could crash an HTTP/1 server that limits request bodies, as `est mock` and `scep mock` do. Building from source now needs Go 1.27.4 or newer.
+
+### Documentation
+
+* **The documentation site has a section each for CMP, EST and SCEP**, with a page for the test CA of each protocol.
+
 ## v0.4.2 - 2 Nov 2026
 
 This release adds a documentation site. The commands that the test CAs print now run as printed.
