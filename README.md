@@ -74,7 +74,7 @@ docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/work" -w /work -e CERTRALLY
   --ref device-42 --cert-out device.pem --key-out device.key
 ```
 
-From source with Go 1.27.3 or newer:
+From source with Go 1.27.4 or newer:
 
 ```bash
 go install github.com/misiektoja/certrally/cmd/certrally@latest

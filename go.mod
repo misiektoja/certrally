@@ -1,23 +1,23 @@
 module github.com/misiektoja/certrally
 
-go 1.27.3
+go 1.27.4
 
 require (
 	charm.land/fang/v2 v2.0.1
 	charm.land/huh/v2 v2.0.3
-	charm.land/lipgloss/v2 v2.0.6
+	charm.land/lipgloss/v2 v2.1.1
 	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/misiektoja/go-composite-mldsa v0.2.2
 	github.com/misiektoja/go-pkcs7 v0.3.0
-	github.com/misiektoja/go-pki-cmp v0.8.0
-	github.com/misiektoja/go-pki-est v1.4.0
-	github.com/misiektoja/go-pki-scep v0.1.0
-	github.com/misiektoja/go-tls-srp v0.2.1
+	github.com/misiektoja/go-pki-cmp v0.8.1
+	github.com/misiektoja/go-pki-est v1.4.2
+	github.com/misiektoja/go-pki-scep v0.1.1
+	github.com/misiektoja/go-tls-srp v0.2.2
 	github.com/spf13/cobra v1.10.2
-	github.com/spf13/pflag v1.0.10
+	github.com/spf13/pflag v1.1.0
 	go.mozilla.org/pkcs7 v0.10.0
-	golang.org/x/crypto v0.58.0
-	golang.org/x/term v0.47.0
+	golang.org/x/crypto v0.59.0
+	golang.org/x/term v0.48.0
 )
 
 require (
@@ -52,8 +52,8 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/smallstep/scep v0.0.0-20250318231241-a25cabb69492 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	golang.org/x/sync v0.24.0 // indirect
-	golang.org/x/sys v0.49.0 // indirect
-	golang.org/x/text v0.43.0 // indirect
+	golang.org/x/sync v0.25.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
+	golang.org/x/text v0.44.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
 )
