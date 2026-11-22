@@ -1,3 +1,7 @@
+---
+description: "Use certrally to enroll, renew and revoke certificates over CMP (RFC 9810 and RFC 9483), poll for pending ones and ask the CA for information."
+---
+
 # Using CMP
 
 certrally implements CMP as RFC 9810 defines it, with the Lightweight CMP Profile of RFC 9483. `--server` is the CMP URL of the CA, such as `https://ca.example.com/.well-known/cmp`. The CMP commands run without a prefix or under `certrally cmp`, such as `certrally cmp enroll`.

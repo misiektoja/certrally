@@ -1,3 +1,7 @@
+---
+description: "Send deliberately wrong CMP messages with certrally enroll --fault to test how a CA copes, with each fault tied to the RFC 9483 rule it breaks."
+---
+
 # Testing a CA with faulty messages
 
 `certrally enroll --fault NAME` and `certrally poll --fault NAME` send a deliberately wrong message to test how a CA copes. It is the mirror of the fault flags of [`certrally mock`](cmp-test-ca.md), which test how a client copes. These flags exist to test CAs. Use them against a test CA or with the consent of the CA operator, because a CA may revoke or keep a certificate whose confirmation failed.

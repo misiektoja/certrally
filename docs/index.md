@@ -1,3 +1,8 @@
+---
+title: "Command line client for CMP, EST and SCEP certificate enrollment"
+description: "certrally is a command line client that enrolls, renews and revokes certificates over CMP, EST and SCEP, with test CAs and RFC checks."
+---
+
 # certrally
 
 [![GitHub Release](https://img.shields.io/github/v/release/misiektoja/certrally?style=flat-square&color=blue)](https://github.com/misiektoja/certrally/releases)

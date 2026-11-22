@@ -1,3 +1,7 @@
+---
+description: "Reference for the certrally --json output document and the --capture JSON Lines file, with field names, conventions and examples for scripts."
+---
+
 # JSON output and capture files
 
 certrally can describe its work in JSON for scripts. It can also record the CMP, EST and SCEP messages of a run for later inspection.

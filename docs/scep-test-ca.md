@@ -1,3 +1,7 @@
+---
+description: "Run the certrally SCEP test CA on your machine with certrally scep mock to try SCEP enrollment, challenge passwords, RA certificates and polling."
+---
+
 # SCEP test CA
 
 `certrally scep mock` runs a SCEP test CA on your machine, for trying certrally and test scripts without a real SCEP server. Start it in one terminal:

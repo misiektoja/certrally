@@ -1,3 +1,7 @@
+---
+description: "Choose key types, use encrypted PKCS#8 keys, generate a key and CSR offline with certrally keygen and write DER output files for CMP, EST and SCEP."
+---
+
 # Keys and output files
 
 These options work the same for the CMP, EST and SCEP commands. The SCEP commands generate only RSA and ECDSA keys, and their `--key` must be RSA.

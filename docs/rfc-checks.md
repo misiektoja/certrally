@@ -1,3 +1,7 @@
+---
+description: "The RFC 9483, RFC 9810, RFC 7030 and RFC 8894 rules that certrally checks in CA responses. Use --profile to warn about a broken rule or to stop on it."
+---
+
 # RFC checks
 
 certrally checks every CMP response against rules of the Lightweight CMP Profile (RFC 9483) and RFC 9810 that some CAs do not follow. It checks EST responses against [rules of RFC 7030](#est-rules) and SCEP responses against [rules of RFC 8894](#scep-rules) in the same way. `--profile` chooses what happens when a response breaks one of them:

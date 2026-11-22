@@ -1,3 +1,7 @@
+---
+description: "Run certrally from scripts with --json output and --capture files. Also lists the exit status codes 0 to 6 that tell a script what went wrong."
+---
+
 # Scripts and exit status
 
 ## JSON output

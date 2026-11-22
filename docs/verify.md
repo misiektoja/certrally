@@ -1,3 +1,7 @@
+---
+description: "Verify a certrally download with cosign signatures, SHA-256 checksums, GitHub build provenance attestations and SPDX SBOMs."
+---
+
 # Verify a download
 
 Every [release](https://github.com/misiektoja/certrally/releases) is signed and carries build provenance and SBOMs. The commands below check version 0.1.0. Replace the version for other releases.

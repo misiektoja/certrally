@@ -1,3 +1,7 @@
+---
+description: "Pick between CMP, EST and SCEP in certrally, try a first enrollment against a test CA and learn how it decides which CA certificates to trust."
+---
+
 # Getting started
 
 certrally enrolls certificates over three protocols. Use the one your CA offers:

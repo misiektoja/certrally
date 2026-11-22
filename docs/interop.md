@@ -1,3 +1,7 @@
+---
+description: "Notes on CMP, EST and SCEP servers tested with certrally, including EJBCA, Nokia NCM, OpenXPKI and Cisco libest, with their deviations and settings."
+---
+
 # Tested servers
 
 certrally has been run against the CMP, EST and SCEP servers below. Each section lists where the server differs from the RFCs or needs a particular setting. It also says what certrally shows in that case.

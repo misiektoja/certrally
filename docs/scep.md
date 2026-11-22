@@ -1,3 +1,7 @@
+---
+description: "Use certrally to enroll and renew certificates over SCEP (RFC 8894) with a challenge password, trust the CA and handle pending or busy servers."
+---
+
 # Using SCEP
 
 The `certrally scep` commands talk to a SCEP server, usually over plain HTTP. `--server` is the SCEP URL of the server, such as `http://scep.example.com/scep`. A server with several CAs needs the name of the CA in `--ca`.

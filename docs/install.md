@@ -1,3 +1,7 @@
+---
+description: "Install the certrally command line client and check the installation with the version and help commands before a first enrollment."
+---
+
 # Install
 
 --8<-- "README.md:install"

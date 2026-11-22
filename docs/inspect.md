@@ -1,3 +1,7 @@
+---
+description: "Decode recorded CMP messages with certrally inspect and check them against RFC rules with certrally lint, using capture files or DER, base64 and PEM files."
+---
+
 # Inspect and lint recorded messages
 
 `--capture FILE` records every message of a run. [json.md](json.md#capture-files) describes the format. Keep capture files private, because the messages of a shared-secret exchange allow offline guessing of the secret.

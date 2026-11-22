@@ -1,3 +1,7 @@
+---
+description: "How certrally prints its message diagram and summary, which options control colour (--color, NO_COLOR, FORCE_COLOR) and how it handles existing files."
+---
+
 # Output and colour
 
 The message diagram goes to standard error and the summary to standard output. `--quiet` hides both. `--json` replaces them with one JSON document, see [json.md](json.md).

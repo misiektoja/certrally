@@ -1,3 +1,7 @@
+---
+description: "Run the certrally EST test CA on your machine with certrally est mock to try EST enrollment, TLS-SRP and pending answers without a real EST server."
+---
+
 # EST test CA
 
 `certrally est mock` runs an EST test CA on your machine, for trying certrally and test scripts without a real EST server. Start it in one terminal:

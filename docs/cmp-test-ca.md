@@ -1,3 +1,7 @@
+---
+description: "Run the certrally CMP test CA with certrally mock to try enrollment and scripts on your machine. Its fault flags test how a client copes."
+---
+
 # CMP test CA
 
 `certrally mock` runs a CMP test CA on your machine, for trying certrally and test scripts without a real CA. Start it in one terminal:
